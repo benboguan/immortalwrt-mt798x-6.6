@@ -83,9 +83,9 @@ static int mtk_dev_match_id(const char* chip, struct iwinfo_hardware_id *id)
 		id->device_id = 0x7981;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
-	} else if (!strcmp(chip, "MT7991")) {
+	} else if (!strcmp(chip, "MT7986")) {
 		id->vendor_id = 0x14c3;
-		id->device_id = 0x7991;
+		id->device_id = 0x7986;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
 	} else if (!strcmp(chip, "MT7916")) {
@@ -93,11 +93,21 @@ static int mtk_dev_match_id(const char* chip, struct iwinfo_hardware_id *id)
 		id->device_id = 0x7916;
 		id->subsystem_vendor_id = id->vendor_id;
 		id->subsystem_device_id = id->device_id;
-	 } else if (!strcmp(chip, "MT7990")) {
-                id->vendor_id = 0x14c3;
-                id->device_id = 0x7990;
-                id->subsystem_vendor_id = id->vendor_id;
-                id->subsystem_device_id = id->device_id;
+	} else if (!strcmp(chip, "MT7990")) {
+		id->vendor_id = 0x14c3;
+		id->device_id = 0x7990;
+		id->subsystem_vendor_id = id->vendor_id;
+		id->subsystem_device_id = id->device_id;
+	} else if (!strcmp(chip, "MT7992")) {
+		id->vendor_id = 0x14c3;
+		id->device_id = 0x7992;
+		id->subsystem_vendor_id = id->vendor_id;
+		id->subsystem_device_id = id->device_id;
+	} else if (!strcmp(chip, "MT7993")) {
+		id->vendor_id = 0x14c3;
+		id->device_id = 0x7993;
+		id->subsystem_vendor_id = id->vendor_id;
+		id->subsystem_device_id = id->device_id;
 	} else {
 		return -1;
 	}
