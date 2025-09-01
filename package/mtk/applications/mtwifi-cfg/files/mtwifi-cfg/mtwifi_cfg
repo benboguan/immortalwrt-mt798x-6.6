@@ -126,16 +126,9 @@ end
 
 function set_idx_dat(dats, apidx, dat, cfg)
     if cfg ~= nil then
-        local key
-        if apidx == 0 then
-            key = dat
-        else
-            key = dat .. tostring(apidx)
-        end
-        dats[key] = cfg
+        dats[dat..tostring(apidx)] = cfg
     end
 end
-
 
 function vif_in_dev(vif, dev)
     if (vif == dev.main_ifname
@@ -157,24 +150,18 @@ function vif_is_apcli(vif, dev)
     end
 end
 
-function is_ax_mode(cfg)
-    if not cfg.config.htmode then
-        return false
-    end
-    if string.sub(cfg.config.htmode,1,2) == "HE" then
-        return true
-    end
-    return false
+local function cfg_htmode(htmode)
+    return htmode and type(htmode) == "string"
 end
-
+ 
+function is_ax_mode(cfg)
+    local htmode = cfg.config.htmode
+    return cfg_htmode(htmode) and htmode:sub(1,2):upper() == "HE"
+end
+ 
 function is_be_mode(cfg)
-    if not cfg.config.htmode then
-        return false
-    end
-    if string.sub(cfg.config.htmode,1,2) == "EHT" then
-        return true
-    end
-    return false
+    local htmode = cfg.config.htmode
+    return cfg_htmode(htmode) and htmode:sub(1,3):upper() == "EHT"
 end
 
 function vif_count(cfg)
@@ -195,12 +182,16 @@ function vif_count(cfg)
 end
 
 function mtwifi_cfg_foreach_vif(cfg, mode, func)
-    if cfg == nil or func == nil then return end
+    if type(cfg) ~= "table" or type(func) ~= "function" then
+        return
+    end
 
-    local vif_num,_,_ = vif_count(cfg)
-    for idx=0,vif_num-1 do
-        local v = cfg.interfaces[string.format("%d", idx)]
-        if v.config.mode and v.config.mode == mode then
+    local vif_num = vif_count(cfg) or 0
+    for idx = 0, vif_num - 1 do
+        local vif_name = string.format("%02d", idx)
+        local v = cfg.interfaces and cfg.interfaces[vif_name] or cfg.interfaces[tostring(idx)]
+        
+        if v and v.config and v.config.mode == mode then
             func(v)
         end
     end
@@ -414,23 +405,23 @@ function mtwifi_cfg_setup(argv)
 
     if cfg.config.band == "2g" then
         WirelessMode = 9 -- PHY_11BGN_MIXED
-        if is_ax_mode(cfg) then
-            WirelessMode = 16 -- PHY_11AX_24G
-        else
+        if is_be_mode(cfg) then
             WirelessMode = 22 -- PHY_11BE_24G
+        elseif is_ax_mode(cfg) then
+            WirelessMode = 16 -- PHY_11AX_24G
         end
     elseif cfg.config.band == "5g" then
         WirelessMode = 15 -- PHY_11VHT_N_MIXED
-        if is_ax_mode(cfg) then
-            WirelessMode = 17 -- PHY_11AX_5G
-        else
+        if is_be_mode(cfg) then
             WirelessMode = 23 -- PHY_11BE_5G
+        elseif is_ax_mode(cfg) then
+            WirelessMode = 17 -- PHY_11AX_5G
         end
     elseif cfg.config.band == "6g" then
-        if is_ax_mode(cfg) then
-            WirelessMode = 18 -- PHY_11AX_6G
-        else
+        if is_be_mode(cfg) then
             WirelessMode = 24 -- PHY_11BE_6G
+        elseif is_ax_mode(cfg) then
+            WirelessMode = 18 -- PHY_11AX_6G
         end
     end
 
@@ -449,12 +440,16 @@ function mtwifi_cfg_setup(argv)
     -- default bw is 20MHz
     dats.HT_BW = 0
     dats.VHT_BW = 0
-    dats.EHT_ApBw = 0
+    if is_be_mode(cfg) then
+        dats.EHT_ApBw = 0
+    end
 
     if bw == "40" then
         dats.HT_BW = 1
         dats.VHT_BW = 0
-        dats.EHT_ApBw = 1
+        if is_be_mode(cfg) then
+            dats.EHT_ApBw = 1
+        end
         if cfg.config.noscan ~= nil and cfg.config.noscan == "1" then
             dats.HT_BSSCoexistence = 0
         else
@@ -463,16 +458,16 @@ function mtwifi_cfg_setup(argv)
     elseif bw == "80" then
         dats.HT_BW = 1
         dats.VHT_BW = 1
-        dats.EHT_ApBw = 2
-    elseif bw == "8080" then
-        dats.HT_BW = 1
-        dats.VHT_BW = 3
-        dats.EHT_ApBw = 0
+        if is_be_mode(cfg) then
+            dats.EHT_ApBw = 2
+        end
     elseif bw == "160" then
         dats.HT_BW = 1
         dats.VHT_BW = 2
-        dats.EHT_ApBw = 3
-    elseif bw == "320" then
+        if is_be_mode(cfg) then
+            dats.EHT_ApBw = 3
+        end
+    elseif bw == "320" and cfg.config.band == "6g" then
         dats.HT_BW = 1
         dats.VHT_BW = 2
         dats.EHT_ApBw = 4
@@ -484,41 +479,63 @@ function mtwifi_cfg_setup(argv)
     dats.ApCliSsid = ""
     dats.ApCliBssid = ""
     dats.ApcliMacAddress = ""
+    dats.ApcliMacAddress1 = ""
     dats.ApCliAuthMode = ""
     dats.ApCliEncrypType = ""
     dats.ApCliWPAPSK = ""
     dats.ApCliPMFMFPC = 0
     dats.ApCliPMFMFPR = 0
     dats.ApCliPMFSHA256 = 0
-    dats.ApCliMuMimoDlEnable = ""
-    dats.ApCliMuMimoUlEnable = ""
-    dats.ApCliMuOfdmaDlEnable = ""
-    dats.ApCliMuOfdmaUlEnable = ""
+    if is_ax_mode(cfg) then
+        dats.ApCliMuMimoDlEnable = ""
+        dats.ApCliMuMimoUlEnable = ""
+        dats.ApCliMuOfdmaDlEnable = ""
+        dats.ApCliMuOfdmaUlEnable = ""
+    elseif is_be_mode(cfg) then
+        dats.ApCliPpMuMimoDlEnable = ""
+        dats.ApCliPpMuMimoUlEnable = ""
+        dats.ApCliPpOfdmaDlEnable = ""
+        dats.ApCliPpOfdmaUlEnable = ""
+        dats.ApcliMloDisable = 0
+        dats.ApcliMldAddr = ""
+    end
 
     for _,v in pairs(cfg.interfaces) do
         if v.config.mode == "sta" then
             if not v.config.disabled then
                 dats.ApCliEnable = 1
                 dats.ApCliNum = 1
-                if not v.config.mlo then
+                if not v.config.mlo and is_be_mode(cfg) then
                     dats.ApcliMloDisable = 1
                 else
                     dats.ApcliMloDisable = 0
                     dats.ApcliMldAddr = v.config.macaddr or ""
                 end
             end
-
-            dats.ApcliMacAddress = v.config.macaddr or ""
             dats.ApCliSsid = v.config.ssid or ""
             dats.ApCliBssid = v.config.bssid or ""
             dats.ApCliWirelessMode = WirelessMode
             dats.ApCliAuthMode = defs.enc2dat[v.config.encryption][1]
             dats.ApCliEncrypType = defs.enc2dat[v.config.encryption][2]
             dats.ApCliWPAPSK = v.config.key or ""
-            dats.ApCliMuMimoDlEnable = v.config.mumimo_dl
-            dats.ApCliMuMimoUlEnable = v.config.mumimo_ul
-            dats.ApCliMuOfdmaDlEnable = v.config.ofdma_dl
-            dats.ApCliMuOfdmaUlEnable = v.config.ofdma_ul
+
+            if cfg.config.band == "2g" then
+                dats.ApcliMacAddress = v.config.macaddr or ""
+            elseif cfg.config.band == "5g" then
+                dats.ApcliMacAddress1 = v.config.macaddr or ""
+            end
+
+            if is_ax_mode(cfg) then
+                dats.ApCliMuMimoDlEnable = v.config.mumimo_dl
+                dats.ApCliMuMimoUlEnable = v.config.mumimo_ul
+                dats.ApCliMuOfdmaDlEnable = v.config.ofdma_dl
+                dats.ApCliMuOfdmaUlEnable = v.config.ofdma_ul
+            elseif is_be_mode(cfg) then
+                dats.ApCliPpMuMimoDlEnable = v.config.mumimo_dl
+                dats.ApCliPpMuMimoUlEnable = v.config.mumimo_ul
+                dats.ApCliPpOfdmaDlEnable = v.config.ofdma_dl
+                dats.ApCliPpOfdmaUlEnable = v.config.ofdma_ul
+            end
 
             if dats.ApCliAuthMode == "OWE" or dats.ApCliAuthMode == "WPA3PSK" then
                 dats.ApCliPMFMFPC = 1
@@ -607,7 +624,8 @@ function mtwifi_cfg_setup(argv)
     -- setup vif cfgs
     local apidx = 1
     for idx = 0,vif_num-1 do
-        local v = cfg.interfaces[string.format("%d", idx)]
+        local vif_name = string.format("%02d", idx)
+        local v = cfg.interfaces and cfg.interfaces[vif_name] or cfg.interfaces[tostring(idx)]
         if v.config.mode == "ap" then
             if not v.config.disabled then
                 set_dat(dats, apidx, "ApEnable", "1")
@@ -622,14 +640,6 @@ function mtwifi_cfg_setup(argv)
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
             set_dat(dats, apidx, "RRMEnable", v.config.ieee80211k)
             set_dat(dats, apidx, "RekeyInterval", v.config.wpa_group_rekey)
-            set_dat(dats, apidx, "MuMimoDlEnable", v.config.mumimo_dl)
-            set_dat(dats, apidx, "MuMimoUlEnable", v.config.mumimo_ul)
-            set_dat(dats, apidx, "MuOfdmaDlEnable", v.config.ofdma_dl)
-            set_dat(dats, apidx, "MuOfdmaUlEnable", v.config.ofdma_ul)
-            set_dat(dats, apidx, "PpMuMimoDlEnable", v.config.mumimo_dl)
-            set_dat(dats, apidx, "PpMuMimoUlEnable", v.config.mumimo_ul)
-            set_dat(dats, apidx, "PpOfdmaDlEnable", v.config.ofdma_dl)
-            set_dat(dats, apidx, "PpOfdmaUlEnable", v.config.ofdma_ul)
             set_dat(dats, apidx, "HT_AMSDU", v.config.amsdu)
             set_dat(dats, apidx, "HT_AutoBA", v.config.autoba)
             set_dat(dats, apidx, "APSDCapable", v.config.uapsd)
@@ -638,15 +648,27 @@ function mtwifi_cfg_setup(argv)
             set_dat(dats, apidx, "DtimPeriod",v.config.dtim_period)
             set_dat(dats, apidx, "WirelessMode", WirelessMode)
 
-            if not v.config.mlo then
-                set_dat(dats, apidx, "MldGroup", v.config.mlo or "0")
-            else
-                set_dat(dats, apidx, "MldGroup", v.config.mlo or "1")
-                set_idx_dat(dats, apidx-1, "MldAddr", v.config.macaddr or "")
-            end
-
-            if is_ax_mode(cfg) or is_be_mode(cfg) then
+            if is_be_mode(cfg) then
+                if not v.config.mlo then
+                    set_dat(dats, apidx, "MldGroup", v.config.mlo or "0")
+                else
+                    set_dat(dats, apidx, "MldGroup", v.config.mlo or "1")
+                    set_idx_dat(dats, apidx-1, "MldAddr", v.config.macaddr or "")
+                end
+                if v.config.twt then
+                    set_dat(dats, apidx, "EHT_ApRestrictedTwt", v.config.twt)
+                end
+		set_dat(dats, apidx, "PpMuMimoDlEnable", v.config.mumimo_dl)
+		set_dat(dats, apidx, "PpMuMimoUlEnable", v.config.mumimo_ul)
+		set_dat(dats, apidx, "PpOfdmaDlEnable", v.config.ofdma_dl)
+		set_dat(dats, apidx, "PpOfdmaUlEnable", v.config.ofdma_ul)
                 set_dat(dats, apidx, "HT_BAWinSize", 1024)
+            elseif is_ax_mode(cfg) then
+		set_dat(dats, apidx, "MuMimoDlEnable", v.config.mumimo_dl)
+		set_dat(dats, apidx, "MuMimoUlEnable", v.config.mumimo_ul)
+		set_dat(dats, apidx, "MuOfdmaDlEnable", v.config.ofdma_dl)
+		set_dat(dats, apidx, "MuOfdmaUlEnable", v.config.ofdma_ul)
+                set_dat(dats, apidx, "HT_BAWinSize", 256)
             else
                 set_dat(dats, apidx, "HT_BAWinSize", 64)
             end
