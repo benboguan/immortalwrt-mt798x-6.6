@@ -1,0 +1,38 @@
+--- a/scripts/netifd-wireless.sh
++++ b/scripts/netifd-wireless.sh
+@@ -221,11 +221,10 @@ wireless_vif_parse_encryption() {
+ 	case "$encryption" in
+ 		*tkip+aes|*tkip+ccmp|*aes+tkip|*ccmp+tkip) wpa_cipher="CCMP TKIP";;
+ 		*ccmp256) wpa_cipher="CCMP-256";;
++		*gcmp | *sae-ext-key) wpa_cipher="GCMP";;
+ 		*aes|*ccmp) wpa_cipher="CCMP";;
+ 		*tkip) wpa_cipher="TKIP";;
+-		*gcmp256) wpa_cipher="GCMP-256";;
++		*gcmp256 | wpa3-192*) wpa_cipher="GCMP-256";;
+-		*gcmp) wpa_cipher="GCMP";;
+-		wpa3-192*) wpa_cipher="GCMP-256";;
+ 	esac
+ 
+ 	# 802.11n requires CCMP for WPA
+@@ -237,7 +236,7 @@ wireless_vif_parse_encryption() {
+ 	# wpa2/tkip+aes     => WPA2 RADIUS, CCMP+TKIP
+ 
+ 	case "$encryption" in
+-		wpa2*|wpa3*|*psk2*|psk3*|sae*|owe*)
++		wpa2*|wpa3*|*psk2*|psk3*|*sae*|owe*)
+ 			wpa=2
+ 		;;
+ 		wpa*mixed*|*psk*mixed*)
+@@ -269,6 +268,12 @@ wireless_vif_parse_encryption() {
+ 		psk3-mixed*|sae-mixed)
+ 			auth_type=psk-sae
+ 		;;
++		sae-ext-key)
++			auth_type=sae-ext-key
++		;;
++		ft-sae-ext-key)
++			auth_type=ft-sae-ext-key
++		;;
+ 		psk3*|sae*)
+ 			auth_type=sae
+ 		;;
