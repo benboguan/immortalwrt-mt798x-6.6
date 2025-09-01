@@ -3481,7 +3481,7 @@ void os_system_tx_queue_dump(PNET_DEV dev)
 	struct netdev_queue *txq;
 	struct Qdisc *q;
 	struct sk_buff *skb;
-	int i = 0, j = 0;
+	int i = 0, j = 0, k = 0;
 	struct page *p;
 	size_t page_size;
 	int len;
@@ -3499,6 +3499,13 @@ void os_system_tx_queue_dump(PNET_DEV dev)
 			if (skb->head) {
 				p = virt_to_head_page(skb->head);
 				page_size = PAGE_SIZE << compound_order(p);
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u, dtor:%u\n", __func__, k++, p,
+					OS_PAGE_REF(p), page_size, (unsigned int) compound_order(p), (unsigned int) p->compound_dtor);
+#else
+				printk("%s(): index:%d, page:%p ,rfcnt:%d, page size:%zu, order:%u\n", __func__, k++, p,OS_PAGE_REF(p),
+					page_size, (unsigned int) compound_order(p));
+#endif
 			}
 			skb = skb->next;
 		}

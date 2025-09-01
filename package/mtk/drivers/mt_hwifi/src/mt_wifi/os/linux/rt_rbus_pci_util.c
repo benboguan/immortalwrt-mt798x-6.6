@@ -112,10 +112,18 @@ ra_dma_addr_t linux_pci_map_single(void *pDev, void *ptr, size_t size, int sd_id
 	struct device *pdev = (struct device *)pDev;
 
 	if (direction == RTMP_PCI_DMA_TODEVICE)
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+		direction = PCI_DMA_TODEVICE;
+#else
 		direction = DMA_TO_DEVICE;
+#endif
 
 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+		direction = PCI_DMA_FROMDEVICE;
+#else
 		direction = DMA_FROM_DEVICE;
+#endif
 
 	/*
 	 *	------ Porting Information ------
@@ -146,10 +154,18 @@ void linux_pci_unmap_single(void *pDev, ra_dma_addr_t radma_addr, size_t size, i
 	struct device *pdev = (struct device *)pDev;
 
 	if (direction == RTMP_PCI_DMA_TODEVICE)
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+		direction = PCI_DMA_TODEVICE;
+#else
 		direction = DMA_TO_DEVICE;
+#endif
 
 	if (direction == RTMP_PCI_DMA_FROMDEVICE)
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+		direction = PCI_DMA_FROMDEVICE;
+#else
 		direction = DMA_FROM_DEVICE;
+#endif
 
 	if (size > 0)
 		dma_unmap_single(pdev, DmaAddr, size, direction);

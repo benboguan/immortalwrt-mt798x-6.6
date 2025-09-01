@@ -6203,7 +6203,7 @@ NDIS_STATUS	RTMPSetProfileParameters(
 			/*NoForwardingBTNBSSID*/
 			if (RTMPGetKeyParameter("NoForwardingBTNBSSID", tmpbuf, 10, pBuffer, TRUE)) {
 				if (os_str_tol(tmpbuf, 0, 10) != 0) /*Enable*/
-					pAd->ApCfg.IsolateInterStaTrafficBTNBSSID = FALSE;
+					pAd->ApCfg.IsolateInterStaTrafficBTNBSSID = TRUE;
 				else /*Disable*/
 					pAd->ApCfg.IsolateInterStaTrafficBTNBSSID = FALSE;
 

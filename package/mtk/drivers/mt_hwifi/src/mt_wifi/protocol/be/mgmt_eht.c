@@ -56,9 +56,9 @@ uint8_t *eht_build_multi_link_ie(
 		}
 	} else {
 		struct query_mld_info mld_query = {0};
-                if (wdev->ap_mlo_disable) {
-                       return pos; 
-                }
+		if (wdev->ap_mlo_disable) {
+			return pos; 
+		}
 
 		mld_query.query_type = ml_type;
 		mld_query.ie.mld_sta_idx = mld_sta_idx;

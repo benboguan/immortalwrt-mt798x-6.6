@@ -260,7 +260,11 @@ UCHAR get_cent_ch_by_htinfo(
 	if ((ht_op->ControlChan > 2) &&
 		(ht_op->AddHtInfo.ExtChanOffset == EXTCHA_BELOW) &&
 		(ht_cap->HtCapInfo.ChannelWidth == BW_40))
-		cent_ch = ht_op->ControlChan - 2;
+		if (ht_op->ControlChan == 14)
+			cent_ch = ht_op->ControlChan - 1;
+		else
+			cent_ch = ht_op->ControlChan - 2;
+		//cent_ch = ht_op->ControlChan - 2;
 	else if ((ht_op->AddHtInfo.ExtChanOffset == EXTCHA_ABOVE) &&
 			 (ht_cap->HtCapInfo.ChannelWidth == BW_40))
 		cent_ch = ht_op->ControlChan + 2;

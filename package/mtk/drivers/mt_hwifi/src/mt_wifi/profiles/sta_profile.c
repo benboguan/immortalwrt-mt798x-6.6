@@ -358,6 +358,46 @@ void read_sta_eht_config_from_file(
 		}
 	}
 
+	/* ApcliMldAddr */
+	if (RTMPGetKeyParameter("ApcliMldAddr", tmpbuf, 25, pBuffer, TRUE)) {
+		INT j, mac_len;
+		UCHAR Address[MAC_ADDR_LEN];
+
+		/* Mac address acceptable format 01:02:03:04:05:06 (len=17) */
+		mac_len = strlen(tmpbuf);
+		if (mac_len != 17)
+			MTWF_PRINT("%s(): invalid length (%d)\n", __func__, mac_len);
+		else if (strcmp(tmpbuf, "00:00:00:00:00:00") == 0)
+			MTWF_PRINT("%s(): invalid mac setting\n", __func__);
+		else {
+			for (idx = 0, macptr = rstrtok(tmpbuf, ";");
+				(macptr && idx < pAd->MaxMSTANum);
+				macptr = rstrtok(NULL, ";"), idx++) {
+				wdev = &pAd->StaCfg[idx].wdev;
+				if (kstrtol(macptr, 10, &value))
+					MTWF_PRINT("I/F STA (%s%d): ApcliMldAddr error input(=%s)\n",
+						INF_MBSSID_DEV_NAME,
+						idx,
+						macptr);
+				else {
+					for (j = 0; j < MAC_ADDR_LEN; j++)
+						AtoH((tmpbuf + (j*3)), &Address[j], 1);
+
+					if (wdev && !IS_APCLI_DISABLE_MLO(wdev)) {
+						/* MLD Mac address which registers to STA Manager */
+						COPY_MAC_ADDR(wdev->mld_dev->mld_addr, Address);
+						MTWF_PRINT("I/F STA (%s%d) ==> ApcliMldAddr = %p\n",
+							INF_MBSSID_DEV_NAME, idx, wdev->mld_dev->mld_addr);
+					} else {
+						COPY_MAC_ADDR(&pAd->StaCfg[idx].wdev.if_addr[0], Address);
+						MTWF_PRINT("I/F STA (%s%d) ==> ApcliMldAddr = %p\n",
+							INF_MBSSID_DEV_NAME, idx, &pAd->StaCfg[idx].wdev.if_addr[0]);
+					}
+				}
+			}
+		}
+	}
+
 }
 
 #endif /* DOT11_EHT_BE */
