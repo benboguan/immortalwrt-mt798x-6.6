@@ -65,16 +65,23 @@ mtwifi_defs.vif_cfgs = {
     ["MuMimoUlEnable"] = "0",
     ["MuOfdmaDlEnable"] = "1",
     ["MuOfdmaUlEnable"] = "1",
+    ["PpMuMimoDlEnable"] = "0",
+    ["PpMuMimoUlEnable"] = "0",
+    ["PpOfdmaDlEnable"] = "1",
+    ["PpOfdmaUlEnable"] = "1",
     ["DLSCapable"] = "0",
     ["WdsEnable"] = "0",
     ["WscConfMode"] = "0",
     ["TxRate"] = "0",
     ["DtimPeriod"] = "1",
+    ["MldGroup"] = "0",
 }
 
 mtwifi_defs.vif_cfgs_idx = {
     ["WPAPSK"] = "12345678",
     ["SSID"] = "",
+    ["MacAddress"] = "",
+    ["MldAddr"] = "",
     ["RADIUS_Key"] = "",
 }
 
@@ -87,11 +94,13 @@ mtwifi_defs.chip_cfgs = {
     -- uci config = dat config, default value
     ["beacon_int"] = { "BeaconPeriod" , "100"},
     ["whnat"] = { "WHNAT", "1"},
+    ["mlr"] = { "MLREnable", "1"},
 }
 
 mtwifi_defs.reinstall_cfgs = {
-    "BssidNum", "WHNAT", "E2pAccessMode",
-    "HT_RxStream", "HT_TxStream", "WdsEnable"
+    "BssidNum", "WHNAT", "MLREnable", "E2pAccessMode",
+    "TestModeEn", "RxEnhanceEn", "ThreeWireFunctionEnable",
+    "ApCliNum", "HT_RxStream", "HT_TxStream", "ApEnable"
 }
 
 mtwifi_defs.iwpriv_ap_cfgs = {
@@ -103,17 +112,41 @@ mtwifi_defs.iwpriv_ap_cfgs = {
 mtwifi_defs.enc2dat = {
     -- enc = AuthMode, EncrypType
     ["none"] = {"OPEN", "NONE"},
-    ["sae"] = {"WPA3PSK", "AES"},
-    ["sae-mixed"] = {"WPA2PSKWPA3PSK", "AES"},
+    ["sae"] = {"WPA3PSK", "NONE"},
+    ["sae+ccmp"] = {"WPA3PSK", "AES"},
+    ["sae+ccmp256"] = {"WPA3PSK", "CCMP256"},
+    ["sae+gcmp"] = {"WPA3PSK", "AES"},
+    ["sae+gcmp256"] = {"WPA3PSK", "GCMP256"},
+    ["sae-mixed"] = {"WPA2PSKWPA3PSK", "NONE"},
+    ["sae-mixed+ccmp"] = {"WPA2PSKWPA3PSK", "AES"},
+    ["sae-mixed+ccmp256"] = {"WPA2PSKWPA3PSK", "CCMP256"},
+    ["sae-mixed+gcmp"] = {"WPA2PSKWPA3PSK", "AES"},
+    ["sae-mixed+gcmp256"] = {"WPA2PSKWPA3PSK", "GCMP256"},
+    ["sae-ext+gcmp256"] = {"AKM24", "GCMP256"},
+    ["ft-sae-ext+gcmp256"] = {"AKM25", "GCMP256"},
+    ["wpa+tkip"] = {"WPA", "TKIP"},
+    ["wpa+tkip+ccmp"] = {"WPA", "TKIPAES"},
+    ["wpa+ccmp"] = {"WPA", "AES"},
+    ["wpa2+tkip"] = {"WPA2", "TKIP"},
+    ["wpa2+tkip+ccmp"] = {"WPA2", "TKIPAES"},
+    ["wpa2+ccmp"] = {"WPA2", "AES"},
+    ["wpa3"] = {"WPA3", "AES"},
+    ["wpa3-192"] = {"WPA3-192", "GCMP256"},
+    -- In the mt_wifi driver, WPA3 is equivalent to WPA2 with PMF and SHA256 enabled, so WPA2MIX is chosen.
+    -- ["wpa3-mixed"] = {"WPA3WPA2", "AES"},
+    ["wpa3-mixed"] = {"WPA2MIX", "AES"},
+    ["wpa-mixed+tkip+ccmp"] = {"WPA1WPA2", "TKIPAES"},
+    ["wpa-mixed+ccmp"] = {"WPA1WPA2", "AES"},
+    ["wpa-mixed+tkip"] = {"WPA1WPA2", "TKIP"},
     ["psk2+tkip+ccmp"] = {"WPA2PSK", "TKIPAES"},
     ["psk2+tkip+aes"] = {"WPA2PSK", "TKIPAES"},
     ["psk2+tkip"] = {"WPA2PSK", "TKIP"},
     ["psk2+ccmp"] = {"WPA2PSK", "AES"},
     ["psk2+aes"] = {"WPA2PSK", "AES"},
     ["psk2"] = {"WPA2PSK", "AES"},
-    ["psk+tkip+ccmp"] = {"WPAPSK", "AES"},
-    ["psk+tkip+aes"] = {"WPAPSK", "AES"},
-    ["psk+tkip"] = {"WPAPSK", "AES"},
+    ["psk+tkip+ccmp"] = {"WPAPSK", "TKIPAES"},
+    ["psk+tkip+aes"] = {"WPAPSK", "TKIPAES"},
+    ["psk+tkip"] = {"WPAPSK", "TKIP"},
     ["psk+ccmp"] = {"WPAPSK", "AES"},
     ["psk+aes"] = {"WPAPSK", "AES"},
     ["psk"] = {"WPAPSK", "AES"},

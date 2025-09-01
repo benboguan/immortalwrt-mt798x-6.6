@@ -171,7 +171,7 @@ function is_be_mode(cfg)
     if not cfg.config.htmode then
         return false
     end
-    if string.sub(cfg.config.htmode,1,2) == "BE" then
+    if string.sub(cfg.config.htmode,1,2) == "EHT" then
         return true
     end
     return false
@@ -397,8 +397,12 @@ function mtwifi_cfg_setup(argv)
         nixio.syslog("err", "mtwifi-cfg: only support one apcli vif!")
     end
 
-        dats.BssidNum = 4
-    
+    dats.BssidNum = 4
+    -- if bssid_num > 0 then
+    --    dats.BssidNum = bssid_num
+    -- else
+    --    dats.BssidNum = 1
+    -- end
 
     -- setup wireless mode
     if type(cfg.config.htmode) ~= type("") then
@@ -409,27 +413,26 @@ function mtwifi_cfg_setup(argv)
     local WirelessMode
 
     if cfg.config.band == "2g" then
-    WirelessMode = 9  -- PHY_11BGN_MIXED
-    if is_ax_mode(cfg) then
-        WirelessMode = 16  -- PHY_11AX_24G
-    else
-        WirelessMode = 22 -- PHY_11BE_24G
+        WirelessMode = 9 -- PHY_11BGN_MIXED
+        if is_ax_mode(cfg) then
+            WirelessMode = 16 -- PHY_11AX_24G
+        else
+            WirelessMode = 22 -- PHY_11BE_24G
+        end
+    elseif cfg.config.band == "5g" then
+        WirelessMode = 15 -- PHY_11VHT_N_MIXED
+        if is_ax_mode(cfg) then
+            WirelessMode = 17 -- PHY_11AX_5G
+        else
+            WirelessMode = 23 -- PHY_11BE_5G
+        end
+    elseif cfg.config.band == "6g" then
+        if is_ax_mode(cfg) then
+            WirelessMode = 18 -- PHY_11AX_6G
+        else
+            WirelessMode = 24 -- PHY_11BE_6G
+        end
     end
-elseif cfg.config.band == "5g" then
-    WirelessMode = 15 -- PHY_11VHT_N_MIXED
-    if is_ax_mode(cfg) then
-        WirelessMode = 17 -- PHY_11AX_5G
-    else
-        WirelessMode = 23 -- PHY_11BE_5G
-    end
-elseif cfg.config.band == "6g" then
-    if is_ax_mode(cfg) then
-        WirelessMode = 18 -- PHY_11AX_6G
-    else
-        WirelessMode = 24 -- PHY_11BE_6G
-    end
-end
-
 
     if not WirelessMode then
         nixio.syslog("err", "mtwifi-cfg: invalid wireless mode!")
@@ -446,10 +449,12 @@ end
     -- default bw is 20MHz
     dats.HT_BW = 0
     dats.VHT_BW = 0
+    dats.EHT_ApBw = 0
 
     if bw == "40" then
         dats.HT_BW = 1
         dats.VHT_BW = 0
+        dats.EHT_ApBw = 1
         if cfg.config.noscan ~= nil and cfg.config.noscan == "1" then
             dats.HT_BSSCoexistence = 0
         else
@@ -458,32 +463,62 @@ end
     elseif bw == "80" then
         dats.HT_BW = 1
         dats.VHT_BW = 1
+        dats.EHT_ApBw = 2
+    elseif bw == "8080" then
+        dats.HT_BW = 1
+        dats.VHT_BW = 3
+        dats.EHT_ApBw = 0
     elseif bw == "160" then
         dats.HT_BW = 1
         dats.VHT_BW = 2
+        dats.EHT_ApBw = 3
+    elseif bw == "320" then
+        dats.HT_BW = 1
+        dats.VHT_BW = 2
+        dats.EHT_ApBw = 4
     end
 
     -- setup apcli
     dats.ApCliEnable = 0
+    dats.ApCliNum = 0
     dats.ApCliSsid = ""
     dats.ApCliBssid = ""
+    dats.ApcliMacAddress = ""
     dats.ApCliAuthMode = ""
     dats.ApCliEncrypType = ""
     dats.ApCliWPAPSK = ""
     dats.ApCliPMFMFPC = 0
     dats.ApCliPMFMFPR = 0
     dats.ApCliPMFSHA256 = 0
+    dats.ApCliMuMimoDlEnable = ""
+    dats.ApCliMuMimoUlEnable = ""
+    dats.ApCliMuOfdmaDlEnable = ""
+    dats.ApCliMuOfdmaUlEnable = ""
 
     for _,v in pairs(cfg.interfaces) do
         if v.config.mode == "sta" then
             if not v.config.disabled then
                 dats.ApCliEnable = 1
+                dats.ApCliNum = 1
+                if not v.config.mlo then
+                    dats.ApcliMloDisable = 1
+                else
+                    dats.ApcliMloDisable = 0
+                    dats.ApcliMldAddr = v.config.macaddr or ""
+                end
             end
+
+            dats.ApcliMacAddress = v.config.macaddr or ""
             dats.ApCliSsid = v.config.ssid or ""
             dats.ApCliBssid = v.config.bssid or ""
+            dats.ApCliWirelessMode = WirelessMode
             dats.ApCliAuthMode = defs.enc2dat[v.config.encryption][1]
             dats.ApCliEncrypType = defs.enc2dat[v.config.encryption][2]
             dats.ApCliWPAPSK = v.config.key or ""
+            dats.ApCliMuMimoDlEnable = v.config.mumimo_dl
+            dats.ApCliMuMimoUlEnable = v.config.mumimo_ul
+            dats.ApCliMuOfdmaDlEnable = v.config.ofdma_dl
+            dats.ApCliMuOfdmaUlEnable = v.config.ofdma_ul
 
             if dats.ApCliAuthMode == "OWE" or dats.ApCliAuthMode == "WPA3PSK" then
                 dats.ApCliPMFMFPC = 1
@@ -537,7 +572,7 @@ end
         dats.ITxBfEn = 0
     end
 
-    if (is_ax_mode(cfg) or is_be_mode(cfg)) and cfg.config.twt then
+    if is_ax_mode(cfg) and cfg.config.twt then
         dats.TWTSupport = cfg.config.twt
     else
         dats.TWTSupport = 0
@@ -572,11 +607,17 @@ end
     -- setup vif cfgs
     local apidx = 1
     for idx = 0,vif_num-1 do
-        v = cfg.interfaces[string.format("%d", idx)]
+        local v = cfg.interfaces[string.format("%d", idx)]
         if v.config.mode == "ap" then
+            if not v.config.disabled then
+                set_dat(dats, apidx, "ApEnable", "1")
+            else
+                set_dat(dats, apidx, "ApEnable", "0")
+            end
             set_idx_dat(dats, apidx, "SSID", v.config.ssid)
             set_idx_dat(dats, apidx, "WPAPSK", v.config.key or "")
-            set_dat(dats, apidx, "NoForwarding", 0)
+            set_idx_dat(dats, apidx, "MacAddress", v.config.macaddr or "")
+            set_dat(dats, apidx, "NoForwarding", v.config.isolate or "0")
             set_dat(dats, apidx, "HideSSID", v.config.hidden)
             set_dat(dats, apidx, "WmmCapable", v.config.wmm)
             set_dat(dats, apidx, "RRMEnable", v.config.ieee80211k)
@@ -585,6 +626,10 @@ end
             set_dat(dats, apidx, "MuMimoUlEnable", v.config.mumimo_ul)
             set_dat(dats, apidx, "MuOfdmaDlEnable", v.config.ofdma_dl)
             set_dat(dats, apidx, "MuOfdmaUlEnable", v.config.ofdma_ul)
+            set_dat(dats, apidx, "PpMuMimoDlEnable", v.config.mumimo_dl)
+            set_dat(dats, apidx, "PpMuMimoUlEnable", v.config.mumimo_ul)
+            set_dat(dats, apidx, "PpOfdmaDlEnable", v.config.ofdma_dl)
+            set_dat(dats, apidx, "PpOfdmaUlEnable", v.config.ofdma_ul)
             set_dat(dats, apidx, "HT_AMSDU", v.config.amsdu)
             set_dat(dats, apidx, "HT_AutoBA", v.config.autoba)
             set_dat(dats, apidx, "APSDCapable", v.config.uapsd)
@@ -592,6 +637,13 @@ end
             set_dat(dats, apidx, "FragThreshold",v.config.frag)
             set_dat(dats, apidx, "DtimPeriod",v.config.dtim_period)
             set_dat(dats, apidx, "WirelessMode", WirelessMode)
+
+            if not v.config.mlo then
+                set_dat(dats, apidx, "MldGroup", v.config.mlo or "0")
+            else
+                set_dat(dats, apidx, "MldGroup", v.config.mlo or "1")
+                set_idx_dat(dats, apidx-1, "MldAddr", v.config.macaddr or "")
+            end
 
             if is_ax_mode(cfg) or is_be_mode(cfg) then
                 set_dat(dats, apidx, "HT_BAWinSize", 1024)
