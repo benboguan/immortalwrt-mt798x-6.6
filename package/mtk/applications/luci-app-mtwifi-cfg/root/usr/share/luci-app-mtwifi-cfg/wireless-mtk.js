@@ -327,10 +327,11 @@ function add_dep_he_feature(o) {
 }
 
 function add_dep_be_feature(o) {
-        o.depends({'_freq': 'EHT20', '!contains': true});
-        o.depends({'_freq': 'EHT40', '!contains': true});
-        o.depends({'_freq': 'EHT80', '!contains': true});
-        o.depends({'_freq': 'EHT160', '!contains': true});
+	o.depends({'_freq': 'EHT20', '!contains': true});
+	o.depends({'_freq': 'EHT40', '!contains': true});
+	o.depends({'_freq': 'EHT80', '!contains': true});
+	o.depends({'_freq': 'EHT160', '!contains': true});
+	o.depends({'_freq': 'EHT320', '!contains': true});
 }
 
 var CBIWifiFrequencyValue = form.Value.extend({
@@ -407,36 +408,37 @@ var CBIWifiFrequencyValue = form.Value.extend({
 					'HE20', '20 MHz', htmodelist.HE20
 				],
 				'be': [
-                                'EHT160', '160 MHz', htmodelist.EHT160,                              		'EHT80', '80 MHz',  htmodelist.EHT80, 
-                                'EHT40', '40 MHz',  htmodelist.EHT40, 
-                                'EHT20', '20 MHz',  htmodelist.EHT20 
-                                ]
+					'EHT320', '320 MHz', htmodelist.EHT320,
+					'EHT160', '160 MHz', htmodelist.EHT160,
+					'EHT80', '80 MHz',  htmodelist.EHT80, 
+					'EHT40', '40 MHz',  htmodelist.EHT40, 
+					'EHT20', '20 MHz',  htmodelist.EHT20 
+				]
 			};
 
 			this.bands = {
 				'': [
-					'2g', '2.4 GHz', this.channels['2g'].length > 3,
-					'5g', '5 GHz', this.channels['5g'].length > 3,
+					'2g', '2.4 GHz', { available: this.channels['2g'].length > 3 },
+					'5g', '5 GHz', { available: this.channels['5g'].length > 3 },
 					'60g', '60 GHz', this.channels['60g'].length > 0
 				],
 				'n': [
-					'2g', '2.4 GHz', this.channels['2g'].length > 3,
-					'5g', '5 GHz', this.channels['5g'].length > 3
+					'2g', '2.4 GHz', { available: this.channels['2g'].length > 3 },
+					'5g', '5 GHz', { available: this.channels['5g'].length > 3 }
 				],
 				'ac': [
-					'5g', '5 GHz', true
+					'5g', '5 GHz', { available: true }
 				],
 				'ax': [
-					'2g', '2.4 GHz', this.channels['2g'].length > 3,
-					'5g', '5 GHz', this.channels['5g'].length > 3,
-					'6g', '6 GHz', this.channels['6g'].length > 3,
+					'2g', '2.4 GHz', { available: this.channels['2g'].length > 3 },
+					'5g', '5 GHz', { available: this.channels['5g'].length > 3 },
+					'6g', '6 GHz', this.channels['6g'].length > 3
 				],
 				'be': [
-                                        '2g', '2.4 GHz', this.channels['2g'].length > 3,
-                                        '5g', '5 GHz', this.channels['5g'].length > 3,
-                                        '6g', '6 GHz', this.channels['6g'].length > 3,
-                                ]
-
+					'2g', '2.4 GHz', { available: this.channels['2g'].length > 3 },
+					'5g', '5 GHz', { available: this.channels['5g'].length > 3 },
+					'6g', '6 GHz', this.channels['6g'].length > 3
+				]
 			};
 		}, this));
 	},
@@ -500,8 +502,8 @@ var CBIWifiFrequencyValue = form.Value.extend({
 
 		this.setValues(mode, this.modes);
 
-		if (/EHT20|EHT40|EHT80|EHT160/.test(htval))
-                        mode.value = 'be';
+		if (/EHT20|EHT40|EHT80|EHT160|EHT320/.test(htval))
+			mode.value = 'be';
 		else if (/HE20|HE40|HE80|HE160/.test(htval))
 			mode.value = 'ax';
 		else if (/VHT20|VHT40|VHT80|VHT160/.test(htval))
@@ -516,10 +518,7 @@ var CBIWifiFrequencyValue = form.Value.extend({
 		if (hwval != null) {
 			this.useBandOption = false;
 
-			if (/a/.test(hwval))
-				band.value = '5g';
-			else
-				band.value = '2g';
+			band.value = /a/.test(hwval) ? '5g': '2g';
 		}
 		else {
 			this.useBandOption = true;
@@ -624,7 +623,7 @@ var CBIWifiTxPowerValue = form.ListValue.extend({
 			this.value('', _('driver default'));
 
 			for (var i = 0; i < pwrlist.length; i++)
-				this.value(pwrlist[i].dbm, '%d dBm (%d mW)'.format(pwrlist[i].dbm, pwrlist[i].mw));
+				this.value(pwrlist[i].mw, '%d %'.format(pwrlist[i].mw));
 
 			return form.ListValue.prototype.load.apply(this, [section_id]);
 		}, this));
@@ -1041,6 +1040,9 @@ return view.extend({
 					o.rmempty = true;
 				}
 				else if (hwtype == 'mtwifi') {
+					o = ss.taboption('general', CBIWifiTxPowerValue, 'txpower', _('Maximum transmit power'), _('Specifies the maximum transmit power the wireless radio may use. Depending on regulatory requirements and wireless usage, the actual transmit power may be reduced by the driver.'));
+					o.wifiNetwork = radioNet;
+
 					o = ss.taboption('advanced', CBIWifiCountryValue, 'country', _('Country Code'));
 					o.wifiNetwork = radioNet;
 
@@ -1055,6 +1057,12 @@ return view.extend({
 						add_dep_vht_feature(o);
 						add_dep_be_feature(o);
 						o.default = o.disabled;
+						o.rmempty = false;
+
+						o = ss.taboption('advanced', form.Flag, 'mlr', _('Wireless MLR'));
+						add_dep_be_feature(o);
+						add_dep_he_feature(o);
+						o.default = o.enabled;
 						o.rmempty = false;
 
 						o = ss.taboption('advanced', form.ListValue, 'twt', _('Target Wake Time'));
@@ -1077,10 +1085,6 @@ return view.extend({
 						o.datatype = 'range(20,999)';
 						o.placeholder = 100;
 					}
-
-					o = ss.taboption('advanced', form.Value, 'txpower', _('Maximum transmit power'));
-					o.datatype = 'range(1,100)';
-					o.placeholder = 100;
 				}
 
 				o = s.option(form.SectionValue, '_device', form.NamedSection, radioNet.getName(), 'wifi-iface', _('Interface Configuration'));
@@ -1094,10 +1098,8 @@ return view.extend({
 
 				o = ss.taboption('general', form.ListValue, 'mode', _('Mode'));
 				if (hwtype == 'mtwifi') {
-					if (ifmode == 'ap')
-						o.value('ap', _('Access Point'));
-					else if (ifmode == 'sta')
-						o.value('sta', _('Client'));
+					o.value('ap', _('Access Point'));
+					o.value('sta', _('Client'));
 				} else {
 					o.value('ap', _('Access Point'));
 					o.value('sta', _('Client'));
@@ -1328,6 +1330,11 @@ return view.extend({
 						}, this));
 					};
 
+					o = ss.taboption('general', form.Flag, 'mlo', _('MLO Group'));
+					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
+					o.default = o.disabled;
+
 					o = ss.taboption('general', form.Flag, 'hidden', _('Hide <abbr title="Extended Service Set Identifier">ESSID</abbr>'), _('Where the ESSID is hidden, clients may fail to roam and airtime efficiency may be significantly reduced.'));
 					o.depends('mode', 'ap');
 
@@ -1337,6 +1344,13 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Flag, 'isolate', _('Isolate Clients'), _('Prevents client-to-client communication'));
 					o.depends('mode', 'ap');
+
+					const macaddr = uci.get('wireless', radioNet.getName(), 'macaddr');
+					o = ss.taboption('advanced', form.Value, 'macaddr', _('MAC address'), _('Override default MAC address - the range of usable addresses might be limited by the driver'));
+					o.value('', _('driver default (%s)').format(!macaddr ? radioNet.getActiveBSSID() : _('no override')));
+					o.datatype = "or(macaddr)";
+					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 
 					o = ss.taboption('advanced', form.Flag, 'ieee80211k', _('802.11k'), _('Enables The 802.11k standard provides information to discover the best available access point'));
 					o.default = o.enabled;
@@ -1350,13 +1364,13 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Value, 'kicklow', _('Kick low RSSI station threshold'), _('dBm'));
 					o.optional    = true;
-					o.placeholder = 0;
+					o.placeholder = -75;
 					o.datatype = 'range(-100,0)';
 					o.depends('mode', 'ap');
 
 					o = ss.taboption('advanced', form.Value, 'assocthres', _('Station associate threshold'), _('dBm'));
 					o.optional    = true;
-					o.placeholder = 0;
+					o.placeholder = -65;
 					o.datatype    = 'range(-100,0)';
 					o.depends('mode', 'ap');
 
@@ -1378,18 +1392,22 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Flag, 'mumimo_dl', _('MU-MIMO DL'));
 					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 					o.default = o.disabled;
 
 					o = ss.taboption('advanced', form.Flag, 'mumimo_ul', _('MU-MIMO UL'));
 					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 					o.default = o.disabled;
 
 					o = ss.taboption('advanced', form.Flag, 'ofdma_dl', _('OFDMA DL'));
 					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 					o.default = o.enabled;
 
 					o = ss.taboption('advanced', form.Flag, 'ofdma_ul', _('OFDMA UL'));
 					o.depends('mode', 'ap');
+					o.depends('mode', 'sta');
 					o.default = o.enabled;
 
 					o = ss.taboption('advanced', form.Flag, 'amsdu', _('A-MSDU'));
@@ -1441,9 +1459,13 @@ return view.extend({
 				o.depends('encryption', 'wpa2');
 				o.depends('encryption', 'wpa3');
 				o.depends('encryption', 'wpa3-mixed');
+				o.depends('encryption', 'wpa3-192');
+				o.depends('encryption', 'psk');
 				o.depends('encryption', 'psk2');
+				o.depends('encryption', 'sae');
 				o.depends('encryption', 'wpa-mixed');
 				o.depends('encryption', 'psk-mixed');
+				o.depends('encryption', 'sae-mixed');
 				if (hwtype != 'mtwifi') {
 					o.depends('encryption', 'psk');
 				}

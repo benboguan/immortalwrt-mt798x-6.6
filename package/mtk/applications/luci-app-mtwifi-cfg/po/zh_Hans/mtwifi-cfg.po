@@ -34,6 +34,12 @@ msgstr "弱信号接入阈值"
 msgid "Wireless HWNAT"
 msgstr "无线硬件加速"
 
+msgid "Wireless MLR"
+msgstr "无线 MLR"
+
+msgid "MLO Group"
+msgstr "MLO 组播"
+
 msgid "Wireless configuration error"
 msgstr "无线网络设置错误"
 
