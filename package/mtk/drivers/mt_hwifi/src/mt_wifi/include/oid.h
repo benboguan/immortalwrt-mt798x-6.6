@@ -116,6 +116,7 @@ enum oid_bw {
 /* */
 #define	OID_GET_SET_TOGGLE			0x8000
 #define	OID_GET_SET_FROM_UI			0x4000
+#define OID_GET_CHANNEL_LIST					0x09C0
 
 #define	OID_802_11_NETWORK_TYPES_SUPPORTED			0x0103
 #define	OID_802_11_NETWORK_TYPE_IN_USE				0x0104
@@ -1111,13 +1112,13 @@ typedef struct GNU_PACKED _channel_info {
 } CHANNEL_INFO, *PCHANNEL_INFO;
 
 typedef struct _channel_info_basic {
-        UINT8 channel;
-        UINT8 channel_idx;
+	UINT8 channel;
+	UINT8 channel_idx;
 } CHANNEL_INFO_BASIC, *PCHANNEL_INFO_BASIC;
 
 struct channel_list_basic {
-        CHANNEL_INFO_BASIC ChList[MAX_NUM_OF_CHANNELS];
-        UINT8 ChListNum;
+	CHANNEL_INFO_BASIC ChList[MAX_NUM_OF_CHANNELS];
+	UINT8 ChListNum;
 };
 
 struct msg_channel_list {
@@ -1274,13 +1275,14 @@ typedef struct _RT_802_11_MAC_ENTRY {
 	SHORT SoundingRespSnr[3];			/* SNR from Sounding Response. Units=0.25 dB. 22 dB offset removed */
 	/*	SHORT TxPER;	*/					/* TX PER over the last second. Percent */
 	/*	SHORT reserved;*/
-	UINT32					EncryMode;
-	UINT32					AuthMode;
+	UINT32 InactiveTime;
+	UINT32 EncryMode;
+	UINT32 AuthMode;
 } RT_802_11_MAC_ENTRY, *PRT_802_11_MAC_ENTRY;
 
 typedef struct _RT_802_11_MAC_TABLE {
-       ULONG Num;
-       RT_802_11_MAC_ENTRY Entry[544];
+	ULONG Num;
+	RT_802_11_MAC_ENTRY Entry[544];
 } RT_802_11_MAC_TABLE, *PRT_802_11_MAC_TABLE;
 
 #ifdef DOT11_N_SUPPORT
@@ -1729,6 +1731,7 @@ struct security_type_new {
 	UINT32 auth_mode;
 	UINT32 encryp_type;
 };
+
 struct wnm_req_data {
 	UINT32 ifindex;
 	UCHAR peer_mac_addr[6];
@@ -1835,6 +1838,9 @@ struct qosmap_data {
 #define OID_802_11_WIFISPECTRUM_GET_CAPTURE_BW		0x0973
 #define OID_802_11_WIFISPECTRUM_GET_CENTRAL_FREQ		0x0974
 #endif /* WIFI_SPECTRUM_SUPPORT */
+
+#define OID_802_11_GET_CENTRAL_CHAN1					0x0978
+#define OID_802_11_GET_CENTRAL_CHAN2					0x0979
 
 #ifdef MT_DFS_SUPPORT
 #define OID_DFS_ZERO_WAIT                       0x0985
@@ -2248,7 +2254,7 @@ enum vendor_ie_subcmd_oid {
 #define AFC_STOP_EVENT							0x09BC
 #endif /*CONFIG_6G_AFC_SUPPORT*/
 
-#define OID_GET_CHANNEL_LIST                                   0x09C0
+
 #ifdef ACS_CTCC_SUPPORT
 #define OID_802_11_GET_ACS_CHANNEL_SCORE                0x2014
 

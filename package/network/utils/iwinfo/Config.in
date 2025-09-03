@@ -1,0 +1,23 @@
+menu "General Configuration"
+
+config IWINFO_DOT11_EHT_BE
+	bool "if wifi support 11be."
+	default n
+	help
+		This is config for wifi 11be.
+
+config IWINFO_BE_MAX_SKU_TYPE
+	bool "wifi sku type be19000 or be14000."
+	depends on IWINFO_DOT11_EHT_BE
+	default n
+	help
+		This is config for wifi SKU_TYPE=BE19000 or SKU_TYPE=BE14000.
+
+config IWINFO_MLO_SUPPORT
+	bool "if support mlo rate display."
+	depends on IWINFO_DOT11_EHT_BE
+	default n
+	help
+		This is config for wifi7 mlo rate display.
+
+endmenu

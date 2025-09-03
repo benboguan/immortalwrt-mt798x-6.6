@@ -1,0 +1,9 @@
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -384,6 +384,7 @@ static int rpc_iwinfo_scan(struct
+ 	char res[IWINFO_BUFSIZE];
+ 	struct iwinfo_scanlist_entry *e;
+ 
++	memset(res, 0, sizeof(res));
+ 	rv = rpc_iwinfo_open(msg);
+ 

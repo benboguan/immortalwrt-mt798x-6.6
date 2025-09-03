@@ -206,6 +206,7 @@ static NDIS_STATUS l1set_profile_path(
 	RTMP_STRING *target = NULL;
 	UINT8 str_len;
 
+	dev_idx = PD_GET_DEVICE_IDX(ph_dev);
 	if (dev_idx < 0 || dev_idx >= MAX_MULTI_CARD_NUM) {
 		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_ERROR,
 					"%s: invalid dev_idx:%d\n", __func__, dev_idx);
@@ -436,7 +437,7 @@ static NDIS_STATUS l1set_bf_sku_path(
 }
 
 static struct l1profile_attribute_t l1profile_attributes[] = {
-	{ {"init_path"},    0,           l1set_profile_path},
+	{ {"init_path"},       0,           l1set_profile_path},
 	{ {"EEPROM_name"},     0,           l1set_eeprom_bin},
 	{ {"EEPROM_offset"},   0,           l1set_eeprom_offset},
 	{ {"EEPROM_size"},     0,           l1set_eeprom_size},

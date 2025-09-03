@@ -3,6 +3,11 @@
 #define MAX_NUM_HE_BANDWIDTHS 4
 #define MAX_NUM_HE_SPATIAL_STREAMS 4
 #define MAX_NUM_HE_MCS_ENTRIES 12
+#ifdef DOT11_EHT_BE
+#define MAX_NUM_EHT_BANDWIDTHS 5
+#define MAX_NUM_EHT_SPATIAL_STREAMS 16
+#define MAX_NUM_EHT_MCS_ENTRIES 14
+#endif
 
 UINT32 cck_to_mcs(UINT32 mcs) {
 	UINT32 ret = 0;
@@ -23,6 +28,21 @@ UINT32 cck_to_mcs(UINT32 mcs) {
 
 	return ret;
 }
+
+#ifdef DOT11_EHT_BE
+static UINT16 eht_mcs_phyrate_mapping_table[MAX_NUM_EHT_BANDWIDTHS][MAX_NUM_EHT_MCS_ENTRIES] = {
+	/*20 Mhz 1SS*/
+	{8, 17, 25, 34, 51, 68, 77, 86, 103, 114, 129, 143, 154, 172},
+	/*40 Mhz 1 SS */
+	{17, 34, 51, 68, 103, 137, 154, 172, 206, 229, 258, 286, 309, 344},
+	/*80 Mhz 1 SS */
+	{36, 72, 108, 144, 216, 288, 324, 360, 432, 480, 540, 600, 648, 720},
+	/*160 Mhz 1 SS */
+	{72, 144, 216, 288, 432, 576, 648, 720, 864, 960, 1080, 1201, 1297, 1441},
+	/*320 Mhz 1 SS */
+	{144, 288, 432, 576, 864, 1152, 1297, 1441, 1729, 1921, 2161, 2401, 2594, 2882}
+};
+#endif
 
 static UINT16 he_mcs_phyrate_mapping_table[MAX_NUM_HE_BANDWIDTHS][MAX_NUM_HE_SPATIAL_STREAMS][MAX_NUM_HE_MCS_ENTRIES] = {
 	{ /*20 Mhz*/
@@ -294,6 +314,30 @@ static UINT16 he_mcs_phyrate_mapping_table[MAX_NUM_HE_BANDWIDTHS][MAX_NUM_HE_SPA
 
 };
 
+#ifdef DOT11_EHT_BE
+void get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate)
+{
+	ULONG value = 0;
+
+	if (nss == 0) {
+		nss = 1;
+	}
+
+	if (mcs >= MAX_NUM_EHT_MCS_ENTRIES)
+		mcs = MAX_NUM_EHT_MCS_ENTRIES - 1;
+
+	if (nss > MAX_NUM_EHT_SPATIAL_STREAMS)
+		nss = MAX_NUM_EHT_SPATIAL_STREAMS;
+
+	if (bw >= MAX_NUM_EHT_BANDWIDTHS)
+		bw = MAX_NUM_EHT_BANDWIDTHS - 1;
+
+	value = eht_mcs_phyrate_mapping_table[bw][mcs];
+
+	*last_tx_rate = (ULONG)(value * nss);
+}
+#endif
+
 void get_rate_he(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate)
 {
 	ULONG value = 0;
@@ -409,8 +453,11 @@ static INT MCSMappingRateTable[] = {
 	20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37
 }; /* 3*3 */
 
-
+#ifdef DOT11_EHT_BE
+void getRate(union _HTTRANSMIT_SETTING_FIX HTSetting, ULONG *fLastTxRxRate)
+#else
 void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate)
+#endif
 {
 	UINT8					Antenna = 0;
 	UINT8					MCS = HTSetting.field.MCS;
@@ -439,6 +486,8 @@ void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate)
 						 ((UCHAR)HTSetting.field.ShortGI * 160) +
 						 ((UCHAR)MCS);
 		}
+		if (MCS > MCS_9)
+			rate_index = rate_index - 2;
 	} else {
 		if (HTSetting.field.MODE >= MODE_HTMIX) {
 			MCS = HTSetting.field.MCS;
@@ -470,6 +519,9 @@ void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate)
 		value = (MCSMappingRateTable[rate_index] * 5) / 10;
 	else
 		value =  MCSMappingRateTable[rate_index];
+
+	if (MCS > MCS_9)
+		value = (value * 10) / 8;
 
 	if (HTSetting.field.MODE >= MODE_HTMIX && HTSetting.field.MODE < MODE_VHT)
 		value *= Antenna;

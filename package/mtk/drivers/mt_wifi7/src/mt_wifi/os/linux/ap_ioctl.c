@@ -259,57 +259,6 @@ static const struct iw_ioctl_description ap_standard_ioctl[] = {
 		.max_tokens	= sizeof(struct iw_pmksa),
 	},
 };
-
-/*
- * @return: frequency, unit is MHZ
- */
-static UINT32 channel_to_frequency(UINT8 band, UINT16 channel)
-{
-	UINT32 freq = 0;
-
-	switch (band) {
-		/*for 2G*/
-	case BAND_SELECT_BAND_2G:
-		if (channel == 14)
-			freq = 2484;
-		else if (channel < 14)
-			freq = (channel * 5 + 2407);
-		else
-			return FALSE;
-		break;
-
-		/*5G*/
-	case BAND_SELECT_BAND_5G:
-	case BAND_SELECT_BAND_5G_LOW:
-	case BAND_SELECT_BAND_5G_HIGH:
-		if (channel >= 182 && channel <= 196)
-			freq = (channel * 5 + 4000);
-		else
-			freq = (channel * 5 + 5000);
-		break;
-		/*6G*/
-	case BAND_SELECT_BAND_6G:
-	case BAND_SELECT_BAND_6G_LOW:
-	case BAND_SELECT_BAND_6G_HIGH:
-		if (channel == 2)
-			freq = 5935;
-		else if (channel <= 233)
-			freq = (channel * 5 + 5950);
-		else
-			goto err;
-		break;
-	default:
-		goto err;
-
-	}
-	MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_INFO,
-	"freq %d, channel num %d, band %d\n",
-	freq, channel, band);
-
-	return freq;
-err:
-	return 0;
-}
 static const unsigned int ap_standard_ioctl_num = ARRAY_SIZE(ap_standard_ioctl);
 
 #ifndef NO_MTK_WEXT_PRIV
@@ -638,7 +587,9 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
 	RTMP_IOCTL_INPUT_STRUCT rt_wrq, *wrq = &rt_wrq;
 	INT				Status = NDIS_STATUS_SUCCESS;
 #ifndef NO_MTK_WEXT_PRIV
+#ifdef CONFIG_WEXT_PRIV
 	USHORT			subcmd;
+#endif
 #endif
 	INT			apidx = 0;
 	UINT32		org_len;
@@ -859,44 +810,52 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
 		wrqin->u.txpower.fixed = 0;/* Hardware should not use auto select */
 		break;
 	}
-		case SIOCGIWRANGE:	/*Get range of parameters */
+	case SIOCGIWRANGE:	/*Get range of parameters */
+	{
 		if (wrqin->u.data.pointer) {
 #if (KERNEL_VERSION(5, 4, 0) > LINUX_VERSION_CODE)
-                        if (access_ok(VERIFY_WRITE, wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
+			if (access_ok(VERIFY_WRITE, wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
 #else
-                        if (access_ok(wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
+			if (access_ok(wrqin->u.data.pointer, sizeof(struct iw_range)) != TRUE)
 #endif
-                                break;
+				break;
 
-                        if (sizeof(struct iw_range) <= wrq->u.data.length) {
-                                struct iw_range range;
-                                USHORT i = 0;
-                                CHANNEL_CTRL *pChCtrl;
+			if (sizeof(struct iw_range) <= wrq->u.data.length) {
+				struct iw_range range;
+				UCHAR BandIdx;
+				UINT32 Freq;
+				USHORT i = 0;
+				CHANNEL_CTRL *pChCtrl;
 				PRTMP_ADAPTER pAdin = (PRTMP_ADAPTER)pAd;
-                                UINT32 mhz = 0;
+				wdev = pIoctlConfig->wdev;
+
 				memset(&range, 0, sizeof(struct iw_range));
+
 				range.we_version_compiled = WIRELESS_EXT;
-                                pChCtrl = hc_get_channel_ctrl(pAdin->hdev_ctrl);
 
-                                for (i = 0; i < pChCtrl->ChListNum && i < IW_MAX_FREQUENCIES; i++) {
+				BandIdx = HcGetBandByWdev(wdev);
+				pChCtrl = hc_get_channel_ctrl(pAdin->hdev_ctrl);
 
-				mhz = channel_to_frequency(pAdin->BandSel, pChCtrl->ChList[i].Channel);
-                                        range.freq[i].m = mhz;
-                                        range.freq[i].e = 6;
-                                        range.freq[i].i = pChCtrl->ChList[i].Channel;
-                                }
+				for (i = 0; i < pChCtrl->ChListNum && i < IW_MAX_FREQUENCIES; i++) {
+					RTMP_MapChannelID2KHZ(pChCtrl->ChList[i].Channel, &Freq);
+					range.freq[i].m = Freq / 1000;
+					range.freq[i].e = 6;
+					range.freq[i].i = pChCtrl->ChList[i].Channel;
+				}
 
-                                range.num_channels = i;
-                                range.num_frequency = i;
+				range.num_channels = i;
+				range.num_frequency = i;
 
-                                wrqin->u.data.length = sizeof(struct iw_range);
-                                 if (copy_to_user(wrqin->u.data.pointer, &range, sizeof(struct iw_range)))
-                                        Status = RTMP_IO_EFAULT;
-                        } else {
-                                Status = RTMP_IO_E2BIG;
-                        }
-			break;
+				wrqin->u.data.length = sizeof(struct iw_range);
+
+				if (copy_to_user(wrqin->u.data.pointer, &range, sizeof(struct iw_range)))
+					Status = RTMP_IO_EFAULT;
+			} else {
+				Status = RTMP_IO_E2BIG;
+			}
 		}
+		break;
+	}
 	case SIOCGIWRETRY:	/*get retry limits and lifetime */
 	case SIOCSIWRETRY:	/*set retry limits and lifetime */
 		Status = RTMP_IO_EOPNOTSUPP;
@@ -1012,18 +971,13 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
 		RTMP_AP_IoctlHandle(pAd, wrq, CMD_RTPRIV_IOCTL_SET_WSCOOB, 0, NULL, 0);
 		break;
 #endif/*WSC_AP_SUPPORT*/
-	       /* modified by Red@Ralink, 2009/09/30 */
-        case RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT:
-               RTMP_AP_IoctlHandle(pAd, wrq, CMD_RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT, 0, NULL, 0);
-               break;
-               /* end of modification */
-
 
 #ifdef AP_SCAN_SUPPORT
 
 	case RTPRIV_IOCTL_GSITESURVEY:
 		wdev = pIoctlConfig->wdev;
 		wrq->u.data.flags = wrqin->u.data.flags;
+
 		if ((wdev != NULL) && (wdev->if_up_down_state == FALSE)) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_ERROR,
 				"interface is down, cmd [%x] return!!!\n", cmd);
@@ -1075,6 +1029,13 @@ INT rt28xx_ap_ioctl(void *net_dev_obj, void *data_obj, int cmd) /* snowpin for a
 
 #endif /* CONFIG_WEXT_PRIV */
 #endif /* CONFIG_MTK_WEXT_PRIV */
+
+	/* modified by Red@Ralink, 2009/09/30 */
+	case RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT:
+		RTMP_AP_IoctlHandle(pAd, wrq, CMD_RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT, 0, NULL, 0);
+		break;
+	/* end of modification */
+
 	default:
 		Status = RTMP_IO_EOPNOTSUPP;
 		break;

@@ -1235,9 +1235,10 @@ VOID rtmp_ee_load_from_efuse(RTMP_ADAPTER *pAd)
 
 	for (i = 0; i < cap->EEPROM_DEFAULT_BIN_SIZE; i += 2) {
 		rtmp_ee_efuse_read16(pAd, i, &efuse_val);
-		if (i >= 0x1300 && i <= 0x1304){
-                	efuse_val = 0x2C2C;}
-		if (i ==0x1310){
+		if (i >= 0x1300 && i <= 0x1304) {
+			efuse_val = 0x2C2C;
+		}
+		else if (i == 0x1310) {
 			efuse_val = 0x2a2a;
 		}
 		efuse_val = cpu2le16 (efuse_val);

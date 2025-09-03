@@ -9,9 +9,29 @@
 #define UINT8	unsigned char
 #define UINT16	unsigned short
 #define UINT32	unsigned int
+#define UINT64	unsigned long long
 #define INT32	int
+#define INT64	long long
 #define INT 	int
 
+#define min(x, y) ((x) < (y)) ? (x) : (y)
+
+#ifdef DOT11_EHT_BE
+union _HTTRANSMIT_SETTING_FIX {
+	struct {
+		unsigned int MCS:6;
+		unsigned int ldpc:1;
+		unsigned int BW:4;
+		unsigned int ShortGI:2;
+		unsigned int STBC:1;
+		unsigned int eTxBF:1;
+		unsigned int iTxBF:1;
+		unsigned int MODE:4;
+		unsigned int Mpadding:8;
+	} field;
+	unsigned int word;
+};
+#else
 typedef union _HTTRANSMIT_SETTING_FIX {
 	struct {
 		unsigned short MCS:6;
@@ -25,6 +45,7 @@ typedef union _HTTRANSMIT_SETTING_FIX {
 	} field;
 	unsigned int word;
 } HTTRANSMIT_SETTING, *PHTTRANSMIT_SETTING;
+#endif
 
 typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	unsigned char           ApIdx;
@@ -37,12 +58,22 @@ typedef struct _RT_802_11_MAC_ENTRY_FIX {
 	signed char             AvgRssi2;
 	signed char             AvgRssi3;
 	unsigned int            ConnectedTime;
+#ifdef DOT11_EHT_BE
+	union _HTTRANSMIT_SETTING_FIX TxRate;
+	union _HTTRANSMIT_SETTING_FIX LastRxRate;
+#else
 	HTTRANSMIT_SETTING      TxRate;
 	HTTRANSMIT_SETTING      LastRxRate;
+#endif
 	short                   StreamSnr[3];
 	short                   SoundingRespSnr[3];
+	unsigned int            InactiveTime;
 	unsigned int			EncryMode;
 	unsigned int			AuthMode;
+#ifdef MLO_SUPPORT
+	signed char             mloValid;
+	signed char             mloAddr[6];
+#endif
 } RT_802_11_MAC_ENTRY;
 
 #define MAX_NUMBER_OF_MAC               544
@@ -66,6 +97,12 @@ struct channel_list_basic {
 #define RT_PRIV_IOCTL				(SIOCIWFIRSTPRIV + 0x01)
 #define RTPRIV_IOCTL_SET			(SIOCIWFIRSTPRIV + 0x02)
 #define RTPRIV_IOCTL_E2P			(SIOCIWFIRSTPRIV + 0x07)
+
+#define RTPRIV_IOCTL_GCHANLIST              (SIOCIWFIRSTPRIV + 0x10)
+#define RTPRIV_IOCTL_GSCANINFO              (SIOCIWFIRSTPRIV + 0x14)
+#define RTPRIV_IOCTL_GBSSINFO				(SIOCIWFIRSTPRIV + 0x1C)
+#define RTPRIV_IOCTL_GSTAINFO				(SIOCIWFIRSTPRIV + 0x1E)
+#define RTPRIV_IOCTL_GET_MAC_TABLE			(SIOCIWFIRSTPRIV + 0x0F)
 #define RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT	(SIOCIWFIRSTPRIV + 0x1F)
 #define RTPRIV_IOCTL_SHOW                	(SIOCIWFIRSTPRIV + 0x11)
 #define RTPRIV_IOCTL_GSITESURVEY            (SIOCIWFIRSTPRIV + 0x0D)
@@ -74,10 +111,12 @@ struct channel_list_basic {
 #define OID_802_11_COUNTRYCODE				0x1907
 #define OID_802_11_BW						0x1903
 #define OID_GET_CHAN_LIST					0x0998
+#define OID_GET_CHANNEL_LIST				0x09C0
 #define OID_GET_WIRELESS_BAND				0x09B4
-#define OID_GET_CHANNEL_LIST					0x09C0
-#define OID_802_11_SECURITY_TYPE                0x093e
+#define OID_802_11_SECURITY_TYPE            0x093e
 #define RT_OID_802_11_PHY_MODE				0x050C
+#define OID_802_11_GET_CENTRAL_CHAN1					0x0978
+#define OID_802_11_GET_CENTRAL_CHAN2					0x0979
 #define GET_MAC_TABLE_STRUCT_FLAG_RAW_SSID	0x1
 
 #define MODE_CCK 0
@@ -86,12 +125,26 @@ struct channel_list_basic {
 #define MODE_HTGREENFIELD 3
 #define MODE_VHT 4
 #define MODE_HE 5
-#define MODE_HE_5G 6
-#define MODE_HE_24G 7
 #define MODE_HE_SU	8
+#define MODE_HE_24G 7
 #define MODE_HE_EXT_SU	9
 #define MODE_HE_TRIG	10
 #define MODE_HE_MU	11
+#ifdef DOT11_EHT_BE
+#define MODE_EHT 6
+#define MODE_EHT_ER_SU	13
+#define MODE_EHT_TB	14
+#define MODE_EHT_MU	15
+#else
+#define MODE_HE_5G 6
+#endif
+#define MODE_UNKNOWN 255
+
+#define MODE_HE_SU_REMAPPING  5
+#define MODE_HE_EXTSU_REMAPPING  6
+
+#define IS_HE_MODE(mode)\
+	((mode >= MODE_HE) && (mode <= MODE_HE_MU))
 
 #define TMI_TX_RATE_OFDM_6M     11
 #define TMI_TX_RATE_OFDM_9M     15
@@ -111,6 +164,49 @@ struct channel_list_basic {
 #define TMI_TX_RATE_CCK_5M_SP   6
 #define TMI_TX_RATE_CCK_11M_SP  7
 
+/* HT */
+#define MCS_0          0       /* 1S */
+#define MCS_1          1
+#define MCS_2          2
+#define MCS_3          3
+#define MCS_4          4
+#define MCS_5          5
+#define MCS_6          6
+#define MCS_7          7
+#define MCS_8          8       /* 2S */
+#define MCS_9          9
+#define MCS_10         10
+#define MCS_11         11
+#define MCS_12         12
+#define MCS_13         13
+#define MCS_14         14
+#define MCS_15         15
+#define MCS_16         16      /* 3*3 */
+#define MCS_17         17
+#define MCS_18         18
+#define MCS_19         19
+#define MCS_20         20
+#define MCS_21         21
+#define MCS_22         22
+#define MCS_23         23
+#define MCS_24         24      /* 3*3 */
+#define MCS_25         25
+#define MCS_26         26
+#define MCS_27         27
+#define MCS_28         28
+#define MCS_29         29
+#define MCS_30         30
+#define MCS_31         31
+#define MCS_32         32
+#define MCS_AUTO	33
+
+/* Extension channel offset */
+#define EXTCHA_NONE			0
+#define EXTCHA_ABOVE		0x1
+#define EXTCHA_BELOW		0x3
+#define EXTCHA_NOASSIGN		0xf
+
+/* BW */
 enum oid_bw {
 	BAND_WIDTH_20,
 	BAND_WIDTH_40,
@@ -119,6 +215,9 @@ enum oid_bw {
 	BAND_WIDTH_10,
 	BAND_WIDTH_5,
 	BAND_WIDTH_8080,
+#ifdef BE_MAX_SKU_TYPE
+	BAND_WIDTH_320,
+#endif /* BE_MAX_SKU_TYPE */
 	BAND_WIDTH_BOTH,
 	BAND_WIDTH_25,
 	BAND_WIDTH_20_242TONE,
@@ -134,6 +233,9 @@ enum oid_bw {
 #define BW_8080		BAND_WIDTH_8080
 #define BW_25		BAND_WIDTH_25
 #define BW_20_242TONE	BAND_WIDTH_20_242TONE
+#ifdef BE_MAX_SKU_TYPE
+#define BW_320		BAND_WIDTH_320
+#endif /* BE_MAX_SKU_TYPE */
 #define BW_NUM		BAND_WIDTH_NUM
 
 enum WIFI_MODE {
@@ -147,25 +249,30 @@ enum WIFI_MODE {
 	WMODE_AX_24G = 1 << 6,
 	WMODE_AX_5G = 1 << 7,
 	WMODE_AX_6G = 1 << 8,
-        WMODE_BE_24G = 1 << 9,
-        WMODE_BE_5G = 1 << 10,
-        WMODE_BE_6G = 1 << 11,
+#ifdef DOT11_EHT_BE
+	WMODE_BE_24G = 1 << 9,
+	WMODE_BE_5G = 1 << 10,
+	WMODE_BE_6G = 1 << 11,
+#endif
+	/*
+	 * total types of supported wireless mode,
+	 * add this value once yow add new type
+	 */
 	WMODE_COMP = 12,
 };
 
 #define WMODE_CAP_N(_x)			(((_x) & (WMODE_GN | WMODE_AN)) != 0)
 #define WMODE_CAP_AC(_x)		(((_x) & (WMODE_AC)) != 0)
 #define WMODE_CAP_AX(_x)		((_x) & (WMODE_AX_24G | WMODE_AX_5G | WMODE_AX_6G))
-#define WMODE_CAP_BE(_x) \
-((_x) & (WMODE_BE_24G | WMODE_BE_5G | WMODE_BE_6G))
+#ifdef DOT11_EHT_BE
+#define WMODE_CAP_BE(_x)		((_x) & (WMODE_BE_24G | WMODE_BE_5G | WMODE_BE_6G))
+#endif
 
 enum MTK_CH_BAND {
 	MTK_CH_BAND_24G = 0,
 	MTK_CH_BAND_5G = 1,
 	MTK_CH_BAND_6G = 2,
 };
-
-#define MAX_NUM_OF_CHANNELS		59
 
 struct __attribute__ ((packed)) chnList {
 	unsigned char channel;
@@ -252,6 +359,10 @@ typedef enum _SEC_AKM_MODE {
 	SEC_AKM_FILS_SHA256,
 	SEC_AKM_FILS_SHA384,
 	SEC_AKM_WPA3, /* WPA3(ent) = WPA2(ent) + PMF MFPR=1 => WPA3 code flow is same as WPA2, the usage of SEC_AKM_WPA3 is to force pmf on */
+#ifdef DOT11_EHT_BE
+	SEC_AKM_SAE_EXT,
+	SEC_AKM_FT_SAE_EXT,
+#endif
 	SEC_AKM_MAX /* Not a real mode, defined as upper bound */
 } SEC_AKM_MODE;
 
@@ -277,11 +388,25 @@ typedef enum _SEC_AKM_MODE {
 #define IS_AKM_WPA3PSK(_AKMMap) (IS_AKM_SAE_SHA256(_AKMMap))
 #define IS_AKM_WPA3_192BIT(_AKMMap)	(IS_AKM_SUITEB_SHA384(_AKMMap))
 #define IS_AKM_OWE(_AKMMap) ((_AKMMap & (1 << SEC_AKM_OWE)) > 0)
+#ifdef DOT11_EHT_BE
+#define IS_AKM_SAE_EXT(_AKMMap)                ((_AKMMap & (1 << SEC_AKM_SAE_EXT)) > 0)
+#define IS_AKM_FT_SAE_EXT(_AKMMap)          ((_AKMMap & (1 << SEC_AKM_FT_SAE_EXT)) > 0)
+
+#define IS_AKM_SAE(_AKMMap)     (IS_AKM_SAE_SHA256(_AKMMap)  \
+				|| IS_AKM_FT_SAE_SHA256(_AKMMap)  \
+				|| IS_AKM_SAE_EXT(_AKMMap)  \
+				|| IS_AKM_FT_SAE_EXT(_AKMMap))
+#endif
 
 #define MTK_L1_PROFILE_PATH		"/etc/wireless/l1profile.dat"
 #define MTK_L1UTIL_PATH			"/usr/lib/lua/l1dat_parser.lua"
 
+#ifdef DOT11_EHT_BE
+void getRate(union _HTTRANSMIT_SETTING_FIX HTSetting, ULONG *fLastTxRxRate);
+void get_rate_eht(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
+#else
 void getRate(HTTRANSMIT_SETTING HTSetting, ULONG *fLastTxRxRate);
+#endif
 void get_rate_he(UINT8 mcs, UINT8 bw, UINT8 nss, UINT8 dcm, ULONG *last_tx_rate);
 UINT32 cck_to_mcs(UINT32 mcs);
 

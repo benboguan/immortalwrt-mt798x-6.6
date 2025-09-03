@@ -28,12 +28,16 @@ define Package/libiwinfo
   SECTION:=libs
   CATEGORY:=Libraries
   TITLE:=Generalized Wireless Information Library (iwinfo)
-  DEPENDS:=+libnl-tiny +libuci +libubus +libiwinfo-data
+  DEPENDS:=+libnl-tiny +libuci +libubus +libiwinfo-data +liblua
   ABI_VERSION:=$(IWINFO_ABI_VERSION)
 endef
 
+define Package/libiwinfo/config
+	source "$(SOURCE)/Config.in"
+endef
+
 define Package/libiwinfo/description
-  Wireless information library with simplified API for nl80211
+  Wireless information library with simplified API for nl80211, mtk
   and wext driver interfaces.
 endef
 
@@ -77,6 +81,18 @@ TARGET_CFLAGS += \
 	-I$(STAGING_DIR)/usr/include/libnl-tiny \
 	-I$(STAGING_DIR)/usr/include \
 	-D_GNU_SOURCE
+
+ifeq ($(CONFIG_IWINFO_BE_MAX_SKU_TYPE),y)
+TARGET_CFLAGS += -DBE_MAX_SKU_TYPE
+endif
+
+ifeq ($(CONFIG_IWINFO_DOT11_EHT_BE),y)
+TARGET_CFLAGS += -DDOT11_EHT_BE
+endif
+
+ifeq ($(CONFIG_IWINFO_MLO_SUPPORT),y)
+TARGET_CFLAGS += -DMLO_SUPPORT
+endif
 
 MAKE_FLAGS += \
 	FPIC="$(FPIC)" \

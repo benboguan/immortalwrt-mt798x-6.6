@@ -1010,14 +1010,13 @@ static void rtmp_read_mld_group_idx_from_file(
 				pMbss->mld_grp_idx = mld_grp;
 				pMbss->mld_grp_by_cfg = TRUE;
 				pMbss->unique_mld_addr_enable = TRUE;
-                                if (mld_grp != 1) 
-                                        wdev->ap_mlo_disable = TRUE;
-                                else
-                                        wdev->ap_mlo_disable = FALSE;
+				if (mld_grp != 1) 
+					wdev->ap_mlo_disable = TRUE;
+				else
+					wdev->ap_mlo_disable = FALSE;
 				MTWF_PRINT("BSS%d mld_grp_idx=%d AP_MLO_DISABLE =%d\n",
 					i, pMbss->mld_grp_idx,wdev->ap_mlo_disable);
-			} else
-			{	
+			} else {
 				wdev->ap_mlo_disable = TRUE;
 				MTWF_PRINT("INVALID mld_grp_idx: %d (larger than max=%d)\n",
 					mld_grp, MAX_MLD_GROUP_NUM);

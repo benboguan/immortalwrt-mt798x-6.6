@@ -10046,7 +10046,7 @@ INT RTMPAPQueryInformation(
 			Status = copy_to_user(wrq->u.data.pointer, &pAd->ApCfg.MBSSID[ifIndex].AccessControlList, sizeof(RT_802_11_ACL));
 
 		break;
-#if 1
+//#ifdef CONFIG_HOTSPOT
 #ifdef CONFIG_DOT11V_WNM
 
 	case OID_802_11_WNM_IPV4_PROXY_ARP_LIST: {
@@ -10108,8 +10108,9 @@ INT RTMPAPQueryInformation(
 
 	case OID_802_11_SECURITY_TYPE: {
 		BSS_STRUCT *pMbss;
-		PSTA_ADMIN_CONFIG pApCliEntry;
 		PUCHAR pType;
+		PSTA_ADMIN_CONFIG pApCliEntry;
+		//struct security_type *SecurityType;
 		struct security_type_new *SecurityType;
 
 		if (!VALID_MBSS(pAd, ifIndex)) {
@@ -10119,17 +10120,20 @@ INT RTMPAPQueryInformation(
 		}
 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_INFO,
 				 "Query:OID_802_11_SECURITY_TYPE\n");
-		if (pObj->ioctl_if_type == INT_APCLI && ifIndex >= MAX_APCLI_NUM) 
-		{	
-			MTWF_DBG(pAd, DBG_CAT_ALL, DBG_SUBCAT_ALL, DBG_LVL_ERROR, "error station index\n");
+
+		if (pObj->ioctl_if_type == INT_APCLI && ifIndex >= MAX_APCLI_NUM) {
+			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "error station index\n");
+			Status = -EINVAL;
 			return FALSE;
 		}
+
 		os_alloc_mem(NULL, &pType, sizeof(*SecurityType));
 		if (pType == NULL) {
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR,
 					"Fail to allocate memory!\n");
 			Status = -ENOMEM;
 		} else {
+			//SecurityType = (struct security_type *)pType;
 			SecurityType = (struct security_type_new *)pType;
 			if (pObj->ioctl_if_type == INT_APCLI) {
 				pApCliEntry = &pAd->StaCfg[ifIndex];
@@ -10138,13 +10142,13 @@ INT RTMPAPQueryInformation(
 				SecurityType->encryp_type = pApCliEntry->wdev.SecConfig.PairwiseCipher;
 				wrq->u.data.length = sizeof(*SecurityType);
 				Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
-		} else if(pObj->ioctl_if_type == INT_MAIN || pObj->ioctl_if_type == INT_MBSSID) {
-			pMbss = &pAd->ApCfg.MBSSID[ifIndex];
-			SecurityType->ifindex = ifIndex;
-			SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
-			SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
-			wrq->u.data.length = sizeof(*SecurityType);
-			Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
+			} else if (pObj->ioctl_if_type == INT_MAIN || pObj->ioctl_if_type == INT_MBSSID) {
+				pMbss = &pAd->ApCfg.MBSSID[ifIndex];
+				SecurityType->ifindex = ifIndex;
+				SecurityType->auth_mode = pMbss->wdev.SecConfig.AKMMap;
+				SecurityType->encryp_type = pMbss->wdev.SecConfig.PairwiseCipher;
+				wrq->u.data.length = sizeof(*SecurityType);
+				Status = copy_to_user(wrq->u.data.pointer, pType, sizeof(*SecurityType));
 			}
 			os_free_mem(pType);
 		}
@@ -10225,7 +10229,7 @@ INT RTMPAPQueryInformation(
 	}
 	break;
 #endif /* CONFIG_HOTSPOT_R3 */
-#endif
+//#endif
 #ifdef WAPP_SUPPORT
 	case OID_802_11_WIFI_VER: {
 		int ret;
@@ -10539,7 +10543,7 @@ INT RTMPAPQueryInformation(
 			Status = copy_to_user(wrq->u.data.pointer, &vht_cap, wrq->u.data.length);
 			break;
 		}
-		case OID_GET_CHAN_LIST:
+	case OID_GET_CHAN_LIST:
 		{
 			int i = 0;
 			CHANNEL_CTRL *pChCtrl = NULL;
@@ -10591,6 +10595,39 @@ INT RTMPAPQueryInformation(
 			wrq->u.data.length = sizeof(wdev_chn_info);
 			Status = copy_to_user(wrq->u.data.pointer, chn_list, wrq->u.data.length);
 			os_free_mem(chn_list);
+			break;
+		}
+	case OID_GET_CHANNEL_LIST:
+		{
+			int i = 0;
+			UCHAR BandIdx = 0;
+			CHANNEL_CTRL *pChCtrl = NULL;
+			struct wifi_dev *wdev = NULL;
+			struct channel_list_basic *chn_list;
+
+			wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+
+			if (wdev == NULL)
+				break;
+
+			os_alloc_mem(pAd, (UCHAR **)&chn_list, sizeof(struct channel_list_basic));
+			if (chn_list == NULL)
+				break;
+			NdisZeroMemory(chn_list, sizeof(struct channel_list_basic));
+
+			BandIdx = HcGetBandByWdev(wdev);
+			pChCtrl = hc_get_channel_ctrl(pAd->hdev_ctrl);
+
+			for (i = 0; i < pChCtrl->ChListNum && i < MAX_NUM_OF_CHANNELS; i++) {
+				chn_list->ChList[i].channel_idx = i;
+				chn_list->ChList[i].channel = pChCtrl->ChList[i].Channel;
+			}
+			chn_list->ChListNum = pChCtrl->ChListNum;
+
+			wrq->u.data.length = sizeof(struct channel_list_basic);
+			Status = copy_to_user(wrq->u.data.pointer, chn_list, wrq->u.data.length);
+			os_free_mem(chn_list);
+
 			break;
 		}
 #ifdef MAP_6E_SUPPORT
@@ -11091,10 +11128,17 @@ INT RTMPAPQueryInformation(
 #endif
 	case OID_GET_WIRELESS_BAND:
 	{
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
 		UCHAR wireless_band;
 
 		if (wdev) {
 			wireless_band = wlan_operate_get_ch_band(wdev);
+			wrq->u.data.length = sizeof(wireless_band);
+			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
+			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_NOTICE,
+				"OID_GET_WIRELESS_BAND, intf %s wireless_band=%d\n", wdev->if_dev->name, wireless_band);
+		} else {
+			wireless_band = wlan_config_get_ch_band(wdev);
 			wrq->u.data.length = sizeof(wireless_band);
 			Status = copy_to_user(wrq->u.data.pointer, &wireless_band, wrq->u.data.length);
 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_NOTICE,
@@ -11339,6 +11383,73 @@ INT RTMPAPQueryInformation(
 		} else
 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
 				"Invalid wdev for cmd %d\n", cmd);
+		break;
+	}
+	case OID_802_11_GET_CENTRAL_CHAN1:
+	{
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+		UCHAR ext_cha = wlan_config_get_ext_cha(wdev);
+		UCHAR bw = wlan_operate_get_bw(wdev);
+		UINT8 prim_ch = wdev->channel;
+		UINT8 cent_ch_1 = wlan_operate_get_cen_ch_1(wdev);
+		UINT8 CenCh1 = 0;
+
+		switch (bw) {
+		case BW_20:
+			CenCh1 = prim_ch;
+			break;
+		case BW_40:
+			if ((prim_ch > 2) && (ext_cha == EXTCHA_BELOW)) {
+				if (prim_ch == 14)
+					CenCh1 = prim_ch - 1;
+				else
+					CenCh1 = prim_ch - 2;
+			}
+			else if (ext_cha == EXTCHA_ABOVE)
+				CenCh1 = prim_ch + 2;
+			break;
+		case BW_80:
+		case BW_8080:
+			CenCh1 = cent_ch_1;
+			break;
+		case BW_160:
+			CenCh1 = GET_BW160_PRIM80_CENT(prim_ch, cent_ch_1);
+			break;
+		case BW_320:
+			CenCh1 = GET_BW320_PRIM160_CENT(prim_ch, cent_ch_1);
+			break;
+		default:
+			CenCh1 = cent_ch_1;
+			break;
+		}
+
+		MTWF_PRINT("%s : CentralCh1 = %d\n", __func__, CenCh1);
+
+		wrq->u.data.length = sizeof(CenCh1);
+		Status = copy_to_user(wrq->u.data.pointer, &CenCh1, wrq->u.data.length);
+		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_INFO,
+				 "Query::OID_802_11_GET_CENTRAL_CHAN1 CentralCh1 = %d\n", CenCh1);
+		break;
+	}
+	case OID_802_11_GET_CENTRAL_CHAN2:
+	{
+		struct wifi_dev *wdev = get_wdev_by_ioctl_idx_and_iftype(pAd, pObj->ioctl_if, pObj->ioctl_if_type);
+		UCHAR bw = wlan_operate_get_bw(wdev);
+		UINT8 cent_ch_1 = wlan_operate_get_cen_ch_1(wdev);
+		UINT8 cent_ch_2 = wlan_operate_get_cen_ch_2(wdev);
+		UINT8 CenCh2 = 0;
+
+		if (bw == BW_160 || bw == BW_320)
+			CenCh2 = cent_ch_1;
+		else
+			CenCh2 = cent_ch_2;
+
+		MTWF_PRINT("%s : CentralCh2 = %d\n", __func__, CenCh2);
+
+		wrq->u.data.length = sizeof(CenCh2);
+		Status = copy_to_user(wrq->u.data.pointer, &CenCh2, wrq->u.data.length);
+		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_INFO,
+				 "Query::OID_802_11_GET_CENTRAL_CHAN2 CentralCh2 = %d\n", CenCh2);
 		break;
 	}
 	case OID_802_11_EXTENSION_CHANNEL:
@@ -24782,9 +24893,7 @@ INT RTMP_AP_IoctlHandle(
 		RTMPIoctlMAC(pAd, wrq);
 		break;
 #endif /* DBG */
-        case CMD_RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT:
-                RTMPIoctlGetMacTableStaInfo(pAd, wrq);
-                break;
+
 	case CMD_RTPRIV_IOCTL_AP_SIOCGIFHWADDR:
 		ifIndex = pObj->ioctl_if;
 		if (ifIndex < 0 || ifIndex >= MAX_BEACON_NUM) {
@@ -25077,6 +25186,10 @@ INT RTMP_AP_IoctlHandle(
 
 	case CMD_RTPRIV_IOCTL_PHY_STATE:
 		Status = RTMPPhyState(pAd, wrq);
+		break;
+
+	case CMD_RTPRIV_IOCTL_GET_MAC_TABLE_STRUCT:
+		RTMPIoctlGetMacTableStaInfo(pAd, wrq);
 		break;
 
 	default:
@@ -29096,11 +29209,15 @@ INT32 rtmp_get_macPower(IN VOID *pAdSrc)
 		return -EFAULT;
 	}
 	band = hc_get_hw_band_idx(ad);
+	TxPowerShowInfo(ad, 2, band);
 	if (band == BAND0)
-		retPwr = ad->max_power_2g/2;
+		retPwr = ad->max_power_2g;
 	else
-		retPwr = ad->max_power_5g/2;
-	//MTWF_PRINT("Got %s Power %d\n", (band == BAND0)?"2G":"5G", retPwr);
+		retPwr = ad->max_power_5g;
+	retPwr /= 2;
+
+	MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO, "%s Power %d\n",
+		(band == BAND0)?"2G":"5G", retPwr);
 	return retPwr;
 }
 

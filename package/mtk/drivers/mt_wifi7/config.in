@@ -122,12 +122,12 @@ choice
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
 	config MTK_WIFI7_SECOND_IF_MT7993
-		bool "MT7993 (Griffin)"
+	bool "MT7993 (Griffin)"
         select MTK_WIFI7_CHIP_MT7993
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
-	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	config MTK_WIFI7_SECOND_IF_BLACKHAWK
 	bool "Test chip, Blackhawk_A0"
         select MTK_WIFI7_CHIP_BLACKHAWK
 	select MTK_WIFI7_UNIFIED_COMMAND
@@ -160,13 +160,13 @@ choice
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
 	config MTK_THIRD_IF_MT7993
-		bool "MT7993 (Griffin)"
+	bool "MT7993 (Griffin)"
         select MTK_WIFI7_CHIP_MT7993
 	select MTK_WIFI7_MULTI_INF_SUPPORT
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
-	config MTK_WIFI7_FIRST_IF_BLACKHAWK
+	config MTK_THIRD_IF_BLACKHAWK
 	bool "Test chip, Blackhawk_A0"
         select MTK_WIFI7_CHIP_BLACKHAWK
 	select MTK_WIFI7_UNIFIED_COMMAND
@@ -735,6 +735,7 @@ choice
 
 	config MTK_WIFI7_ADIE_MT7976
 	bool "A-die MT7976"
+
 	config MTK_WIFI7_ADIE_MT7977
 	bool "A-die MT7977"
 endchoice
@@ -744,41 +745,41 @@ config MTK_WIFI7_DUAL_ADIE_MT7977
 	depends on MTK_WIFI7_ADIE_MT7977
 
 choice
-        prompt "A-die Type (MT7990)"
-        depends on MTK_WIFI7_CHIP_MT7990
+	prompt "A-die Type (MT7990)"
+	depends on MTK_WIFI7_CHIP_MT7990
 
-        config MTK_WIFI7_3ADIE_TRIBAND
-        bool "A-die MT7976_MT7977"
-        default y
+	config MTK_WIFI7_3ADIE_TRIBAND
+	bool "A-die MT7976_MT7977"
+#	default y
 
-        config MTK_WIFI7_2ADIE_TRIBAND
-        bool "A-die MT7976C_MT7977"
+	config MTK_WIFI7_2ADIE_TRIBAND
+	bool "A-die MT7976C_MT7977"
 endchoice
 
 choice
-        prompt "A-die Type Comb (MT7990 for pre-w8)"
-        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND
+	prompt "A-die Type Comb (MT7990 for pre-w8)"
+	depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND
 
-        config MTK_WIFI7_PRE8_ADIE_NONE
-        bool "NONE"
-        default y
+	config MTK_WIFI7_PRE8_ADIE_NONE
+	bool "NONE"
+#	default y
 
-        config MTK_WIFI7_PRE8_ADIE_7977
-        bool "A-die MT7976_MT7977"
+	config MTK_WIFI7_PRE8_ADIE_7977
+	bool "A-die MT7976_MT7977"
 
-        config MTK_WIFI7_PRE8_ADIE_7979
-        bool "A-die MT7975_MT7979"
+	config MTK_WIFI7_PRE8_ADIE_7979
+	bool "A-die MT7975_MT7979"
 
-        config MTK_WIFI7_PRE8_ADIE_7777
-        bool "A-die MT7976_MT7777"
+	config MTK_WIFI7_PRE8_ADIE_7777
+	bool "A-die MT7976_MT7777"
 endchoice
 
 config MTK_WIFI7_ADIE_TYPE
-        depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND && (MTK_WIFI7_PRE8_ADIE_7977 || MTK_WIFI7_PRE8_ADIE_7979 || MTK_WIFI7_PRE8_ADIE_7777)
-        string
-        default "MT7977"        if MTK_WIFI7_PRE8_ADIE_7977
-        default "MT7979"        if MTK_WIFI7_PRE8_ADIE_7979
-        default "MT7777"        if MTK_WIFI7_PRE8_ADIE_7777
+	depends on MTK_WIFI7_CHIP_MT7990 && MTK_WIFI7_3ADIE_TRIBAND && (MTK_WIFI7_PRE8_ADIE_7977 || MTK_WIFI7_PRE8_ADIE_7979 || MTK_WIFI7_PRE8_ADIE_7777)
+	string
+	default "MT7977"        if MTK_WIFI7_PRE8_ADIE_7977
+	default "MT7979"        if MTK_WIFI7_PRE8_ADIE_7979
+	default "MT7777"        if MTK_WIFI7_PRE8_ADIE_7777
 
 #
 # Section for interfaces
@@ -832,7 +833,6 @@ config MTK_WIFI7_ICVERR_RESET_RRO
 	depends on MTK_WIFI7_DRIVER
 	default n
 
-
 endmenu
 
 menu "WiFi Operation Modes"
@@ -843,7 +843,7 @@ choice
 	config MTK_WIFI7_MODE_AP
 		tristate "AP"
 		select MTK_WIFI7_MT_AP_SUPPORT
-		default y
+#		default y
 
 	config MTK_WIFI7_MODE_STA
 		tristate "STA"
@@ -1262,7 +1262,6 @@ config MTK_WIFI7_MLD_GROUP_RESTORE
 config MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
 	bool "unified country config"
 	default y
-
 
 config MTK_WIFI7_CCN34_SPLIT_MAC_SUPPORT
         bool "split mac support for ccn34"

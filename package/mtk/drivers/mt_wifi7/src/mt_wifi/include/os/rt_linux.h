@@ -338,7 +338,9 @@ typedef struct file *RTMP_OS_FD;
 typedef struct _OS_FS_INFO_ {
 	int				fsuid;
 	int				fsgid;
-	// mm_segment_t	fs;
+#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+	mm_segment_t	fs;
+#endif
 } OS_FS_INFO;
 
 typedef struct _RTMP_OS_FD {
