@@ -2,7 +2,7 @@ Index: backports-6.18/net/wireless/reg.c
 ===================================================================
 --- backports-6.18.orig/net/wireless/reg.c	2024-09-11 16:18:25.142749896 +0800
 +++ backports-6.18/net/wireless/reg.c	2024-09-11 16:26:24.007006702 +0800
-@@ -4171,6 +4171,9 @@
+@@ -4206,6 +4206,9 @@
  	const struct ieee80211_regdomain *wiphy_regd = NULL;
  	bool pre_cac_allowed = false;
 

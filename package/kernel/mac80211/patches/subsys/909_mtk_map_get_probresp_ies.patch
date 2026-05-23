@@ -2,7 +2,7 @@ Index: backports-6.18/net/wireless/nl80211.c
 ===================================================================
 --- backports-6.18.orig/net/wireless/nl80211.c
 +++ backports-6.18/net/wireless/nl80211.c
-@@ -11546,7 +11546,7 @@ static int nl80211_send_bss(struct sk_bu
+@@ -10547,7 +10547,7 @@ static int nl80211_send_bss(struct sk_bu
  	/* this pointer prefers to be pointed to probe response data
  	 * but is always valid
  	 */
