@@ -1,0 +1,13 @@
+Index: backports-6.11.2-mt76/include/uapi/linux/nl80211.h
+===================================================================
+--- backports-6.11.2-mt76.orig/include/uapi/linux/nl80211.h
++++ backports-6.11.2-mt76/include/uapi/linux/nl80211.h
+@@ -3475,7 +3475,7 @@ enum nl80211_attrs {
+  * NL80211_MAX_NR_AKM_SUITES is obsolete when %NL80211_ATTR_MAX_NUM_AKM_SUITES
+  * present in %NL80211_CMD_GET_WIPHY response.
+  */
+-#define NL80211_MAX_NR_AKM_SUITES		2
++#define NL80211_MAX_NR_AKM_SUITES		10
+ #define NL80211_EHT_MIN_CAPABILITY_LEN          13
+ #define NL80211_EHT_MAX_CAPABILITY_LEN          51
+ 
