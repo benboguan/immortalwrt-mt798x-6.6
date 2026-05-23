@@ -1,0 +1,89 @@
+Index: hostapd-2022-07-29-b704dc72/wpa_supplicant/bss.c
+===================================================================
+--- hostapd-2022-07-29-b704dc72.orig/wpa_supplicant/bss.c
++++ hostapd-2022-07-29-b704dc72/wpa_supplicant/bss.c
+@@ -489,6 +489,7 @@ static struct wpa_bss * wpa_bss_add(stru
+ 	dl_list_add_tail(&wpa_s->bss, &bss->list);
+ 	dl_list_add_tail(&wpa_s->bss_id, &bss->list_id);
+ 	wpa_s->num_bss++;
++	wpa_dbg(wpa_s, MSG_ERROR, "wpa_bss_add() wpa_s->num_bss=%zu \n", wpa_s->num_bss); //twadd
+ 	if (!is_zero_ether_addr(bss->hessid))
+ 		os_snprintf(extra, sizeof(extra), " HESSID " MACSTR,
+ 			    MAC2STR(bss->hessid));
+@@ -502,6 +503,26 @@ static struct wpa_bss * wpa_bss_add(stru
+ 	return bss;
+ }
+ 
++/* twadd */
++const u8 * wpa_bss_get_netgear_vendor_ie(const struct wpa_bss *bss, u32 vendor_type)
++{
++	const u8 *end, *pos;
++
++	pos = (const u8 *) (bss + 1);
++	end = pos + bss->ie_len;
++
++	while (end - pos > 1) {
++		if (2 + pos[1] > end - pos)
++			break;
++		if (pos[0] == WLAN_EID_VENDOR_SPECIFIC && pos[1] >= 4 &&
++		    vendor_type == WPA_GET_BE24(&pos[2]))
++			return pos;
++		pos += 2 + pos[1];
++	}
++
++	return NULL;
++}
++/* twadd end */
+ 
+ static int are_ies_equal(const struct wpa_bss *old,
+ 			 const struct wpa_scan_res *new_res, u32 ie)
+Index: hostapd-2022-07-29-b704dc72/wpa_supplicant/ctrl_iface.c
+===================================================================
+--- hostapd-2022-07-29-b704dc72.orig/wpa_supplicant/ctrl_iface.c
++++ hostapd-2022-07-29-b704dc72/wpa_supplicant/ctrl_iface.c
+@@ -3206,6 +3206,36 @@ static int wpa_supplicant_ctrl_iface_sca
+ 		return -1;
+ 	pos += ret;
+ 
++#if 1 /* twadd */
++	#define MAX_TMP_LEN (128)
++    #define NTGR_VIE_OUI 0x00146c  //dd 0b 00146c 0002010100000000
++	extern const u8 * wpa_bss_get_netgear_vendor_ie(const struct wpa_bss *bss, u32 vendor_type);
++
++	char szTmp[MAX_TMP_LEN] = {0};
++	int tmpLen = 0;
++
++	ie = wpa_bss_get_netgear_vendor_ie(bss, NTGR_VIE_OUI);
++	if (ie)
++	{
++		/*  NGRVIE[%-80s]  */
++	    memset(szTmp,0,MAX_TMP_LEN);
++		snprintf(szTmp,MAX_TMP_LEN,"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x",
++			*ie,*(ie+1),*(ie+2),*(ie+3),*(ie+4),*(ie+5),*(ie+6),*(ie+7),*(ie+8),*(ie+9),*(ie+10),*(ie+11),*(ie+12));
++		wpa_printf(MSG_ERROR, "szTmp = %s\n",szTmp);
++		ret = os_snprintf(pos, end - pos, "\t%s",szTmp);
++		if (os_snprintf_error(end - pos, ret))
++			return -1;
++		pos += ret;
++	}
++	else
++	{
++		ret = os_snprintf(pos, end - pos, "\t%s","noNGRVIE");
++		if (os_snprintf_error(end - pos, ret))
++			return -1;
++		pos += ret;
++	}
++#endif
++
+ 	ret = os_snprintf(pos, end - pos, "\n");
+ 	if (os_snprintf_error(end - pos, ret))
+ 		return -1;
+@@ -3222,6 +3252,8 @@ static int wpa_supplicant_ctrl_iface_sca
+ 	struct wpa_bss *bss;
+ 	int ret;
+ 
++	wpa_dbg(wpa_s, MSG_ERROR, "wpa_supplicant_ctrl_iface_scan_results() wpa_s->num_bss=%zu \n", wpa_s->num_bss); //tw add
++	
+ 	pos = buf;
+ 	end = buf + buflen;
+ 	ret = os_snprintf(pos, end - pos, "bssid / frequency / signal level / "

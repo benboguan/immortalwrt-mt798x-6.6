@@ -1,0 +1,18 @@
+Index: hostapd-2022-07-29-b704dc72/src/ap/sta_info.c
+===================================================================
+--- hostapd-2022-07-29-b704dc72.orig/src/ap/sta_info.c
++++ hostapd-2022-07-29-b704dc72/src/ap/sta_info.c
+@@ -1322,6 +1322,13 @@ void ap_sta_set_authorized(struct hostap
+ 		wpa_msg(hapd->msg_ctx, MSG_INFO, AP_STA_CONNECTED "%s%s%s",
+ 			buf, ip_addr, keyid_buf);
+ 
++		//ubus send "HOSTAPD-MSG-AP-STA-CONNECTED" '{"ifname":"ra0","stamac":"94A67E327782"}'
++		char ubus_msg_buf[128]={0};
++		os_snprintf(ubus_msg_buf, sizeof(ubus_msg_buf), 
++		"ubus send \"HOSTAPD-MSG-AP-STA-CONNECTED\" '{\"ifname\":\"%s\",\"stamac\":\"" COMPACT_MACSTR "\"}'", hapd->conf->iface, MAC2STR(sta->addr));
++		system(ubus_msg_buf);
++		//-
++
+ 		if (hapd->msg_ctx_parent &&
+ 		    hapd->msg_ctx_parent != hapd->msg_ctx)
+ 			wpa_msg_no_global(hapd->msg_ctx_parent, MSG_INFO,
