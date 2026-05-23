@@ -37,5 +37,5 @@ git-src
 .vscode*
 
 !/dl/datconf*
-!/dl/mt79*
+!/dl/mt*
 !/dl/warp*
