@@ -1,5 +1,32 @@
 --- a/include/uapi/linux/wireless.h
 +++ b/include/uapi/linux/wireless.h
+@@ -428,7 +428,7 @@
+ /* ----------------------- OTHER CONSTANTS ----------------------- */
+ 
+ /* Maximum frequencies in the range struct */
+-#define IW_MAX_FREQUENCIES	32
++#define IW_MAX_FREQUENCIES	59
+ /* Note : if you have something like 80 frequencies,
+  * don't increase this constant and don't fill the frequency list.
+  * The user will be able to set by channel anyway... */
+@@ -446,7 +446,7 @@
+ 
+ /* Maximum of address that you may get in the
+    list of access points in range */
+-#define IW_MAX_AP		64
++#define IW_MAX_AP		128
+ 
+ /* Maximum size of the ESSID and NICKN strings */
+ #define IW_ESSID_MAX_SIZE	32
+@@ -557,7 +557,7 @@ /* Max number of char in custom event
+ #define IW_SCAN_CAPA_TIME		0x40
+ 
+ /* Max number of char in custom event - use multiple of them if needed */
+-#define IW_CUSTOM_MAX		256	/* In bytes */
++#define IW_CUSTOM_MAX		512	/* In bytes */
+ 
+ /* Generic information element */
+ #define IW_GENERIC_IE_MAX	1024
 @@ -678,7 +678,7 @@
   *	Generic format for most parameters that fit in an int
   */
@@ -9,6 +36,15 @@
    __u8		fixed;		/* Hardware should not use auto select */
    __u8		disabled;	/* Disable the feature */
    __u16		flags;		/* Various specifc flags (if any) */
+@@ -707,7 +708,7 @@ struct iw_freq {
+ 	__s32		m;		/* Mantissa */
+ 	__s16		e;		/* Exponent */
+ 	__u8		i;		/* List index (when in range struct) */
+-	__u8		flags;		/* Flags (fixed/auto) */
++	__u32		flags;		/* Flags (fixed/auto) */
+ };
+ 
+ /*
 @@ -1002,7 +1002,7 @@ struct iw_range {
  
  	/* Rates */

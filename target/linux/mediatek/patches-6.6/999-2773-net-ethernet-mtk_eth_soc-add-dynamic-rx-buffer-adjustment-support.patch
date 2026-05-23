@@ -93,10 +93,10 @@ index d7ddd24..8607db3 100644
 -	int length = new_mtu + MTK_RX_ETH_HLEN;
  	struct mtk_mac *mac = netdev_priv(dev);
  	struct mtk_eth *eth = mac->hw;
-+	int length, i, max_mtu = 0;
++	int length;
+ 	int max_mtu, i;
  
  	if (rcu_access_pointer(eth->prog) &&
- 	    length > MTK_PP_MAX_BUF_SIZE) {
 @@ -5274,9 +5271,24 @@ static int mtk_change_mtu(struct net_device *dev, int new_mtu)
  		return -EINVAL;
  	}
@@ -120,9 +120,9 @@ index d7ddd24..8607db3 100644
 +	else if (length <= MTK_MAX_RX_LENGTH_9K)
 +		eth->rx_buf_len = MTK_MAX_RX_LENGTH_9K;
 +
- 	return 0;
- }
- 
+ 	max_mtu = mtk_max_gmac_mtu(eth);
+ 	for (i = 0; i < ARRAY_SIZE(eth->ppe); i++)
+ 		mtk_ppe_update_mtu(eth->ppe[i], max_mtu);
 @@ -6845,6 +6857,8 @@ static int mtk_probe(struct platform_device *pdev)
  				   eth->netdev[i]->base_addr, eth->irq_fe[0]);
  	}

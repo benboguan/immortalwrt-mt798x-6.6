@@ -301,9 +301,9 @@ index 87b8223..e06d757 100644
  void mtk_ppe_deinit(struct mtk_eth *eth);
 +int mtk_ppe_roaming_start(struct mtk_eth *eth);
 +int mtk_ppe_roaming_stop(struct mtk_eth *eth);
+ void mtk_ppe_update_mtu(struct mtk_ppe *ppe, int mtu);
  void mtk_ppe_start(struct mtk_ppe *ppe);
  int mtk_ppe_stop(struct mtk_ppe *ppe);
- int mtk_ppe_prepare_reset(struct mtk_ppe *ppe);
 diff --git a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c b/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c
 index 129bde4..9a494a3 100644
 --- a/drivers/net/ethernet/mediatek/mtk_ppe_debugfs.c

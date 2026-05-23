@@ -104,7 +104,7 @@ mediatek_get_switch_type()
 
             case $compatible in
                 airoha,an8855|\
-				mediatek,mt753x)
+		mediatek,mt753x)
                     if [ "$status" = "okay" ]; then
                         dts_is_gsw=1
                     fi
@@ -293,6 +293,19 @@ mediatek_setup_interfaces()
 	esac
 }
 
+macaddr_add_first_byte() {
+	local mac="$1"
+	local add="$2"
+	local first_hex rest new_first
+
+	[ -z "$mac" ] || [ "${mac//[0-9a-fA-F:]/}" != "" ] && return 1
+	first_hex="${mac%%:*}"
+	rest="${mac#*:}"
+
+	new_first=$(printf "%02x" $(( (0x$first_hex + add) & 0xFF )))
+	echo "${new_first}:${rest}"
+}
+
 mediatek_setup_macs()
 {
 	local board="$1"
@@ -317,6 +330,18 @@ mediatek_setup_macs()
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		label_mac=$wan_mac
 		;;
+	hiveton,h5000m*)
+		# lan_mac=$(get_mac_binary "/lib/firmware/MT7992_EEPROM.bin" 0x04)
+		lan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
+		wan_mac=$(macaddr_add "$lan_mac" 1)
+		label_mac=$lan_mac
+		wifi_mac=$(macaddr_add "$lan_mac" 2)
+		#echo "$wifi_mac" > /sys/class/net/ra0/address
+		sed -i "s/^MacAddress_Default=.*/MacAddress_Default=$wifi_mac/" /etc/wireless/mediatek/mt7992.b0.dat
+		wifi_mac=$(macaddr_add_first_byte "$wifi_mac" 2)
+		#echo "$wifi_mac" > /sys/class/net/rai0/address
+		sed -i "s/^MacAddress_Default=.*/MacAddress_Default=$wifi_mac/" /etc/wireless/mediatek/mt7992.b1.dat
+		;;
 	mercusys,mr80x-v3)
 		mac_dirty=$(cat "/tmp/tp_data/default-mac" | sed -n 's/^'"MAC"'://p')
 		label_mac=$(macaddr_canonicalize "$mac_dirty")
@@ -327,14 +352,6 @@ mediatek_setup_macs()
 	mediatek,mt7988*)
 		lan_mac=$(mtd_get_mac_binary "Factory" "0xFFFF4")
 		wan_mac=$(mtd_get_mac_binary "Factory" "0xFFFFA")
-		;;
-    hiveton,h5000m)
-		lan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
-		wan_mac=$(macaddr_add "$lan_mac" 1)
-		wifi_mac=$(macaddr_add "$lan_mac" 2)
-        echo "MacAddress_Default=$wifi_mac" >> /etc/wireless/mediatek/mt7992.b0.dat
-		wifi_mac="$(macaddr_add $wifi_mac 1)"
-		echo "MacAddress_Default=$wifi_mac" >> /etc/wireless/mediatek/mt7992.b1.dat
 		;;
 	mercusys,mr90x-v1|\
 	tplink,re6000xd)

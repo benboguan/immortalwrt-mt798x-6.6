@@ -1118,6 +1118,7 @@ struct GNU_PACKED radar_notif_s
 struct GNU_PACKED unsafe_channel_notif_s
 {
 	u64 ch_bitmap[4];
+	u64 pwr_ch_bitmap[4];
 };
 
 struct GNU_PACKED band_status_change {
@@ -1409,6 +1410,26 @@ typedef struct GNU_PACKED _tbtt_info_set {
 	u32 ShortBssid;
 } tbtt_info_set;
 
+#ifdef MAP_R6
+struct GNU_PACKED common_info {
+	u8 common_info_length;
+	u8 mld_mac_addr[6];
+	/*
+	 * link_id_subfield is present only if multilink_control's  bitmap BIT(0) is set.
+	 * If not present, set to 0.
+	 */
+	u8 link_id_subfield;
+};
+
+/* MLIE subelement structure for MLO BTM request neighbor report */
+struct GNU_PACKED mlie_sub_elem {
+	u8 subelement_id;
+	u8 length;
+	u16 multilink_control_bmap; /* b0-b6: link_id, b7-b1: reserved*/
+	struct common_info MlCommonInfo;
+};
+#endif
+
 typedef struct GNU_PACKED _wapp_nr_info
 {
 	u8 	Bssid[MAC_ADDR_LEN];
@@ -1419,6 +1440,9 @@ typedef struct GNU_PACKED _wapp_nr_info
 	u8  CandidatePrefSubID;
 	u8  CandidatePrefSubLen;
 	u8  CandidatePref;
+#ifdef MAP_R6
+	struct mlie_sub_elem Mlie_SubElem;
+#endif
 	/* extra sec info */
 	u32 akm;
 	u32 cipher;

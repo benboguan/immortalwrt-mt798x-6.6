@@ -10,6 +10,7 @@
 #include <linux/mtd/map.h>
 #include <linux/mtd/concat.h>
 #include <linux/mtd/partitions.h>
+#include "mt_wifi_mtd.h"
 #if defined (CONFIG_MIPS)
 #include <asm/addrspace.h>
 #endif
@@ -66,8 +67,8 @@ int mt_mtd_write_nm_wifi(char *name, loff_t to, size_t len, const u_char *buf)
 	}
 
 	ret = mtd_write(mtd, 0, mtd->erasesize, &wrlen, bak);
-
-
+	if (ret)
+		pr_err("mtd_write failed: %d\n", ret);
 
 	put_mtd_device(mtd);
 	kfree(bak);
