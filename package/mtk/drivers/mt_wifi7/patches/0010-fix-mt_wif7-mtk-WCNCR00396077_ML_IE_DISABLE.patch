@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/include/rtmp.h
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/include/rtmp.h
 +++ mt_wifi7/mt_wifi/include/rtmp.h
-@@ -2961,6 +2961,7 @@ struct wifi_dev {
+@@ -2914,6 +2914,7 @@ struct wifi_dev {
  	BOOLEAN bMgmtQAutoRate;
  #ifdef DOT11_EHT_BE
  	UCHAR apcli_mlo_diable;
@@ -22,38 +22,44 @@ Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
  
  	for (i = 0, macptr = rstrtok(Buffer, ";"); macptr;
  			macptr = rstrtok(NULL, ";"), i++) {
-@@ -1010,11 +1011,18 @@ static void rtmp_read_mld_group_idx_from
+@@ -1004,17 +1005,23 @@ static void rtmp_read_mld_group_idx_from
  				break;
  
  			pMbss = &pAd->ApCfg.MBSSID[i];
 -
 +			wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev;
  			if ((mld_grp < BMGR_MAX_MLD_GRP_CNT) && (mld_grp != BMGR_INVALID_MLD_GRP)) {
- 				wlan_config_set_cfg_mld_idx(&pMbss->wdev, mld_grp);
+ 				pMbss->mld_grp_idx = mld_grp;
+ 				pMbss->mld_grp_by_cfg = TRUE;
  				pMbss->unique_mld_addr_enable = TRUE;
 +				if (mld_grp == 0)
 +					wdev->ap_mlo_disable = TRUE;
 +				else
 +					wdev->ap_mlo_disable = FALSE;				
-+				MTWF_PRINT("BSS%d mld_grp_idx=%d AP_MLO_DISABLE =%d\n",
-+					i, pMbss->mld_grp_idx,wdev->ap_mlo_disable);
- 			} else {
+ 				wlan_config_set_crit_upd_mode(&pMbss->wdev, CRIT_UPD_MODE_FLAG_FW_CMD_ONLY);
+ 				MTWF_PRINT("BSS%d mld_grp_idx=%d\n",
+ 					i, pMbss->mld_grp_idx);
+-			} else
++			} else {
 +				wdev->ap_mlo_disable = TRUE;
- 				wlan_config_set_cfg_mld_idx(&pMbss->wdev, MLD_SINGLE_TYPE_INDICATOR);
  				MTWF_PRINT("INVALID mld_grp_idx: %d (larger than max=%d)\n",
  					mld_grp, MAX_MLD_GROUP_NUM);
++			}
+ 		}
+ 	}
+ }
 Index: mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/protocol/be/mgmt_eht.c
 +++ mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
-@@ -74,6 +74,10 @@ uint8_t *eht_build_multi_link_ie(
- 			break;
- 		}
+@@ -57,6 +57,10 @@ uint8_t *eht_build_multi_link_ie(
  	} else {
+ 		struct query_mld_info mld_query = {0};
+ 
 +		if (wdev->ap_mlo_disable) {
 +			return pos; 
 +		}
 +
- 		pos += bss_mngr_query_mld_info(wdev, &mld_query);
- 		if (ml_type == BMGR_QUERY_ML_IE_BCN) {
- 			for (repted_link = 0; repted_link < BSS_MNGR_MAX_BAND_NUM; repted_link++) {
+ 		mld_query.query_type = ml_type;
+ 		mld_query.ie.mld_sta_idx = mld_sta_idx;
+ 		mld_query.ie.ml_ie = ml_ie;

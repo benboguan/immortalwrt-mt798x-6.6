@@ -474,7 +474,7 @@ config MTK_WIFI7_FAST_NAT_SUPPORT
 
 config MTK_WIFI7_WHNAT_SUPPORT
 	tristate "Wifi Hardware NAT support"
-	depends on MTK_WIFI7_WLAN_HOOK
+	depends on MTK_WIFI7_RTMP_WLAN_HOOK_SUPPORT
 	depends on MTK_WIFI7_FAST_NAT_SUPPORT
 	depends on PACKAGE_kmod-hw_nat || PACKAGE_kmod-mediatek_hnat
 	default n

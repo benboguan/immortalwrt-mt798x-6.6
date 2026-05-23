@@ -30,7 +30,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
 +					ScanCtrl->PartialScan.bscanwait = FALSE;
  					ScanCtrl->PartialScan.pwdev = NULL;
  					ScanCtrl->ScanType = SCAN_ACTIVE;
- #ifdef WIFI_SPECTRUM_ANALYZER_SUPPORT
+ 				}
 @@ -1607,7 +1611,8 @@
  					  ScanInfo->LastScanChannel,
  					  ScanCtrl->PartialScan.bScanning,

@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_wifi7
-P4REV:=
+
 PKG_SOURCE:=mt799x_20250613-415824.tar.xz
 PKG_VERSION:=8.3.1.2
 PKG_SOURCE_URL:=
@@ -314,7 +314,7 @@ TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	$(HOST_TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/ $(TAR_OPTIONS)
+	$(TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/
 endef
 
 BACKPORT_VERSION := $(shell \
@@ -334,7 +334,7 @@ define KernelPackage/mt_wifi7
 	+MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211 \
 	+@MTK_WIFI7_DOT11_VHT_AC:DRIVER_11AC_SUPPORT \
 	+@MTK_WIFI7_DOT11_HE_AX:DRIVER_11AX_SUPPORT  \
-	+@MTK_WIFI7_DOT11_EHT_BE:DRIVER_11BE_SUPPORT \
+	+@MTK_WIFI7_DOT11_EHT_BE:DRIVER_11BE_SUPPORT
 ifeq ($(CONFIG_MTK_CONNINFRA_APSOC),y)
   DEPENDS+=+kmod-conninfra
 endif
