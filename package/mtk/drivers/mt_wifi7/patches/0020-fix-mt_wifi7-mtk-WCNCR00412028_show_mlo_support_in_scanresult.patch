@@ -1,0 +1,181 @@
+Index: mt_wifi7/mt_wifi/common/cmm_info.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/cmm_info.c
++++ mt_wifi7/mt_wifi/common/cmm_info.c
+@@ -6843,7 +6843,7 @@ VOID RTMPCommSiteSurveyData(
+ 	if (wireless_mode == Ndis802_11FH ||
+ 		wireless_mode == Ndis802_11DS) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "b");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "b");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6851,7 +6851,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM5) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "a");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "a");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6859,7 +6859,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM5_N) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "a/n");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "a/n");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6867,7 +6867,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM5_AC) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "a/n/ac");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "a/n/ac");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6875,7 +6875,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM24) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "b/g");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "b/g");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6883,7 +6883,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM24_N) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "b/g/n");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "b/g/n");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6891,7 +6891,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM24_HE) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "b/g/n/ax");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "b/g/n/ax");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6899,7 +6899,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM5_HE) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "a/n/ac/ax");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "a/n/ac/ax");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6907,7 +6907,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM24_EHT) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "b/g/n/ax/be");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "b/g/n/ax/be");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6915,7 +6915,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else if (wireless_mode == Ndis802_11OFDM5_EHT) {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "a/n/ac/ax/be");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "a/n/ac/ax/be");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -6923,7 +6923,7 @@ VOID RTMPCommSiteSurveyData(
+ 		}
+ 	} else {
+ 		LeftBufSize = MsgLen - strlen(msg);
+-		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-11s", "unknown");
++		ret = snprintf(msg + strlen(msg), LeftBufSize, "%-12s", "unknown");
+ 		if (os_snprintf_error(LeftBufSize, ret)) {
+ 			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
+ 						"Snprintf failed!\n");
+@@ -7144,7 +7144,7 @@ INT mtk_cfg80211_get_scan_result(struct
+ #else
+ 	LeftBufSize = TotalLen - strlen(msg);
+ 	Status = snprintf(msg + strlen(msg), LeftBufSize,
+-	"%-4s%-4s%-34s%-20s%-23s%-9s%-11s%-7s%-5s%-3s%-8s\n",
++	"%-4s%-4s%-34s%-20s%-23s%-9s%-12s%-7s%-5s%-3s%-8s\n",
+ 	"No", "Ch", "SSID", "BSSID", "Security", "Siganl(%)", "W-Mode", " ExtCH",
+ 	"BW", " NT", " SSID_Len");
+ 	if (os_snprintf_error(LeftBufSize, Status)) {
+@@ -7153,6 +7153,15 @@ INT mtk_cfg80211_get_scan_result(struct
+ 		goto ERROR;
+ 	}
+ #endif
++#ifdef DOT11_EHT_BE
++	LeftBufSize = TotalLen - strlen(msg);
++	Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-5s\n", " MLO");
++	if (os_snprintf_error(LeftBufSize, Status)) {
++		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
++				"Snprintf failed!\n");
++		goto ERROR;
++	}
++#endif /* DOT11_EHT_BE */
+ #ifdef WSC_INCLUDED
+ 	LeftBufSize = TotalLen - strlen(msg);
+ 	Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-4s%-5s\n", " WPS", " DPID");
+@@ -7239,6 +7248,15 @@ INT mtk_cfg80211_get_scan_result(struct
+ 			goto ERROR;
+ 		}
+ 		RTMPCommSiteSurveyData(msg, pBss, TotalLen);
++#if DOT11_EHT_BE
++		LeftBufSize = TotalLen - strlen(msg);
++		Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-5s", pBss->ml_capable ? (pBss->max_num_simul_link==0 ? " SL" : " ML") : " NO");
++		if (os_snprintf_error(LeftBufSize, Status)) {
++			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
++					"Snprintf failed!\n");
++			goto ERROR;
++		}
++#endif /* DOT11_EHT_BE */
+ #ifdef WSC_INCLUDED
+ 
+ 		/*WPS*/
+Index: mt_wifi7/mt_wifi/common/mld_link_mgr.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/mld_link_mgr.c
++++ mt_wifi7/mt_wifi/common/mld_link_mgr.c
+@@ -3472,6 +3472,7 @@ VOID mld_parse_per_link_cap(RTMP_ADAPTER
+ 		goto end;
+ 	}
+ 
++	ie_list->mlo_ie_info.mld_caps = ml_ie_info->mld_caps;
+ 	MTWF_DBG(NULL, DBG_CAT_MLO, CATMLO_BMGR, DBG_LVL_INFO, "\n");
+ 
+ 	COPY_MAC_ADDR(ml_info->mld_addr, ml_ie_info->mld_addr);
+Index: mt_wifi7/mt_wifi/include/mlme.h
+===================================================================
+--- mt_wifi7.orig/mt_wifi/include/mlme.h
++++ mt_wifi7/mt_wifi/include/mlme.h
+@@ -1720,6 +1720,7 @@ typedef struct _BSS_ENTRY {
+ #endif
+ #ifdef DOT11_EHT_BE
+ 	uint8_t ml_capable;
++	UINT8 max_num_simul_link;
+ 	struct multi_link_info ml_info;
+ 	struct eht_cap_ie eht_caps;
+ 	struct eht_op_ie eht_op;
+Index: mt_wifi7/mt_wifi/protocol/ax/bss_ops.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/protocol/ax/bss_ops.c
++++ mt_wifi7/mt_wifi/protocol/ax/bss_ops.c
+@@ -921,7 +921,7 @@ VOID BssEntrySet(
+ 		eht_store_basic_multi_link_info(pBss->basic_multi_link_ie, cmm_ies);
+ 		mld_parse_per_link_cap(pAd, ie_list, &pBss->ml_info);
+ 		pBss->ml_capable = TRUE;
+-
++		pBss->max_num_simul_link = ie_list->mlo_ie_info.mld_caps & 0x0F;
+ 	}
+ 		MTWF_DBG(pAd, DBG_CAT_MLME, CATMLME_BSSENTRY, DBG_LVL_INFO,
+ 		"HAS_RNR_EXIST: %d.\n",

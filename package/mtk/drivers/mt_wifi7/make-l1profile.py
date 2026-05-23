@@ -41,7 +41,7 @@ def validate():
 	# make sure these configs are unique
 	for name in ["main_ifname", "ext_ifname", "wds_ifname",
 				 "apcli_name", "mesh_ifname", "nvram_zone",
-				 "profile_path"]:
+				 "init_path", "profile_path"]:
 		if1 = d1.get(name, random.random())
 		if2 = d2.get(name, random.random())
 		if3 = d3.get(name, random.random())

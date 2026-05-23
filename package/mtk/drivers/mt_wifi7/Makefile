@@ -8,8 +8,12 @@ include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_wifi7
 P4REV:=
-PKG_VERSION:=TEST
+PKG_SOURCE:=mt799x_20250613-415824.tar.xz
+PKG_VERSION:=8.3.1.2
 PKG_SOURCE_URL:=
+PKG_BIN_SOURCE:=mt799x_20250613-415824-bin.tar.xz
+PKG_BIN_SOURCE_URL:=
+
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
 
 PKG_KCONFIG:= \
@@ -67,6 +71,7 @@ PKG_KCONFIG:= \
 	DOT11W_PMF_SUPPORT \
 	PASSPOINT_R2 \
 	PROXYARP_SUPPORT \
+	PASN_SUPPORT \
 	OFFCHANNEL_SUPPORT \
 	BS_MAP_BL_SUPPORT \
 	TXBF_SUPPORT \
@@ -152,6 +157,8 @@ PKG_KCONFIG:= \
 	AMPDU_CONF_SUPPORT \
 	ACK_CTS_TIMEOUT_SUPPORT \
 	TX_LATENCY_SUPPORT \
+	TDMA_SUPPORT \
+	TDMA_SW_ACK_SUPPORT \
 	RADIUS_MAC_AUTH_SUPPORT \
 	VLAN_SUPPORT \
 	VLAN_GTK_SUPPORT \
@@ -211,6 +218,7 @@ PKG_KCONFIG:= \
 	MULTI_PROFILE_SUPPORT \
 	PRE_CAL_TRX_SET1_SUPPORT \
 	MWDS \
+	HOSTAPD_WDS \
 	MCAST_RATE_SPECIFIC \
 	WLAN_HOOK \
 	COEX_SUPPORT \
@@ -263,7 +271,7 @@ PKG_KCONFIG:= \
 	ADIE_TYPE \
 	TR181_SUPPORT \
 	MLME_MULTI_QUEUE_SUPPORT \
-	EXPERIMENTAL_FEATURES \
+	TX_CROSS_CPU_QUEUE_PROCESS \
 	IGMP_SNOOP_SUPPORT \
 	SPECIAL_RPS_SUPPORT \
 	BA_REORDER_ARRAY_SUPPORT \
@@ -289,7 +297,11 @@ PKG_KCONFIG:= \
 	ICVERR_RESET_RRO \
 	NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT \
 	MLD_GROUP_RESTORE \
-	UNIFIED_COUNTRY_CONFIG_SUPPORT
+	UNIFIED_COUNTRY_CONFIG_SUPPORT \
+	SINGLE_SKU_EXT \
+	FIPS_140_3_SELF_TEST \
+	FIPS_140_3_SUPPORT \
+	WF_RESET_SUPPORT
 
 PKG_CONFIG_DEPENDS:=$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)))
 
@@ -300,12 +312,29 @@ include $(INCLUDE_DIR)/package.mk
 
 TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 
-BACKPORT_VERSION:=$(lastword $(subst /, , $(shell find $(KERNEL_BUILD_DIR) -type 'd' -name 'backports*')))
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(HOST_TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/ $(TAR_OPTIONS)
+endef
+
+BACKPORT_VERSION := $(shell \
+    find $(KERNEL_BUILD_DIR) $(KERNEL_BUILD_DIR)/mac80211-regular -maxdepth 1 -type d -name 'backports-*' | \
+    xargs basename | \
+    awk -F'-' '/backports-/ {print $2}' \
+)
 
 define KernelPackage/mt_wifi7
   CATEGORY:=MTK Properties
   TITLE:=MTK wifi7 AP driver
-  DEPENDS:=blkid +MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211 +kmod-mt_wifi_cmn
+  DEPENDS:=+wifi-dats \
+	+nand-utils \
+	+blkid \
+	+MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_osal \
+	+!MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_cmn \
+	+MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211 \
+	+@MTK_WIFI7_DOT11_VHT_AC:DRIVER_11AC_SUPPORT \
+	+@MTK_WIFI7_DOT11_HE_AX:DRIVER_11AX_SUPPORT  \
+	+@MTK_WIFI7_DOT11_EHT_BE:DRIVER_11BE_SUPPORT \
 ifeq ($(CONFIG_MTK_CONNINFRA_APSOC),y)
   DEPENDS+=+kmod-conninfra
 endif
@@ -368,17 +397,30 @@ endif
 
 KCFLAGS += $(if $(CONFIG_MTK_WIFI7_OSAL_SUPPORT), -DMT_WIFI_COMMON_SUPPORT -DMT_WIFI_OSAL_SUPPORT -I$(STAGING_DIR)/usr/include/mt_wifi -I$(STAGING_DIR)/usr/include/mt_wifi/os)
 
+KCFLAGS += -Wno-error=missing-prototypes -Wno-error=implicit-function-declaration -Wno-empty-body \
+	-Wno-error=empty-body -Wno-unused-but-set-parameter
+
+define collect_module_symvers
+	realdir=$$$$(readlink -f $(PKG_BUILD_DIR))/mt_wifi_ap; \
+	grep -F $$$$realdir $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers >> $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers.tmp; \
+	sort -u $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers.tmp > $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers; \
+	mkdir -p $(PKG_SYMVERS_DIR); \
+	mv $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers $(PKG_SYMVERS_DIR)/$(PKG_NAME).symvers
+endef
+
 define Build/Compile
 	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" V=1 \
-		$(KERNEL_MAKE_FLAGS) \
+		CROSS_COMPILE="$(TARGET_CROSS)" \
+		ARCH="$(LINUX_KARCH)" \
 		M="$(PKG_BUILD_DIR)/mt_wifi_ap" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_MTK_WIFI7_$c),CONFIG_$(c)=$(CONFIG_MTK_WIFI7_$(c)))) \
 		NOSTDINC_FLAGS="$(NOSTDINC_FLAGS)" \
-	 	KCFLAGS="$(KCFLAGS)" \
+		KCFLAGS="$(KCFLAGS)" \
+		CFG_CFG80211_VERSION:=$(word 2,$(subst -, ,$(BACKPORT_VERSION))) \
+		KBUILD_EXTRA_SYMBOLS="$(wildcard $(PKG_SYMVERS_DIR)/*.symvers)" \
 		modules
 	touch $(PKG_BUILD_DIR)/.no_autorebuild
-	cp $(PKG_BUILD_DIR)/mt_wifi_ap/Module.symvers $(PKG_BUILD_DIR)/Module.symvers
 endef
 
 define KernelPackage/mt_wifi7/install
@@ -420,6 +462,7 @@ ifeq ($(CONFIG_MTK_WIFI7_SKU_TYPE),"BE13000_255")
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_EEPROM_255_eFEM.bin $(1)/lib/firmware/.
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_EEPROM.bin $(1)/lib/firmware/.
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_EEPROM2.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_iPAiLNA_EEPROM.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/MT7990_EEPROM_iFEM233.bin $(1)/lib/firmware/.
 endif
@@ -443,7 +486,11 @@ else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/MT7992_MT7975_MT7977_EEPROM_BE7200_2i5e_sky_nonlinear.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/MT7991_MT7976_EEPROM_BE5040_iPAiLNA.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7992/rebb/MT7991_MT7976_EEPROM_BE5040_ePAeLNA.bin $(1)/lib/firmware/.
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/
+	if [ -d "$(PKG_BUILD_DIR)/wifi_driver" ]; then \
+		$(INSTALL_BIN) $(PKG_BUILD_DIR)/wifi_driver/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
+	else \
+		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
+	fi
 endif
 endif
 ifeq ($(CONFIG_MTK_WIFI7_CHIP_MT7993),y)
@@ -451,7 +498,7 @@ ifeq ($(CONFIG_MTK_WIFI7_CHIP_MT7993),y)
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/MT7993_MT7976_EEPROM_BE3600_iPAiLNA.bin $(1)/lib/firmware/.
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7993/rebb/MT7993_MT7976_EEPROM_BE3600_ePAeLNA.bin $(1)/lib/firmware/.
 	if [ -d "$(PKG_BUILD_DIR)/wifi_driver" ]; then \
-		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
+		$(INSTALL_BIN) $(PKG_BUILD_DIR)/wifi_driver/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
 	else \
 		$(INSTALL_BIN) $(PKG_BUILD_DIR)/mt_wifi/tools/fw_parser/get_consys_log.sh $(1)/etc/wireless/mediatek/; \
 	fi
@@ -511,6 +558,11 @@ ifeq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
 		if [ "$$(CONFIG_MTK_WIFI7_SKU_TYPE)" = "BE3600_26" ] ; then \
 			sed -i "s/mt7993.b1.dat/mt7993.b2.dat/" $(1)/etc/wireless/mediatek/mt7993.1.dat ; \
 		fi; \
+	fi
+
+	# blackhawk
+	if [ "$$(CONFIG_first_card_name)" = "BLACKHAWK" -o "$$(CONFIG_second_card_name)" = "BLACKHAWK" ] ; then \
+		$(INSTALL_DATA) $(PKG_BUILD_DIR)/mt_wifi/profiles/blackhawk/* $(1)/etc/wireless/mediatek/; \
 	fi
 endif
 endef

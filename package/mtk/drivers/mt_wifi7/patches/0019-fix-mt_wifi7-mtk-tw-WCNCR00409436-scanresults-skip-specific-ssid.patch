@@ -1,0 +1,33 @@
+Index: mt_wifi7/mt_wifi/common/cmm_info.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/cmm_info.c
++++ mt_wifi7/mt_wifi/common/cmm_info.c
+@@ -7057,6 +7057,8 @@ INT mtk_cfg80211_get_scan_result(struct
+ 	BSS_ENTRY *pBss;
+ 	UINT32 TotalLen, BufLen;
+ 	BSS_TABLE *ScanTab = &ScanCtrl->ScanTab;
++	INT         Rssi = 0;
++	UINT        Rssi_Quality = 0;
+ 
+ 	if (!ScanTab) {
+ 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR, "ScanTab is null\n");
+@@ -7209,6 +7211,19 @@ INT mtk_cfg80211_get_scan_result(struct
+ 	for (i = bss_start_idx; i < ScanTab->BssNr; i++) {
+ 		pBss = &ScanTab->BssEntry[i];
+ 
++		if (pBss->SsidLen == 0) // skip hidden ssid
++			continue;
++		Rssi = (INT)pBss->Rssi;
++		if (Rssi >= -50)
++			Rssi_Quality = 100;
++		else if (Rssi >= -80)    /* between -50 ~ -80dbm*/
++			Rssi_Quality = (UINT)(24 + ((Rssi + 80) * 26) / 10);
++		else if (Rssi >= -90)   /* between -80 ~ -90dbm*/
++			Rssi_Quality = (UINT)(((Rssi + 90) * 26) / 10);
++		else    /* < -84 dbm*/
++			Rssi_Quality = 0;
++		if(Rssi_Quality == 0)
++			continue;
+ 		if (pBss->Channel == 0)
+ 			break;
+ 

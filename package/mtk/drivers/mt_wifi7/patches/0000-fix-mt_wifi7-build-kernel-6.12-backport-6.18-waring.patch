@@ -1,0 +1,135 @@
+--- a/warp_driver/warp/warp_main.c
++++ b/warp_driver/warp/warp_main.c
+@@ -474,7 +474,7 @@
+ /*
+ *
+ */
+-static int
++static void
+ warp_remove(struct platform_device *pdev)
+ {
+ 	struct warp_entry *warp;
+@@ -490,7 +490,6 @@
+ 	if (warp == NULL) {
+ 		warp_dbg(WARP_DBG_ERR, "%s(): remove faild since can't find warp entry!\n",
+ 			 __func__);
+-		return -1;
+ 	}
+ 
+ 	wed = &warp->wed;
+@@ -536,7 +535,7 @@
+ 	/* unregister warp msg */
+ 	warp_msg_deinit(warp->idx);
+ #endif
+-	return 0;
++	return;
+ }
+ 
+ /*
+--- a/warp_driver/warp/warp_tx_bm_v2.c
++++ b/warp_driver/warp/warp_tx_bm_v2.c
+@@ -7,6 +7,7 @@
+ #include "wdma.h"
+ #include <linux/version.h>
+ #include <linux/pci.h>
++#include <linux/vmalloc.h>
+ 
+ void
+ dump_pkt_info(struct wed_buf_res *res)
+--- a/warp_driver/warp/warp_rx_bm.c
++++ b/warp_driver/warp/warp_rx_bm.c
+@@ -7,6 +7,7 @@
+ #include "wdma.h"
+ #include <linux/version.h>
+ #include <linux/pci.h>
++#include <linux/vmalloc.h>
+ 
+ static void
+ wed_rx_bm_dma_cb_exit(struct wed_entry *wed, struct warp_dma_cb *dma_cb)
+--- a/warp_driver/warp/warp_rx_page_bm.c
++++ b/warp_driver/warp/warp_rx_page_bm.c
+@@ -8,6 +8,7 @@
+ #include "warp_utility.h"
+ #include <linux/version.h>
+ #include <linux/pci.h>
++#include <linux/vmalloc.h>
+ 
+ static u32
+ wed_msdu_page_hash(dma_addr_t pa)
+--- a/mt_wifi/include/rtmp_def.h
++++ b/mt_wifi/include/rtmp_def.h
+@@ -2649,6 +2649,9 @@
+ #define WCID_SHIFT 0x200
+ #endif
+ 
++#ifdef MAC_ADDR_STR_LEN
++#undef MAC_ADDR_STR_LEN
++#endif
+ #define MAC_ADDR_STR_LEN 17  /* in format of xx:xx:xx:xx:xx:xx*/
+ 
+ #endif /* __RTMP_DEF_H__ */
+--- a/wlan_hwifi/core.h
++++ b/wlan_hwifi/core.h
+@@ -84,6 +84,9 @@ struct mtk_hw_ops {
+ };
+ 
+ #define MAC_WATCHDOG_TIME		(HZ / 10)
++#ifndef PCI_IRQ_LEGACY
++#define PCI_IRQ_LEGACY PCI_IRQ_INTX
++#endif
+ 
+ struct mtk_mib_status {
+ 	u16 ack_fail_cnt;
+--- a/wlan_hwifi/chips/mt7990/mt7990_option_table.h
++++ b/wlan_hwifi/chips/mt7990/mt7990_option_table.h
+@@ -4,6 +4,8 @@
+ #ifndef __MTK_CHIP_MT7990_OPTION_TABLE_H
+ #define __MTK_CHIP_MT7990_OPTION_TABLE_H
+ 
++#include "core.h"
++
+ #define MT7990_ZERO_NUM	(~0)
+ #define MT7990_CHIP_OPT_AN7581 5
+ 
+--- a/wlan_hwifi/chips/mt7992/mt7992_option_table.h
++++ b/wlan_hwifi/chips/mt7992/mt7992_option_table.h
+@@ -4,6 +4,8 @@
+ #ifndef __MTK_CHIP_MT7992_OPTION_TABLE_H
+ #define __MTK_CHIP_MT7992_OPTION_TABLE_H
+ 
++#include "core.h"
++
+ #define MT7992_ZERO_NUM	(~0)
+ 
+ #define MT7992_SDB_BAND_SEL_DEFAULT 1
+--- a/wlan_hwifi/chips/mt7993/mt7993_option_table.h
++++ b/wlan_hwifi/chips/mt7993/mt7993_option_table.h
+@@ -4,6 +4,8 @@
+ #ifndef __MTK_CHIP_MT7993_OPTION_TABLE_H
+ #define __MTK_CHIP_MT7993_OPTION_TABLE_H
+ 
++#include "core.h"
++
+ #define MT7993_ZERO_NUM	(~0)
+ 
+ enum mt7993_chip_opt {
+--- a/wlan_hwifi/utility.h
++++ b/wlan_hwifi/utility.h
+@@ -11,15 +11,17 @@
+ 
+ #define __bf_shf(x) (__builtin_ffsll(x) - 1)
+ 
++#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0))
+ #define field_prep(_mask, _val)						\
+ 	({								\
+ 		((typeof(_mask))(_val) << __bf_shf(_mask)) & (_mask);	\
+ 	})
+ 
+ #define field_get(_mask, _reg)						\
+ 	({								\
+ 		(typeof(_mask))(((_reg) & (_mask)) >> __bf_shf(_mask));	\
+ 	})
++#endif
+ 
+ #define SET_FIELD(_field, _val)	\
+ 	({	\

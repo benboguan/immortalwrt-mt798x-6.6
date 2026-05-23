@@ -1,0 +1,27 @@
+Index: mt_wifi7/mt_wifi/common/scan.c
+===================================================================
+--- mt_wifi7/mt_wifi/common/scan.c
++++ mt_wifi7/mt_wifi/common/scan.c
+@@ -1401,7 +1401,7 @@
+ 
+ #ifdef CONFIG_STA_SUPPORT
+ 			if ((wdev->wdev_type == WDEV_TYPE_STA) &&
+-				(ScanType == SCAN_ACTIVE) &&
++				((ScanType == SCAN_ACTIVE) || (ScanType == SCAN_PARTIAL)) &&
+ 				(ScanCtrl->SsidLen > 0)) {
+ 				/* Enhance Connectivity when Hidden Ssid Scanning */
+ 				CHAR desiredSsid[MAX_LEN_OF_SSID] = {0};
+
+Index: mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_scan.c
+===================================================================
+--- mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_scan.c
++++ mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_scan.c
+@@ -232,7 +232,7 @@
+ 
+ 		if (Ssid.SsidLength) {
+ 			ScanCtrl->SsidLen = Ssid.SsidLength;
+-			NdisMoveMemory(ScanCtrl->Ssid, &Ssid.SsidLength, Ssid.SsidLength);
++			NdisMoveMemory(ScanCtrl->Ssid, pScan->pSsid, Ssid.SsidLength);
+ 		} else if (StaCfg && !INFRA_ON(StaCfg)
+ 				&& !(STA_STATUS_TEST_FLAG(StaCfg, fSTA_STATUS_MEDIA_STATE_CONNECTED))) {
+ 			ScanCtrl->SsidLen = StaCfg->CfgSsidLen;

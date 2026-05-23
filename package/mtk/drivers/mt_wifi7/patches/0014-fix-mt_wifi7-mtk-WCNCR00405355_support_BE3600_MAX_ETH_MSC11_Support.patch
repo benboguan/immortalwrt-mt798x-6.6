@@ -1,0 +1,50 @@
+Index: mt_wifi7/mt_wifi/common/cmm_cfg.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/cmm_cfg.c
++++ mt_wifi7/mt_wifi/common/cmm_cfg.c
+@@ -1722,7 +1722,9 @@ IOCTL_ATE_ERROR:
+ 			}
+ 			Antenna = wlan_config_get_eht_tx_nss(wdev);
+ 			BW =  wlan_operate_get_eht_bw(wdev);
+-			MCS = 13;
++			//MCS = 13;
++			MCS = wlan_config_get_eht_max_mcs(wdev);
++			MCS = MCS ? MCS : 13;
+ 			gi = wlan_config_get_he_gi(wdev);
+ 
+ 			RtmpDrvMaxRateGet(pAd, MODE_EHT, gi,
+Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/profiles/ap_profile.c
++++ mt_wifi7/mt_wifi/profiles/ap_profile.c
+@@ -1582,7 +1582,20 @@ void read_ap_eht_config_from_file(
+ 	}
+ 	if (RTMPGetKeyParameter("EHT_MaxMcs", tmpbuf,
+ 			MAX_PARAMETER_LEN, pBuffer, TRUE)) {
+-
++		value = os_str_tol(tmpbuf, 0, 10);
++		for (idx = 0; idx < pAd->ApCfg.BssidNum; idx++) {
++			wdev = &pAd->ApCfg.MBSSID[idx].wdev;
++			MTWF_PRINT("Line.%d - AP Band%d(MBSS%d) ==> ",
++					__LINE__, band_idx, idx);
++			wlan_config_set_eht_max_mcs(
++					wdev, ((u8)value) == 0 ? MCS_13:(u8)value);
++		}
++		for (idx = 0; idx < MAX_APCLI_NUM; idx++) {
++			wdev = &pAd->StaCfg[idx].wdev;
++			wlan_config_set_eht_max_mcs(
++					wdev, ((u8)value) == 0 ? MCS_13:(u8)value);
++		}
++		/*		
+ 		for (idx = 0, macptr = rstrtok(tmpbuf, ";");
+ 			(macptr && idx < pAd->ApCfg.BssidNum);
+ 			macptr = rstrtok(NULL, ";"), idx++) {
+@@ -1599,7 +1612,7 @@ void read_ap_eht_config_from_file(
+ 				wlan_config_set_eht_max_mcs(
+ 					wdev, ((u8)value) == 0 ? MCS_13:(u8)value);
+ 			}
+-		}
++		}*/
+ 	}
+ 	if (RTMPGetKeyParameter("EHT_ApDisSubChBitMap", tmpbuf,
+ 			MAX_PARAMETER_LEN, pBuffer, TRUE)) {

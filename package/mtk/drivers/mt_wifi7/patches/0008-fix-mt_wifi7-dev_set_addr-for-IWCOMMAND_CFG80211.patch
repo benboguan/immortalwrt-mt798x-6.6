@@ -1,0 +1,16 @@
+--- a/mt_wifi/sta/sta.c
++++ b/mt_wifi/sta/sta.c
+@@ -479,8 +479,13 @@ INT sta_inf_open(struct wifi_dev *wdev)
+ #ifdef IWCOMMAND_CFG80211_SUPPORT
+ 		AsicSetWdevIfAddr(pAd, wdev, OPMODE_STA);
+ 		if (wdev->if_dev) {
++#if KERNEL_VERSION(5, 15, 0) > LINUX_VERSION_CODE
+ 			NdisMoveMemory(RTMP_OS_NETDEV_GET_PHYADDR(wdev->if_dev),
+ 				wdev->if_addr, MAC_ADDR_LEN);
++#else
++			mt_os_net_dev_set_addr(wdev->if_dev, wdev->if_addr, NULL);
++			//dev_addr_set(wdev->if_dev, wdev->if_addr);
++#endif
+ 		}
+ #endif /* IWCOMMAND_CFG80211_SUPPORT */
+ 

@@ -1,0 +1,23 @@
+--- a/mt_wifi/include/rtmp.h
++++ b/mt_wifi/include/rtmp.h
+@@ -289,6 +289,20 @@ #ifdef RT_CFG80211_SUPPORT
+ #endif
+ /* TODO: shiang-6590, remove it after ATE fully re-organized! copy from rtmp_bbp.h */
+ 
++/* strlcpy compatibility implementation for musl libc */
++#ifndef strlcpy
++static inline size_t strlcpy(char *dest, const char *src, size_t size)
++{
++    size_t ret = strlen(src);
++    if (size) {
++        size_t len = (ret >= size) ? size - 1 : ret;
++        memcpy(dest, src, len);
++        dest[len] = '\0';
++    }
++    return ret;
++}
++#endif
++
+ /* Debug log color */
+ #define KNRM  "\x1B[0m"
+ #define KRED  "\x1B[31m"

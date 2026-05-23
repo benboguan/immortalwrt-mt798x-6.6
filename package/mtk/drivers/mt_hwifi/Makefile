@@ -7,11 +7,17 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_hwifi
-WIFI_DRIVER_NAME:=mt_hwifi
+WIFI_DRIVER_NAME:=mt_wifi7
 P4REV:=
-PKG_VERSION:=TEST
+PKG_VERSION:=8.3.1.2
+#PATCH_DIR:=patches
+PKG_SOURCE:=mt799x_20250613-415824.tar.xz
 PKG_SOURCE_URL:=
+PKG_BIN_SOURCE:=mt799x_20250613-415824-bin.tar.xz
+PKG_BIN_SOURCE_URL:=
+
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(WIFI_DRIVER_NAME)
+
 PKG_KCONFIG:= \
 	SUPPORT_OPENWRT \
 	CCN34_SPLIT_MAC_SUPPORT \
@@ -25,10 +31,15 @@ include $(INCLUDE_DIR)/package.mk
 
 TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(HOST_TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/ $(TAR_OPTIONS)
+endef
+
 define KernelPackage/mt_hwifi
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HW abstraction layer driver
-	DEPENDS:=+kmod-mt_wifi7 +kmod-mt_wifi_cmn
+	DEPENDS:=+kmod-mt_wifi7 +MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_osal +!MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_cmn
 	FILES:=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_hwifi.ko
 	AUTOLOAD:=$(call AutoLoad,62,mtk_hwifi)
 	SUBMENU:=Drivers
@@ -46,7 +57,7 @@ endef
 define KernelPackage/mtk_pci
 	CATEGORY:=MTK Properties
 	TITLE:=MediaTek HWIFI PCI driver
-	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_PCI_SUPPORT +kmod-mt_wifi_cmn
+	DEPENDS:=kmod-mt_hwifi @MTK_HWIFI_PCI_SUPPORT +MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_osal +!MTK_WIFI7_OSAL_SUPPORT:kmod-mt_wifi_cmn
 	FILES+=$(PKG_BUILD_DIR)/wlan_hwifi/mtk_pci.ko
 	AUTOLOAD:=$(call AutoLoad,63,mtk_pci)
 	SUBMENU:=Drivers
@@ -334,6 +345,10 @@ ifeq ($(CONFIG_MTK_HWIFI_SW_AMSDU),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_SW_AMSDU=y
 endif
 
+ifeq ($(CONFIG_MTK_HWIFI_TDMA_SW_ACK_SUPPORT),y)
+	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_TDMA_SW_ACK_SUPPORT=y
+endif
+
 ifeq ($(CONFIG_MTK_HWIFI_FW_HDR_SUPPORT),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_FW_HDR_SUPPORT=y
 endif
@@ -352,6 +367,9 @@ KCFLAGS += \
 endif
 
 KCFLAGS += $(if $(CONFIG_MTK_WIFI7_OSAL_SUPPORT), -DMT_WIFI_COMMON_SUPPORT -I$(STAGING_DIR)/usr/include/mt_wifi)
+
+KCFLAGS += -Wno-error=missing-prototypes -Wno-error=implicit-function-declaration -Wno-empty-body \
+	-Wno-error=empty-body -Wno-unused-but-set-parameter
 
 ifneq ($(CONFIG_PACKAGE_kmod-mt7915_),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_MT7915=n
@@ -402,15 +420,26 @@ ifneq ($(CONFIG_PACKAGE_kmod-blackhawk_a0_pcie1),y)
 	MTK_HWIFI_C_FLAGS+=CONFIG_HWIFI_CHIP_BLACKHAWK_A0_PCIE1=n
 endif
 
+define collect_module_symvers
+	realdir=$$$$(readlink -f $(PKG_BUILD_DIR))/wlan_hwifi; \
+	grep -F $$$$realdir $(PKG_BUILD_DIR)/wlan_hwifi/Module.symvers >> $(PKG_BUILD_DIR)/wlan_hwifi/Module.symvers.tmp; \
+	sort -u $(PKG_BUILD_DIR)/wlan_hwifi/Module.symvers.tmp > $(PKG_BUILD_DIR)/wlan_hwifi/Module.symvers; \
+	mkdir -p $(PKG_SYMVERS_DIR); \
+	mv $(PKG_BUILD_DIR)/wlan_hwifi/Module.symvers $(PKG_SYMVERS_DIR)/$(PKG_NAME).symvers
+endef
+
 define Build/Compile
 	$(Build/Compile/mt7990)
 	$(Build/Compile/mt7992)
 	$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" V=1 \
+		CROSS_COMPILE="$(TARGET_CROSS)" \
+		ARCH="$(LINUX_KARCH)" \
 		$(KERNEL_MAKE_FLAGS) \
 		M="$(PKG_BUILD_DIR)/wlan_hwifi" \
 		LINUX_DIR="$(KERNEL_BUILD_DIR)" \
 		$(MTK_HWIFI_C_FLAGS) \
 	 	KCFLAGS="$(KCFLAGS)" \
+		KBUILD_EXTRA_SYMBOLS="$(wildcard $(PKG_SYMVERS_DIR)/*.symvers)" \
 		modules
 endef
 
@@ -467,19 +496,19 @@ else ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7977")
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7977/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7977/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7977/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7977/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
 else ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7979")
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/pre8_7979/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
 else ifeq ($(CONFIG_MTK_WIFI7_ADIE_TYPE),"MT7777")
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin $(1)/lib/firmware/WIFI_MT7990_PATCH_MCU_1_1_hdr.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1_TESTMODE.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/uni_e2p_7777/WIFI_MT7990_PHY_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_PHY_RAM_CODE_1_1.bin
 else
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin $(1)/lib/firmware/WIFI_MT7990_WACPU_RAM_CODE_1_1.bin
 	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/mt7990/rebb/WIFI_RAM_CODE_MT7990_1_1.bin $(1)/lib/firmware/WIFI_RAM_CODE_MT7990_1_1.bin
@@ -605,8 +634,7 @@ endif
 endif
 
 ifeq ($(CONFIG_MTK_HWIFI_BLACKHAWK_A0),y)
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin $(1)/lib/firmware/WIFI_BLACKHAWK_A0_PATCH_MCU_hdr.bin
-	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_RAM_CODE_BLACKHAWK_A0.bin $(1)/lib/firmware/WIFI_RAM_CODE_BLACKHAWK_A0.bin
+	$(INSTALL_BIN) $(PKG_BUILD_DIR)/bin/blackhawk/rebb/WIFI_UNI_CODE_BLACKHAWK_A0.bin $(1)/lib/firmware/WIFI_UNI_CODE_BLACKHAWK_A0.bin
 endif
 
 endef

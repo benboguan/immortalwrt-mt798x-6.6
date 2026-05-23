@@ -19,6 +19,8 @@ if [ -d wifi_driver ]; then
 
     SKU_5MHZ_SHIFT=$2
     export SKU_5MHZ_SHIFT
+    SINGLE_SKU_EXT=$3
+    export SINGLE_SKU_EXT
     # run sinelg sku table transfomr to header file
     make -f mk/Makefile build_power_limit_tables
     echo "Eagle mt_wifi autobuild"

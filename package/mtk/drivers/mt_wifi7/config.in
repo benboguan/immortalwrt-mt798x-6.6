@@ -31,6 +31,14 @@ config MTK_WIFI7_DOT11_BE_SUPPORT
 	bool
 	default n
 
+config MTK_WIFI7_FIPS_140_3_SELF_TEST
+	bool "Enable FIPS 140-3 self test"
+	default n
+
+config MTK_WIFI7_FIPS_140_3_SUPPORT
+	bool "Enable FIPS 140-3"
+	default n
+
 #
 # Chips
 #
@@ -139,28 +147,28 @@ choice
 	config MTK_WIFI7_THIRD_IF_NONE
 	bool "None"
 
-	config MTK_THIRD_IF_MT7915
+	config MTK_WIFI7_THIRD_IF_MT7915
         bool "MT7915 (Harrier)"
         select MTK_WIFI7_CHIP_MT7915
 	select MTK_WIFI7_MULTI_INF_SUPPORT
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
-	config MTK_THIRD_IF_MT7990
+	config MTK_WIFI7_THIRD_IF_MT7990
         bool "MT7990 (Eagle)"
         select MTK_WIFI7_CHIP_MT7990
 	select MTK_WIFI7_MULTI_INF_SUPPORT
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
-	config MTK_THIRD_IF_MT7992
+	config MTK_WIFI7_THIRD_IF_MT7992
         bool "MT7992 (Kite)"
         select MTK_WIFI7_CHIP_MT7992
 	select MTK_WIFI7_MULTI_INF_SUPPORT
 	select MTK_WIFI7_UNIFIED_COMMAND
 	select MTK_WIFI7_DOT11_BE_SUPPORT
 
-	config MTK_THIRD_IF_MT7993
-		bool "MT7993 (Griffin)"
+	config MTK_WIFI7_THIRD_IF_MT7993
+	bool "MT7993 (Griffin)"
         select MTK_WIFI7_CHIP_MT7993
 	select MTK_WIFI7_MULTI_INF_SUPPORT
 	select MTK_WIFI7_UNIFIED_COMMAND
@@ -200,6 +208,10 @@ config MTK_WIFI7_HWIFI_SUPPORT
 
 config MTK_WIFI7_PROXYARP_SUPPORT
 	bool "PROXYARP_SUPPORT"
+	default y
+
+config MTK_WIFI7_PASN_SUPPORT
+	bool "PASN_SUPPORT"
 	default y
 
 config MTK_WIFI7_OFFCHANNEL_SUPPORT
@@ -347,6 +359,11 @@ config MTK_WIFI7_SPECTRUM_SUPPORT
 	bool "Wifi Spectrum Support"
 	depends on MTK_WIFI7_DRIVER
 	default y
+
+config MTK_WIFI7_SPECTRUM_ANALYZER_SUPPORT
+	bool "Wifi Spectrum Analyzer Support"
+	depends on MTK_WIFI7_DRIVER && MTK_WIFI7_SPECTRUM_SUPPORT
+	default n
 
 config MTK_WIFI7_PHY_ICS_SUPPORT
 	bool "Wifi PHY ICS Support"
@@ -797,8 +814,8 @@ config MTK_WIFI7_TR181_SUPPORT
 	depends on MTK_WIFI7_DRIVER
 	default n
 
-config MTK_WIFI7_EXPERIMENTAL_FEATURES
-	bool "EXPERIMENTAL_FEATURES_SUPPORT Support"
+config MTK_WIFI7_TX_CROSS_CPU_QUEUE_PROCESS
+	bool "TX_CROSS_CPU_QUEUE_PROCESS_SUPPORT Support"
 	depends on MTK_WIFI7_DRIVER
 	default n
 
@@ -826,6 +843,7 @@ config MTK_WIFI7_ICVERR_RESET_RRO
 	bool "Reset RRO when receive ICV error PKT"
 	depends on MTK_WIFI7_DRIVER
 	default n
+
 
 endmenu
 
@@ -891,6 +909,11 @@ config MTK_WIFI7_MWDS
 	bool "Mixed WDS(MWDS)"
 	depends on MTK_WIFI7_MT_AP_SUPPORT
 	select MTK_WIFI7_APCLI_SUPPORT
+	default n
+
+config MTK_WIFI7_HOSTAPD_WDS
+	bool "Hostapd WDS"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
 	default n
 
 config MTK_WIFI7_SYSDVT
@@ -1016,6 +1039,17 @@ config MTK_WIFI7_DATA_TXPWR_CTRL
         bool "Data TxPwr Ctrl"
         depends on MTK_WIFI7_MT_AP_SUPPORT && MTK_WIFI7_EAP_FEATURE
         default y
+
+#TDMA Support
+config MTK_WIFI7_TDMA_SUPPORT
+	bool "TDMA Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config  MTK_WIFI7_TDMA_SW_ACK_SUPPORT
+        bool "TDMA_SW_ACK_SUPPORT Support"
+        depends on MTK_WIFI7_MT_AP_SUPPORT
+        default n
 
 #SWITCH_CHANNEL_NO_CSA
 config MTK_WIFI7_EAP_QUICK_CHANNEL_SWITCH_WITHOUT_CSA
@@ -1235,6 +1269,11 @@ config  MTK_WIFI7_SINGLE_SKU
         depends on MTK_WIFI7_MT_AP_SUPPORT
         default n
 
+config  MTK_WIFI7_SINGLE_SKU_EXT
+        bool "Single SKU Extension(by CBW)"
+        depends on MTK_WIFI7_SINGLE_SKU
+        default n
+
 config MTK_WIFI7_PROFILING_SUPPORT
         bool "WIFI Profiling Support"
         default n
@@ -1250,7 +1289,7 @@ config MTK_WIFI7_NON_WIFI_FREQ_5MHZ_SHIFT_SUPPORT
 config MTK_WIFI7_MLD_GROUP_RESTORE
 	bool "mld group restore support"
 	depends on MTK_WIFI7_DOT11_EHT_BE
-	default n
+	default y
 
 config MTK_WIFI7_UNIFIED_COUNTRY_CONFIG_SUPPORT
 	bool "unified country config"
@@ -1282,6 +1321,11 @@ config MTK_WIFI7_ANDLINK_SUPPORT
 
 config MTK_WIFI7_GTB_APP_SUPPORT
 	bool "GTB Application Support"
+	depends on MTK_WIFI7_MT_AP_SUPPORT
+	default n
+
+config MTK_WIFI7_WF_RESET_SUPPORT
+	bool "L0.5 SER"
 	depends on MTK_WIFI7_MT_AP_SUPPORT
 	default n
 endmenu

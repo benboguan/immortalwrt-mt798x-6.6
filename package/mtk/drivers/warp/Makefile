@@ -9,6 +9,8 @@ include $(INCLUDE_DIR)/kernel.mk
 PKG_NAME:=warp
 P4REV:=
 PKG_VERSION:=
+PKG_SOURCE:=warp_20250613-415824.tar.xz
+PKG_SOURCE_URL:=
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
 
 PKG_KCONFIG:= \
@@ -31,7 +33,7 @@ define KernelPackage/warp
   CATEGORY:=MTK Properties
   TITLE:=MTK warp driver
 
-  DEPENDS:=+(TARGET_mediatek):kmod-mediatek_hnat
+  DEPENDS:=+TARGET_airoha:kmod-hw_nat +TARGET_mediatek:kmod-mediatek_hnat
 
   FILES:=$(PKG_BUILD_DIR)/mtk_warp.ko
   AUTOLOAD:=$(call AutoLoad,60,mtk_warp,1)
@@ -50,6 +52,7 @@ define Build/Compile
 		ARCH="$(LINUX_KARCH)" \
 		M="$(PKG_BUILD_DIR)" \
 		$(foreach c, $(PKG_KCONFIG),$(if $(CONFIG_$c),CONFIG_$(c)=$(CONFIG_$(c)))) \
+		KCFLAGS="-Wno-error=missing-prototypes -Wno-error=implicit-function-declaration" \
 		modules
 endef
 

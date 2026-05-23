@@ -6,6 +6,17 @@ mtk_wifi_e2p_die() {
 	echo "mtk wifi eeprom:" "$*"
 }
 
+find_ubi_volume() {
+	vol_name=$1
+	for vol in /sys/class/ubi/ubi0*/name; do
+		if [ "$(cat "$vol")" = "$vol_name" ]; then
+			temp=$(echo "${vol#/sys/class/ubi/ubi0_}" | cut -d'/' -f1)
+			echo /dev/ubi0_$temp
+			break
+		fi
+	done
+}
+
 mtk_wifi_e2p_extract() {
 	local part=$1
 	local offset=$2
@@ -16,11 +27,16 @@ mtk_wifi_e2p_extract() {
 
 	mtd=$(find_mtd_part $part)
 	mtd=`echo $mtd | sed -e 's/mtdblock/mtd/'`
+	ubi=$(find_ubi_volume $part)
 	mmc=`blkid -t PARTLABEL=factory -o device`
 
 	if [ -n "$mtd" ]
 	then
-		input_dev=$mtd
+		nanddump $mtd -f /lib/firmware/$FIRMWARE -s $offset -l $count 2>/dev/null
+		return
+	elif [ -n "$ubi" ]
+	then
+		input_dev=$ubi
 	elif [ -n "$mmc" ]
 	then
 		input_dev=$mmc

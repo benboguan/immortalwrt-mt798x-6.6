@@ -8,7 +8,9 @@ include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mt_wifi_cmn
 PKG_BUILD_DIR:=$(KERNEL_BUILD_DIR)/$(PKG_NAME)
-PKG_VERSION:=TEST
+PKG_VERSION:=1
+PKG_SOURCE:=mt799x_20250613-415824.tar.xz
+
 include $(INCLUDE_DIR)/package.mk
 
 define KernelPackage/mt_wifi_cmn
@@ -20,6 +22,17 @@ define KernelPackage/mt_wifi_cmn
   AUTOLOAD:=$(call AutoLoad,60,$(if $(CONFIG_MTK_WIFI7_CFG80211_SUPPORT), cfg80211) mt_wifi_cmn)
   DEPENDS:=+MTK_WIFI7_CFG80211_SUPPORT:kmod-cfg80211
 endef
+
+
+ifeq (1,1)
+define Build/Prepare
+	tar xvf $(DL_DIR)/$(PKG_SOURCE) --overwrite -C $(PKG_BUILD_DIR) mt_wifi/os/linux/mt_linux.c mt_wifi/include/os/mt_linux.h mt_wifi/os/linux/Makefile.mt_wifi_cmn
+	mv $(PKG_BUILD_DIR)/mt_wifi/os/linux/mt_linux.c $(PKG_BUILD_DIR)
+	mv $(PKG_BUILD_DIR)/mt_wifi/include/os/mt_linux.h $(PKG_BUILD_DIR)
+	mv $(PKG_BUILD_DIR)/mt_wifi/os/linux/Makefile.mt_wifi_cmn $(PKG_BUILD_DIR)/Makefile
+endef
+endif
+
 
 NOSTDINC_FLAGS :=
 ifeq ($(CONFIG_MTK_WIFI7_CFG80211_SUPPORT),y)
@@ -37,11 +50,11 @@ endif
 NOSTDINC_FLAGS += -DMT_WIFI_COMMON_SUPPORT
 
 define Build/Compile
-	+$(MAKE) $(PKG_JOBS) -C "$(LINUX_DIR)" \
-		$(KERNEL_MAKE_FLAGS) \
+	+$(KERNEL_MAKE) $(PKG_JOBS) \
 		M="$(PKG_BUILD_DIR)" \
 		EXTRA_CFLAGS="$(EXTRA_CFLAGS)" \
 		NOSTDINC_FLAGS="$(NOSTDINC_FLAGS)" \
+		KBUILD_EXTRA_SYMBOLS="$(wildcard $(PKG_SYMVERS_DIR)/*.symvers)" \
 		modules
 endef
 
