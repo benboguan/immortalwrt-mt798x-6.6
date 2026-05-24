@@ -33,7 +33,7 @@ TAR_CMD=$(HOST_TAR) -C $(1)/ $(TAR_OPTIONS)
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
-	$(HOST_TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/ $(TAR_OPTIONS)
+	$(TAR) -xf $(DL_DIR)/$(PKG_BIN_SOURCE) -C $(PKG_BUILD_DIR)/
 endef
 
 define KernelPackage/mt_hwifi
