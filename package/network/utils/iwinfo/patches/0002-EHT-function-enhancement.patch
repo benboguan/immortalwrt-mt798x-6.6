@@ -1,0 +1,168 @@
+--- a/include/iwinfo.h
++++ b/include/iwinfo.h
+@@ -140,7 +140,9 @@ enum iwinfo_freq_flag {
+ 	IWINFO_FREQ_NO_HT40MINUS,
+ 	IWINFO_FREQ_NO_80MHZ,
+ 	IWINFO_FREQ_NO_160MHZ,
++	IWINFO_FREQ_NO_320MHZ,
+ 	IWINFO_FREQ_NO_HE,
++	IWINFO_FREQ_NO_EHT,
+ 	IWINFO_FREQ_NO_IR,
+ 	IWINFO_FREQ_INDOOR_ONLY,
+ 
+@@ -154,7 +156,9 @@
+ #define IWINFO_FREQ_NO_HT40MINUS   (1 << IWINFO_FREQ_NO_HT40MINUS)
+ #define IWINFO_FREQ_NO_80MHZ       (1 << IWINFO_FREQ_NO_80MHZ)
+ #define IWINFO_FREQ_NO_160MHZ      (1 << IWINFO_FREQ_NO_160MHZ)
++#define IWINFO_FREQ_NO_320MHZ      (1 << IWINFO_FREQ_NO_320MHZ)
+ #define IWINFO_FREQ_NO_HE          (1 << IWINFO_FREQ_NO_HE)
++#define IWINFO_FREQ_NO_EHT         (1 << IWINFO_FREQ_NO_EHT)
+ #define IWINFO_FREQ_NO_IR          (1 << IWINFO_FREQ_NO_IR)
+ #define IWINFO_FREQ_INDOOR_ONLY    (1 << IWINFO_FREQ_INDOOR_ONLY)
+ 
+@@ -243,6 +247,7 @@ struct iwinfo_rate_entry {
+ 	uint8_t nss;
+ 	uint8_t mhz_hi;
+ 	uint8_t eht_gi;
++	uint8_t eht_dcm;
+ };
+ 
+ struct iwinfo_assoclist_entry {
+@@ -275,6 +280,10 @@ struct iwinfo_assoclist_entry {
+ 	char local_ps[16];
+ 	char peer_ps[16];
+ 	char nonpeer_ps[16];
++	//struct iwinfo_rate_entry mlo_rx_rate;
++	//struct iwinfo_rate_entry mlo_tx_rate;
++	uint8_t mlo_valid:1;
++	uint8_t	mlo_addr[6];
+ };
+ 
+ struct iwinfo_survey_entry {
+--- a/iwinfo_lib.c
++++ b/iwinfo_lib.c
+@@ -109,7 +109,9 @@ const char * const IWINFO_FREQ_FLAG_NAMES
+ 	"NO_HT40-",
+ 	"NO_80MHZ",
+ 	"NO_160MHZ",
++	"NO_320MHZ",
+ 	"NO_HE",
++	"NO_EHT",
+ 	"NO_IR",
+ 	"INDOOR_ONLY",
+ };
+--- a/iwinfo_cli.c
++++ b/iwinfo_cli.c
+@@ -337,6 +337,9 @@ static char * format_assocrate(struct
+ 
+ 			p += snprintf(p, l, ", EHT-GI %d", r->eht_gi);
+ 			l = sizeof(buf) - (p - buf);
++
++			p += snprintf(p, l, ", EHT-DCM %d", r->eht_dcm);
++			l = sizeof(buf) - (p - buf);
+ 		}
+ 	}
+ 
+@@ -855,6 +858,20 @@ static void print_assoclist(const
+ 			e->tx_packets
+ 		);
+ 
++		if (e->mlo_valid)
++		{
++			printf("	mldAddr: %s\n",
++				format_bssid(e->mlo_addr));
++
++			/* printf("	RX: %-38s \n",
++				format_assocrate(&e->mlo_rx_rate)
++			);
++			
++			printf("	TX: %-38s \n",
++				format_assocrate(&e->mlo_tx_rate)
++			); */
++		}
++
+ 		printf("	expected throughput: %s\n\n",
+ 			format_rate(e->thr));
+ 	}
+--- a/iwinfo_lua.c
++++ b/iwinfo_lua.c
+@@ -315,6 +315,9 @@ static void set_rateinfo(lua_State
+ 		if (r->is_eht) {
+ 			lua_pushnumber(L, r->eht_gi);
+ 			lua_setfield(L, -2, rx ? "rx_eht_gi" : "tx_eht_gi");
++
++			lua_pushnumber(L, r->eht_dcm);
++			lua_setfield(L, -2, rx ? "rx_eht_dcm" : "tx_eht_dcm");
+ 		}
+ 
+ 		if (r->is_vht) {
+@@ -342,6 +345,11 @@ static int iwinfo_L_assoclist(lua_State *L
+ 		{
+ 			e = (struct iwinfo_assoclist_entry *) &rv[i];
+ 
++			if (e->mlo_valid)
++				sprintf(macstr, "%02X:%02X:%02X:%02X:%02X:%02X",
++					e->mlo_addr[0], e->mlo_addr[1], e->mlo_addr[2],
++					e->mlo_addr[3], e->mlo_addr[4], e->mlo_addr[5]);
++			else
+ 			sprintf(macstr, "%02X:%02X:%02X:%02X:%02X:%02X",
+ 				e->mac[0], e->mac[1], e->mac[2],
+ 				e->mac[3], e->mac[4], e->mac[5]);
+@@ -363,9 +371,36 @@ static int iwinfo_L_assoclist(lua_State *L
+ 			lua_pushnumber(L, e->tx_packets);
+ 			lua_setfield(L, -2, "tx_packets");
+ 
++			lua_pushnumber(L, e->rx_bytes);
++			lua_setfield(L, -2, "rx_bytes");
++
++			lua_pushnumber(L, e->tx_bytes);
++			lua_setfield(L, -2, "tx_bytes");
++
+ 			set_rateinfo(L, &e->rx_rate, true);
+ 			set_rateinfo(L, &e->tx_rate, false);
+ 
++			if (e->mlo_valid)
++			{
++				lua_pushboolean(L, e->mlo_valid);
++				lua_setfield(L, -2, "mlo_valid");
++
++				/* lua_pushnumber(L, e->mlo_rx_rate.rate);
++				lua_setfield(L, -2, "mlo_rx_rate");
++	
++				lua_pushnumber(L, e->mlo_tx_rate.rate);
++				lua_setfield(L, -2, "mlo_tx_rate"); */
++
++				lua_pushboolean(L, 1);
++				lua_setfield(L, -2, "ismlo");
++			}
++			else
++			{
++				lua_pushboolean(L, 0);
++				lua_setfield(L, -2, "ismlo");
++
++			}
++
+ 			if (e->thr) {
+ 				lua_pushnumber(L, e->thr);
+ 				lua_setfield(L, -2, "expected_throughput");
+@@ -500,6 +535,10 @@ static int iwinfo_L_freqlist(lua_State
+ 			lua_pushinteger(L, e->mhz);
+ 			lua_setfield(L, -2, "mhz");
+ 
++			/* Band */
++			lua_pushinteger(L, e->band);
++			lua_setfield(L, -2, "band");
++
+ 			/* Channel */
+ 			lua_pushinteger(L, e->channel);
+ 			lua_setfield(L, -2, "channel");
+--- a/devices.txt
++++ b/devices.txt
+@@ -193,6 +193,7 @@
+ 0x14c3 0x7925 0x1a3b 0x6002    0      0  "MediaTek" "MT7925E"
+ 0x14c3 0x7990 0x14C3 0x6639    0      0  "MediaTek" "MT7996E"
+ 0x14c3 0x7992 0x14c3 0x7992    0      0  "MediaTek" "MT7992E"
++0x14c3 0x7993 0x14c3 0x7993    0      0  "MediaTek" "MT7993E"
+ 0x14e4 0xaa52 0x14e4 0xaa52    0      0  "Broadcom" "BCM43602"
+ 0x02d0 0xa9a6 0x0000 0x0000    0      0  "Cypress"  "CYW43455"
+ 0x02d0 0x4345 0x0000 0x0000    0      0  "Cypress"  "CYW43455"

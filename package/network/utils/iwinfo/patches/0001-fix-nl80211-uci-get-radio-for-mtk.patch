@@ -1,0 +1,13 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -407,7 +407,9 @@ static int nl80211_phy_idx_from_uci(const
+ 	const char *opt;
+ 	int idx = -1;
+ 
+-	s = iwinfo_uci_get_radio(name, "mac80211");
++	s = iwinfo_uci_get_radio(name, "mtk");
++	if (!s)
++		s = iwinfo_uci_get_radio(name, "mac80211");
+ 	if (!s)
+ 		goto out;
+ 

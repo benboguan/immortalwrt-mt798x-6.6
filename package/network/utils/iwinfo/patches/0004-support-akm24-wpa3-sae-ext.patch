@@ -1,0 +1,17 @@
+--- a/iwinfo_utils.c
++++ b/iwinfo_utils.c
+@@ -582,12 +582,14 @@ void iwinfo_parse_rsn(struct
+ 					break;
+ 
+ 				case 8:  /* SAE */
++				case 24: /* SAE_EXT */
+ 					c->wpa_version |= 4;
+ 					c->auth_suites |= IWINFO_KMGMT_SAE;
+ 					break;
+ 
+ 				case 9:  /* FT/SAE */
+ 				case 10: /* undefined */
++				case 25: /* FT/SAE_EXT */
+ 					break;
+ 
+ 				case 11: /* 802.1x Suite-B */
