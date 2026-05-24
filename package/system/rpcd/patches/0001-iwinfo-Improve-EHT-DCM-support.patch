@@ -1,0 +1,22 @@
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -498,6 +498,7 @@ rpc_iwinfo_add_rateinfo(struct
+ 		blobmsg_add_u32(&buf, "mcs", r->mcs);
+ 		blobmsg_add_u32(&buf, "nss", r->nss);
+ 		blobmsg_add_u32(&buf, "eht_gi", r->eht_gi);
++		blobmsg_add_u32(&buf, "eht_dcm", r->eht_dcm);
+ 	}
+ }
+ 
+@@ -541,6 +542,11 @@ rpc_iwinfo_assoclist(struct
+ 			else if (memcmp(macaddr, a->mac, ETH_ALEN) != 0)
+ 				continue;
+ 
++			if (a->mlo_valid)
++				snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
++					a->mlo_addr[0], a->mlo_addr[1], a->mlo_addr[2],
++					a->mlo_addr[3], a->mlo_addr[4], a->mlo_addr[5]);
++			else
+ 			snprintf(mac, sizeof(mac), "%02X:%02X:%02X:%02X:%02X:%02X",
+ 					 a->mac[0], a->mac[1], a->mac[2],
+ 

@@ -1,0 +1,13 @@
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -683,6 +683,10 @@ rpc_iwinfo_freqlist(
+ 			blobmsg_add_u32(&buf, "mhz", f->mhz);
+ 			blobmsg_add_u8(&buf, "restricted", f->restricted);
+ 
++			/* Fixed: flags add no_ir and no_outdoor support*/
++			blobmsg_add_u8(&buf, "no_ir", (f->flags & IWINFO_FREQ_NO_IR) ? 1 : 0);
++			blobmsg_add_u8(&buf, "no_outdoor", (f->flags & IWINFO_FREQ_INDOOR_ONLY) ? 1 : 0);
++
+ 			rpc_iwinfo_add_bit_array("flags", f->flags,
+ 						IWINFO_FREQ_FLAG_NAMES,
+ 						IWINFO_FREQ_FLAG_COUNT,
