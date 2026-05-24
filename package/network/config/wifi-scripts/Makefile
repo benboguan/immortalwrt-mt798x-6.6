@@ -13,6 +13,8 @@ PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_PACKAGE_wifi-script
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -40,6 +42,8 @@ endef
 define Package/wifi-scripts/install
 	$(INSTALL_DIR) $(1)
 	$(CP) ./files/* $(1)/
+	$(if $(CONFIG_PACKAGE_wifi-script), \
+		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
 endef
 
 $(eval $(call BuildPackage,wifi-scripts))
