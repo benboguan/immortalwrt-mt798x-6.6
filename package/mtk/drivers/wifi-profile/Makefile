@@ -70,7 +70,7 @@ define Package/wifi-script
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
   SUBMENU:=Drivers
-  DEPENDS:=+wifi-dats +ip
+  DEPENDS:=+wifi-dats
   TITLE:=LUCI WiFi scripts
   VERSION:=$(PKG_RELEASE)
   MENU:=1
@@ -160,12 +160,11 @@ define Package/wifi-profile/install
 endef
 
 define Package/wifi-script/install
-	$(INSTALL_DIR) $(1)/lib/wifi/
 	$(INSTALL_DIR) $(1)/lib/netifd/wireless/
 	$(INSTALL_DIR) $(1)/etc/uci-defaults/
 
-	$(INSTALL_DATA) ./files/common/mt79xx/lib/wifi/mtk.sh $(1)/lib/wifi/
-	$(INSTALL_BIN) ./files/common/mt79xx/lib/netifd/wireless/mtk.sh $(1)/lib/netifd/wireless/
+	$(INSTALL_DATA) ./files/common/mt79xx/lib/netifd/wireless/mac80211.sh $(1)/lib/netifd/wireless/
+	$(INSTALL_BIN) ./files/common/mt79xx/lib/netifd/wireless/mtk_wifi_config.sh $(1)/lib/netifd/wireless/
 	$(INSTALL_DATA) ./files/common/mt79xx/etc/uci-defaults/10_mt79xx_dbdc $(1)/etc/uci-defaults/10_mt79xx_dbdc
 endef
 
