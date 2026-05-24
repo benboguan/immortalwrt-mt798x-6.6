@@ -1,0 +1,186 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "Enable 1024-QAM"
+msgstr "启用 1024-QAM"
+
+msgid "802.11ax WiFi6 Only"
+msgstr "只适合 802.11ax WiFi6"
+
+msgid "Target Wake Time"
+msgstr "目标唤醒时间（TWT）"
+
+msgid "MU-MIMO DL"
+msgstr "下行 MU-MIMO"
+
+msgid "MU-MIMO UL"
+msgstr "上行 MU-MIMO"
+
+msgid "OFDMA DL"
+msgstr "下行 OFDMA"
+
+msgid "OFDMA UL"
+msgstr "上行 OFDMA"
+
+msgid "A-MSDU"
+msgstr "MSDU聚合（A-MSDU）"
+
+msgid "Auto Block ACK"
+msgstr "自动块确认"
+
+msgid "U-APSD"
+msgstr "U-APSD 省电模式"
+
+msgid "Force CCMP/GCMP-256 (AES)"
+msgstr "强制使用 CCMP/GCMP-256 (AES)"
+
+msgid "Zero-Wait DFS"
+msgstr "零等待 DFS"
+
+msgid "Dynamic Frequency Selection (DFS)"
+msgstr "动态频率选择（DFS）"
+
+msgid "Enable or disable IEEE 802.11h support (DFS)"
+msgstr "启用或禁用 IEEE 802.11h 以支持（DFS）"
+
+msgid "Advanced Dynamic Frequency Selection (DFS) technology is designed to seamlessly switch DFS channels without interrupting client connections."
+msgstr "高级动态频率选择（DFS）技术，旨在‌无缝切换 DFS 信道而不中断客户端连接‌。"
+
+msgid "Kick low RSSI station threshold"
+msgstr "弱信号剔除阈值"
+
+msgid "Station associate threshold"
+msgstr "弱信号接入阈值"
+
+msgid "Wireless HWNAT"
+msgstr "无线硬件加速"
+
+msgid "Wireless MLR"
+msgstr "无线 MLR"
+
+msgid "Default %d"
+msgstr "默认 %d"
+
+msgid "MTK Repeater mode"
+msgstr "MTK 无线中继模式"
+
+msgid "MLO Group"
+msgstr "MLO 组播"
+
+msgid "Enable MWDS"
+msgstr "启用 MWDS"
+
+msgid "Wireless configuration error"
+msgstr "无线网络设置错误"
+
+msgid "At least one MBSSID needs to be reserved"
+msgstr "至少需要保留1个 MBSSID"
+
+msgid "Configure AP its own IP address"
+msgstr "配置 AP 自身的 IP 地址"
+
+msgid "Configure AP its own Port"
+msgstr "配置 AP 自身的端口"
+
+msgid "own_ip_addr is global setting ,in this point, let all mbss set the same ip addr for safe."
+msgstr "own_ip_addr 是全局设置，基于这一点，为了安全起见，所有 MBSS 都应设置为相同的 IP 地址。"
+
+msgid "own_radius_port is also global setting , let all mbss set the same port."
+msgstr "own_radius_port 同是全局设置，所有 MBSS 也应设置为相同的端口。"
+
+msgid "Connection Limit"
+msgstr "连接数限制"
+
+msgid "The default number of single frequency connections for drivers is 64"
+msgstr "驱动默认单频连接数为64个"
+
+msgid "Mesh Mode"
+msgstr "Mesh 模式"
+
+msgid "Short Preamble"
+msgstr "短前导码"
+
+msgid "WDS Mode"
+msgstr "WDS 模式"
+
+msgid "Repeater Mode"
+msgstr "中继模式（WDS）"
+
+msgid "Bridge Mode"
+msgstr "桥接模式（WDS）"
+
+msgid "Lazy Mode"
+msgstr "懒人模式（WDS）"
+
+msgid "WDS mode is only available between MTK devices."
+msgstr "WDS 模式仅在 MTK 设备之间可用。"
+
+msgid "WDS PHY Mode"
+msgstr "WDS PHY 模式"
+
+msgid "If GREENFIELD seems to be unstable,try to use OFDM instead.HE/EHT is only available for 11AX/11BE devices."
+msgstr "如果使用 GREENFIELD 不稳定，请尝试改用 OFDM。HE/EHT 仅适用于 11AX/11BE 设备。"
+
+msgid ""
+"Where Wi-Fi Multimedia (WMM) Mode QoS is disabled, clients may be limited to "
+"802.11a/802.11g rates."
+msgstr ""
+"如果禁用 Wi-Fi 多媒体 （WMM） 模式 QoS，则客户端的速率可能限制为 "
+"802.11a/802.11g。"
+
+msgid "WNMNotify"
+msgstr "WNM 通知"
+
+msgid "802.11v: Enable WNM notification."
+msgstr "802.11v: 启用 WNM 通知。"
+
+msgid "The client has successfully disconnected"
+msgstr "客户端已成功断开"
+
+msgid "Failed to disconnect client: %s"
+msgstr "断开客户端失败：%s"
+
+msgid "Disconnect client: %s"
+msgstr "断开客户端：%s"
+
+msgid "iwpriv failed: "
+msgstr "iwpriv 失败："
+
+msgid "mwctl failed: "
+msgstr "mwctl 失败："
+
+msgid "QR Code"
+msgstr "二维码"
+
+msgid "QR Error Correction Code Level"
+msgstr "二维码错误纠正级别"
+
+msgid "Generate QR…"
+msgstr "生成二维码…"
+
+msgid "Generate WiFi QR…"
+msgstr "生成 WiFi 二维码…"
+
+msgid "SSID and passwords with URIencoded sequences (e.g. %20) may not work."
+msgstr "SSID 或密码中包含 URI 编码字符串时（如 %20）可能无法使用。"
+
+msgid "Scan"
+msgstr "扫描"
+
+msgid "Scan this QR code with the client device."
+msgstr "用客户端设备扫描此二维码。"
+
+msgid "Low"
+msgstr "低"
+
+msgid "Quartile"
+msgstr "四分之一"
+
+msgid "Back to settings"
+msgstr "返回设置"
+
+msgid "Multi-Link Operation (MLO), enables simultaneous use of multiple radio links for improved performance and reliability."
+msgstr "多链路操作（MLO）使得可以同时使用多个无线链路，从而提高性能和可靠性。"
+
+msgid "MWDS feature, used to process those 4-addr of connected APClient or STA."
+msgstr "MWDS功能，用于处理已连接的 AP 客户端或 STA 的4地址帧。"
