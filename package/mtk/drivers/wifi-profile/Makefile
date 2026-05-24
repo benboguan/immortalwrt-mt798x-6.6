@@ -66,6 +66,25 @@ if PACKAGE_wifi-profile
 endif
 endef
 
+define Package/wifi-script
+  SECTION:=MTK Properties
+  CATEGORY:=MTK Properties
+  SUBMENU:=Drivers
+  DEPENDS:=+wifi-dats +ip
+  TITLE:=LUCI WiFi scripts
+  VERSION:=$(PKG_RELEASE)
+  MENU:=1
+endef
+
+define Package/wifi-script/description
+  This package install luci wifi scripts.
+endef
+
+define Package/wifi-script/config
+if PACKAGE_wifi-script
+endif
+endef
+
 define Package/wifi-dats
   SECTION:=MTK Properties
   CATEGORY:=MTK Properties
@@ -140,8 +159,20 @@ define Package/wifi-profile/install
 	fi
 endef
 
+define Package/wifi-script/install
+	$(INSTALL_DIR) $(1)/lib/wifi/
+	$(INSTALL_DIR) $(1)/lib/netifd/wireless/
+	$(INSTALL_DIR) $(1)/etc/uci-defaults/
+
+	$(INSTALL_DATA) ./files/common/mt79xx/lib/wifi/mtk.sh $(1)/lib/wifi/
+	$(INSTALL_BIN) ./files/common/mt79xx/lib/netifd/wireless/mtk.sh $(1)/lib/netifd/wireless/
+	$(INSTALL_DATA) ./files/common/mt79xx/etc/uci-defaults/10_mt79xx_dbdc $(1)/etc/uci-defaults/10_mt79xx_dbdc
+endef
+
 define Package/wifi-dats/install
+	$(INSTALL_DIR) $(1)/sbin/
 	$(INSTALL_DIR) $(1)/etc/wireless/mediatek/
+	$(INSTALL_BIN) ./files/common/mt79xx/sbin/cpuusage $(1)/sbin/
 
 ifneq ($(CONFIG_MTK_WIFI7_PROFILING_SUPPORT),y)
 	# Example combination Eagle.
@@ -194,4 +225,5 @@ endif
 endef
 
 $(eval $(call BuildPackage,wifi-dats))
+$(eval $(call BuildPackage,wifi-script))
 $(eval $(call BuildPackage,wifi-profile))
