@@ -6,8 +6,9 @@
 
 include $(TOPDIR)/rules.mk
 
+LUCI_NAME:=luci-app-wifi-mtk
 LUCI_TITLE:=LuCI support for wifi-mtk
-LUCI_DEPENDS:=+wifi-script @!PACKAGE_luci-app-mtk @!PACKAGE_wifi-profile @!PACKAGE_mtwifi-cfg
+LUCI_DEPENDS:=@!PACKAGE_luci-app-mtk @!PACKAGE_wifi-profile @!PACKAGE_mtwifi-cfg
 LUCI_PKGARCH:=all
 
 PKG_VERSION:=2
