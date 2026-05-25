@@ -12,10 +12,10 @@ if [ -f /usr/share/luci/menu.d/luci-app-nlbwmon.json ]; then
 	mv -f /usr/share/luci-app-wifi-mtk/luci-app-nlbwmon.json /usr/share/luci/menu.d/luci-app-nlbwmon.json
 fi
 
-if [ -f /etc/wireless/l1profile.dat ]; then
-	sed -i 's|wifi/mtwifi.lua|netifd/wireless/mtk.sh|g' /etc/wireless/l1profile.dat
-	sed -i 's|=mtwifi|=mtk|g' /etc/wireless/l1profile.dat
-fi
+#if [ -f /etc/wireless/l1profile.dat ]; then
+#	sed -i 's|wifi/mtwifi.lua|netifd/wireless/mtk.sh|g' /etc/wireless/l1profile.dat
+#	sed -i 's|=mtwifi|=mtk|g' /etc/wireless/l1profile.dat
+#fi
 
 luci_network_js="/www/luci-static/resources/network.js"
 

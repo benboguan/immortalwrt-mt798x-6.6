@@ -367,9 +367,9 @@ var CBIWifiFrequencyValue = form.Value.extend({
 			this.modes = [
 				'', 'Legacy', { available: hwmodelist.a || hwmodelist.b || hwmodelist.g },
 				'n', 'N', { available: hwmodelist.n },
-				'ac', 'AC', { available: L.hasSystemFeature('hostapd', '11ac') && hwmodelist.ac },
-				'ax', 'AX', { available: L.hasSystemFeature('hostapd', '11ax') && hwmodelist.ax },
-				'be', 'BE', { available: L.hasSystemFeature('hostapd', '11be') && hwmodelist.be }
+				'ac', 'AC', { available: hwmodelist.ac },
+				'ax', 'AX', { available: hwmodelist.ax },
+				'be', 'BE', { available: hwmodelist.be }
 			];
 
 			// Create a list of HT modes based on device capabilities
@@ -805,24 +805,25 @@ return view.extend({
 
 						net.disconnectClient(mac, true, 5, 60000);
 					}, this, bss.network, bss.mac),
-					'disabled': isReadonlyView || null
+					'disabled': isReadonlyView || null,
+					'title': _('Disconnect client: %s').format(bss.mac)
 				}, [ _('Disconnect') ]));
 			}
 			else {
 				const disconnectClient = function(ifname, mac) {
-					// 1: iwpriv 2: mwctl
+					//  1: mwctl 2: iwpriv
 					return new Promise((resolve, reject) => {
-						fs.exec('/usr/sbin/iwpriv', [ifname, 'set', 'DisConnectSta=' + mac]).then(result => {
+						fs.exec('/usr/sbin/mwctl', [ifname, 'set', 'DisConnectSta=' + mac]).then(result => {
 							if (result.code === 0)
-								resolve({ success: true, method: 'iwpriv' });
+								resolve({ success: true, method: 'mwctl' });
 							else
-								reject(new Error('iwpriv failed: ' + (result.stderr || 'code ' + result.code)));
+								reject(new Error('mwctl failed: ' + (result.stderr || 'code ' + result.code)));
 						}).catch(() => {
-							fs.exec('/usr/sbin/mwctl', [ifname, 'set', 'DisConnectSta=' + mac]).then(result => {
+							fs.exec('/usr/sbin/iwpriv', [ifname, 'set', 'DisConnectSta=' + mac]).then(result => {
 								if (result.code === 0)
-									resolve({ success: true, method: 'mwctl' });
+									resolve({ success: true, method: 'iwpriv' });
 								else
-									reject(new Error('mwctl failed: ' + (result.stderr || 'code ' + result.code)));
+									reject(new Error('iwpriv failed: ' + (result.stderr || 'code ' + result.code)));
 							}).catch(reject);
 						});
 					});
@@ -1088,12 +1089,13 @@ return view.extend({
 					o.value('2', _('High'));
 					o.value('3', _('Very High'));
 
-					o = ss.taboption('advanced', form.Flag, 'mu_beamformer', _('MU-MIMO'));
-					o.default = o.disabled;
-
 					o = ss.taboption('advanced', form.Value, 'distance', _('Distance Optimization'), _('Distance to farthest network member in meters. Set only for distances above one kilometer; otherwise it is harmful.'));
 					o.datatype = 'or(range(0,114750),"auto")';
 					o.placeholder = 'auto';
+
+					o = ss.taboption('advanced', form.Flag, 'mu_beamformer', _('MU-MIMO'));
+					o.default = o.enabled;
+					o.rmempty = true;
 
 					o = ss.taboption('advanced', form.Flag, 'noscan', _('Force 40MHz mode'), _('Always use 40MHz channels even if the secondary channel overlaps. Using this option does not comply with IEEE 802.11n-2009!'));
 					o.default = o.enabled;
@@ -1102,10 +1104,12 @@ return view.extend({
 					o = ss.taboption('advanced', form.Flag, 'vendor_vht', _('Enable 256-QAM'), _('802.11n 2.4Ghz Only'));
 					o.depends({'_freq': '2g', '!contains': true});
 					o.default = o.enabled;
+					o.rmempty = true;
 
 					o = ss.taboption('advanced', form.Flag, 'vht_1024', _('Enable 1024-QAM'), _('802.11ax WiFi6 Only'));
 					o.depends({'_freq': '5g', '!contains': true});
 					o.default = o.enabled;
+					o.rmempty = true;
 
 					o = ss.taboption('advanced', form.ListValue, 'twt', _('Target Wake Time'));
 					add_dep_eht_feature(o);
@@ -1131,6 +1135,7 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Flag, 'whnat', _('Wireless HWNAT'));
 					o.default = o.enabled;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'mlr', _('Wireless MLR'));
 					add_dep_eht_feature(o);
@@ -1144,7 +1149,6 @@ return view.extend({
 					o.optional = true;
 					o.datatype = 'range(20,999)';
 					o.placeholder = 100;
-					o.rmempty = true;
 
 					o = ss.taboption('advanced', form.Flag, 'rxldpc', _('Rx LDPC'), _('Low-Density Parity-Check'));
 					o.default = '1';
@@ -2594,24 +2598,6 @@ return view.extend({
 							uci.set('wireless', ws['.name'], 'disabled', '1');
 
 					uci.unset('wireless', radioDev.getName(), 'disabled');
-				}
-
-				const htmodes = radioDev.getHTModes();
-
-				if (bss.vht_operation && htmodes && htmodes.indexOf('VHT20') !== -1) {
-					for (let w = bss.vht_operation.channel_width; w >= 20; w /= 2) {
-						if (htmodes.indexOf('VHT'+w) !== -1) {
-							uci.set('wireless', radioDev.getName(), 'htmode', 'VHT'+w);
-							break;
-						}
-					}
-				}
-				else if (bss.ht_operation && htmodes && htmodes.indexOf('HT20') !== -1) {
-					const w = (bss.ht_operation.secondary_channel_offset == 'no secondary') ? 20 : 40;
-					uci.set('wireless', radioDev.getName(), 'htmode', 'HT'+w);
-				}
-				else {
-					uci.unset('wireless', radioDev.getName(), 'htmode');
 				}
 
 				uci.set('wireless', radioDev.getName(), 'channel', bss.channel);

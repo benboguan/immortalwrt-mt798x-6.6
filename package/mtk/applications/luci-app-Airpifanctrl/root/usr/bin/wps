@@ -1,22 +1,39 @@
 #!/bin/sh
-logger -t wps "WPS button pressed: action=$ACTION"
-
 WPS_CONFIG="/tmp/wpsbt.conf"
 LOG_TAG="wps"
+LOCK_FILE="/var/lock/wps_btn.lock"  # 新增锁文件路径
 ts=$(date +%s)
 
 if [ "$ACTION" = "pressed" ]; then
-    hostapd_cli -i wlan0 wps_pbc
+    # 添加锁机制防止并发
+    exec 200>"$LOCK_FILE"
+    flock -n 200 || exit 1
 
-    if [ ! -f "$WPS_CONFIG" ]; then
-        logger -t "$LOG_TAG" "用户手动开启最大散热模式！"
-        touch "$WPS_CONFIG"
-        curl -s --max-time 3 "http://127.0.0.1/cgi-bin/luci/admin/fancontrol/fanst3?set=fanst3&p=1&ts=$ts"
-        echo "用户按下了一键打开狂暴模式按钮，狂暴模式已开启!" > /tmp/lucimsg.file
+    # 确保目标目录存在
+    mkdir -p "$(dirname "$WPS_CONFIG")"
+
+    if hostapd_cli -i wlan0 wps_pbc; then
+        if [ ! -f "$WPS_CONFIG" ]; then
+            logger -t "$LOG_TAG" "用户手动开启最大散热模式！"
+            touch "$WPS_CONFIG"
+            if curl -sf --max-time 3 "http://127.0.0.1/cgi-bin/luci/admin/fancontrol/fanst3?set=fanst3&p=1&ts=$ts"; then
+                echo "狂暴模式已开启!" > /tmp/lucimsg.file
+            else
+                logger -t "$LOG_TAG" "狂暴模式API调用失败"
+            fi
+        else
+            logger -t "$LOG_TAG" "用户手动关闭最大散热模式"
+            rm -f "$WPS_CONFIG"
+            if curl -sf --max-time 3 "http://127.0.0.1/cgi-bin/luci/admin/fancontrol/fanst4?set=fanst4&p=1&ts=$ts"; then
+                echo "风扇已切换到智能模式" > /tmp/lucimsg.file
+            else
+                logger -t "$LOG_TAG" "智能模式API调用失败"
+            fi
+        fi
     else
-        logger -t "$LOG_TAG" "用户手动关闭最大散热模式。"
-        rm -f "$WPS_CONFIG"
-        curl -s --max-time 3 "http://127.0.0.1/cgi-bin/luci/admin/fancontrol/fanst4?set=fanst4&p=1&ts=$ts"
-        echo "用户按下了WPS键,风扇已切换到智能模式。" > /tmp/lucimsg.file
+        logger -t "$LOG_TAG" "WPS PBC 触发失败"
     fi
+
+    # 释放锁
+    flock -u 200
 fi

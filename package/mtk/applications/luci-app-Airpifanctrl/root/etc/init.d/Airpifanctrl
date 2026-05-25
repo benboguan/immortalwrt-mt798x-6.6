@@ -9,13 +9,13 @@ printMsg() {
 restart(){                                                                                                       
   /usr/bin/fancts.sh &
   printMsg "Airpi风扇控制模块开始工作！"
-  cp /usr/bin/footer.htm /usr/lib/lua/luci/view/themes/argon/footer.htm
+  cp /usr/bin/footer.htm /usr/share/ucode/luci/template/themes/argon/footer.ut
   cp /usr/bin/wps /etc/rc.button/wps
 }
 
 start(){
   /usr/bin/fancts.sh &
   printMsg "Airpi风扇控制模块开始工作！"
-  cp /usr/bin/footer.htm /usr/lib/lua/luci/view/themes/argon/footer.htm
+  cp /usr/bin/footer.htm /usr/share/ucode/luci/template/themes/argon/footer.ut
   cp /usr/bin/wps /etc/rc.button/wps
 }

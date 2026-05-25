@@ -1,3 +1,49 @@
+--- a/api/nl80211.h
++++ b/api/nl80211.h
+@@ -3677,6 +3677,7 @@ enum nl80211_rate_info - bitrate information
+  * @NL80211_RATE_INFO_EHT_NSS: EHT NSS value (u8, 1-8)
+  * @NL80211_RATE_INFO_EHT_GI: EHT guard interval identifier
+  *	(u8, see &enum nl80211_eht_gi)
++ * @NL80211_RATE_INFO_EHT_DCM: EHT DCM value (u8, 0/1)
+  * @NL80211_RATE_INFO_EHT_RU_ALLOC: EHT RU allocation, if not present then
+  *	non-OFDMA was used (u8, see &enum nl80211_eht_ru_alloc)
+  * @NL80211_RATE_INFO_S1G_MCS: S1G MCS index (u8, 0-10)
+@@ -3711,6 +3712,7 @@ enum nl80211_rate_info {
+ 	NL80211_RATE_INFO_EHT_MCS,
+ 	NL80211_RATE_INFO_EHT_NSS,
+ 	NL80211_RATE_INFO_EHT_GI,
++	NL80211_RATE_INFO_EHT_DCM,
+ 	NL80211_RATE_INFO_EHT_RU_ALLOC,
+ 	NL80211_RATE_INFO_S1G_MCS,
+ 	NL80211_RATE_INFO_S1G_NSS,
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -2159,6 +2159,8 @@ static void nl80211_parse_rateinfo(struct
+ 			re->nss = nla_get_u8(ri[NL80211_RATE_INFO_EHT_NSS]);
+ 		if (ri[NL80211_RATE_INFO_EHT_GI])
+ 			re->eht_gi = nla_get_u8(ri[NL80211_RATE_INFO_EHT_GI]);
++		if (ri[NL80211_RATE_INFO_EHT_DCM])
++			re->eht_dcm = nla_get_u8(ri[NL80211_RATE_INFO_EHT_DCM]);
+ 	}
+ 	else if (ri[NL80211_RATE_INFO_HE_MCS])
+ 	{
+@@ -3230,12 +3232,16 @@ static int nl80211_get_freqlist_cb(struct
+ 						e->flags |= IWINFO_FREQ_NO_80MHZ;
+ 					if (freqs[NL80211_FREQUENCY_ATTR_NO_160MHZ])
+ 						e->flags |= IWINFO_FREQ_NO_160MHZ;
++					if (freqs[NL80211_FREQUENCY_ATTR_NO_320MHZ])
++						e->flags |= IWINFO_FREQ_NO_320MHZ;
+ 					if (freqs[NL80211_FREQUENCY_ATTR_NO_20MHZ])
+ 						e->flags |= IWINFO_FREQ_NO_20MHZ;
+ 					if (freqs[NL80211_FREQUENCY_ATTR_NO_10MHZ])
+ 						e->flags |= IWINFO_FREQ_NO_10MHZ;
+ 					if (freqs[NL80211_FREQUENCY_ATTR_NO_HE])
+ 						e->flags |= IWINFO_FREQ_NO_HE;
++					if (freqs[NL80211_FREQUENCY_ATTR_NO_EHT])
++						e->flags |= IWINFO_FREQ_NO_EHT;
+ 					if (freqs[NL80211_FREQUENCY_ATTR_NO_IR] &&
+ 					    !freqs[NL80211_FREQUENCY_ATTR_RADAR])
+ 						e->flags |= IWINFO_FREQ_NO_IR;
 --- a/include/iwinfo.h
 +++ b/include/iwinfo.h
 @@ -140,7 +140,9 @@ enum iwinfo_freq_flag {

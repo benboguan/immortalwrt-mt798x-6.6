@@ -165,38 +165,33 @@ function action_fansttp()
     local fixed = set
     local port = string.gsub(p, "\"", "~")
 
-    local fansv="温度类型获取中..."
-	local temperature = 0
-    local conf_file = io.open("/etc/fanvallv.conf", "r")
-
-    if conf_file then
-        local config = conf_file:read("*a")
-        conf_file:close()
-
-        if config:match("模组温度") then
-			fansv="MT5700M-CN模组温度"
-            local sendat_command = io.popen("sendat 1 'AT^CHIPTEMP?' | grep 'CHIPTEMP' | sed -n '1p' | cut -d, -f9 | sed '/^$/d'")
-            local temp_output = sendat_command:read("*a")
-            sendat_command:close()
-            local temp_value = tonumber(temp_output)
-            if temp_value then
-                temperature = temp_value / 10
-            else
-                temperature = "null"
-            end
-        else
-            fansv="CPU温度"
-            local file = io.open("/sys/class/thermal/thermal_zone0/temp", "r")
-            if file then
-                temperature = file:read("*n")
-                file:close()
-                temperature = temperature / 1000
-            else
-                temperature = "null"
-            end
+    -- 新增：确保配置文件存在
+    local conf_path = "/etc/fanvallv.conf"
+    local conf_file = io.open(conf_path, "r")
+    if not conf_file then
+        -- 创建配置文件并初始化
+        local new_file = io.open(conf_path, "w")
+        if new_file then
+            new_file:write("CPU温度")  -- 默认启用CPU温度检测
+            new_file:close()
+            conf_file = io.open(conf_path, "r")  -- 重新打开用于后续读取
         end
+    end
+
+    local fansv = "温度类型获取中..."
+    local temperature = 0
+    local config = conf_file and conf_file:read("*a") or ""
+    if conf_file then conf_file:close() end
+
+    if config:match("模组温度") then
+        fansv = "MT5700M-CN模组温度"
+        local sendat_command = io.popen("sendat 1 'AT^CHIPTEMP?' | grep 'CHIPTEMP' | sed -n '1p' | cut -d, -f9 | sed '/^$/d'")
+        local temp_output = sendat_command:read("*a")
+        sendat_command:close()
+        local temp_value = tonumber(temp_output)
+        temperature = temp_value and (temp_value / 10) or "null"
     else
-		fansv="CPU温度"
+        fansv = "CPU温度"
         local file = io.open("/sys/class/thermal/thermal_zone0/temp", "r")
         if file then
             temperature = file:read("*n")
@@ -210,12 +205,11 @@ function action_fansttp()
     rv["at"] = fixed 
     rv["port"] = port
     rv["fansttp"] = temperature
-	rv["fansv"] = fansv
+    rv["fansv"] = fansv
 
     luci.http.prepare_content("application/json")
     luci.http.write_json(rv)
 end
-
 
 
 function action_fanst2()

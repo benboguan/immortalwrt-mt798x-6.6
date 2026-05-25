@@ -43,7 +43,7 @@ drv_mac80211_init_device_config() {
 	config_add_string tx_burst
 	config_add_string distance
 	config_add_int radio beacon_int chanbw frag rts
-	config_add_int mbssid mu_onoff rnr obss_interval
+	config_add_int mbssid mu_onoff sr_enable sr_enhanced rnr obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
 	config_add_int num_global_macaddr multiple_bssid
 	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar
@@ -801,15 +801,39 @@ mac80211_hostapd_setup_bss() {
 		append hostapd_cfg "wds_sta=1" "$N"
 		[ -n "$wds_bridge" ] && append hostapd_cfg "wds_bridge=$wds_bridge" "$N"
 	}
-	[ "$staidx" -gt 0 -o "$start_disabled" -eq 1 ] && append hostapd_cfg "start_disabled=1" "$N"
+	[ "$start_disabled" -eq 1 ] && append hostapd_cfg "start_disabled=1" "$N"
 
-	cat >> /var/run/hostapd-$phy.conf <<EOF
+	cat >> /var/run/hostapd-$phy$vif_phy_suffix.conf <<EOF
 $hostapd_cfg
-#bssid=$macaddr
-${default_macaddr:+#default_macaddr}
+bssid=$macaddr
 ${dtim_period:+dtim_period=$dtim_period}
 ${max_listen_int:+max_listen_interval=$max_listen_int}
 EOF
+}
+
+mac80211_generate_mbssid_mac() {
+	local phy="$1"
+	local transmitted_bssid="$2"
+	local id="${mbssidx:-0}"
+
+	local ref="$(cat /sys/class/ieee80211/${phy}/macaddress)"
+
+	if [ -z "$transmitted_bssid" ]; then
+		transmitted_bssid=$ref
+	fi
+
+	if [ $id -eq 0 ]; then
+		echo "$transmitted_bssid"
+		return
+	fi
+
+	local oIFS="$IFS"; IFS=":"; set -- $transmitted_bssid; IFS="$oIFS"
+
+	# Calculate nontransmitted bssid
+	b6="0x$6"
+	ref_b6=$(($b6 % $max_mbssid))
+	b6=$(($b6 - $ref_b6 + ($ref_b6 + $id) % $max_mbssid))
+	printf "%s:%s:%s:%s:%s:%02x" $1 $2 $3 $4 $5 $b6
 }
 
 mac80211_get_addr() {
@@ -827,7 +851,7 @@ mac80211_generate_mac() {
 		id=60;
 		phy=phy0;
 	fi
-	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr mbssid=${multiple_bssid:-0}
+	wdev_tool "$phy$phy_suffix" get_macaddr id=$id num_global=$num_global_macaddr mbssid=${multiple_bssid:-0}
 }
 
 get_board_phy_name() (
@@ -910,14 +934,25 @@ mac80211_check_ap() {
 	has_ap=1
 }
 
-mac80211_check_sta() {
-	has_sta=1
-}
-
 mac80211_set_ifname() {
 	local phy="$1"
 	local prefix="$2"
 	eval "ifname=\"$phy-$prefix\${idx_$prefix:-0}\"; idx_$prefix=\$((\${idx_$prefix:-0 } + 1))"
+}
+
+find_colocated_sta() {
+	local own_radio_idx=$1
+
+	iface_list="$(cat /etc/config/wireless | grep wifi-iface | cut -d ' ' -f3 | tr -s "'\n" ' ')"
+	for iface in $iface_list
+	do
+		local mode="$(uci show wireless.$iface.mode | cut -d '=' -f2 | tr -d "'")"
+		local ifname="$(uci show wireless.$iface | grep ifname | cut -d '=' -f2 | tr -d "'")"
+		[ -n "$ifname" ] && [ "$mode" == "sta" ] && {
+			local mld_allowed_phy_bitmap="$(uci show wireless.$iface | grep mld_allowed_phy_bitmap | cut -d '=' -f2 | tr -d "'")"
+			[ -n "$mld_allowed_phy_bitmap" ] && [ $(($mld_allowed_phy_bitmap & $((1<<$own_radio_idx)))) ] && append active_ifnames "$ifname"
+		}
+	done
 }
 
 fill_mld_params() {
@@ -1049,7 +1084,7 @@ mac80211_prepare_vif() {
 		monitor) prefix=mon;;
 		esac
 
-		mac80211_set_ifname "$phy" "$prefix"
+		mac80211_set_ifname "$phy$vif_phy_suffix" "$prefix"
 	}
 
 	append active_ifnames "$ifname"
@@ -1057,17 +1092,27 @@ mac80211_prepare_vif() {
 	set_default powersave 0
 	json_add_string _ifname "$ifname"
 
-	default_macaddr=
-	if [ -z "$macaddr" ]; then
+	if [ "$mbssid" -gt 0 ] && [ "$mode" == "ap" ]; then
+		[ "$mbssidx" -eq 0 ] && {
+			if [ -z $macaddr ]; then
+				transmitted_bssid="$(mac80211_generate_mac $phy)"
+			else
+				# uci set mac address
+				transmitted_bssid=$macaddr
+			fi
+			macidx="$(($macidx + 1))"
+		}
+		macaddr="$(mac80211_generate_mbssid_mac $phy $transmitted_bssid)"
+		mbssidx="$(($mbssidx + 1))"
+	elif [ -z "$macaddr" ]; then
 		macaddr="$(mac80211_generate_mac $phy)"
 		macidx="$(($macidx + 1))"
-		default_macaddr=1
 	elif [ "$macaddr" = 'random' ]; then
 		macaddr="$(macaddr_random)"
 	fi
 	json_add_string _macaddr "$macaddr"
-	json_add_string _default_macaddr "$default_macaddr"
 	json_select ..
+
 
 	[ "$mode" == "ap" ] && [ "$mld_primary" != "0" ] && {
 		json_select config
@@ -1312,8 +1357,8 @@ wpa_supplicant_set_config() {
 	json_set_namespace wpa_supp prev
 	json_close_array
 	json_add_string phy "$phy"
-	json_add_int radio "$radio"
-	json_add_int num_global_macaddr "$num_global_macaddr"
+	[ -n "$radio" ] && json_add_int radio "$radio"
+	json_add_int num_global_macaddr "${num_global_macaddr:-1}"
 	json_add_boolean defer 1
 	local data="$(json_dump)"
 
@@ -1339,240 +1384,78 @@ mac80211_netdev_exists() {
 	[ -n "$ifname" ] && [ -e "/sys/class/net/$ifname" ]
 }
 
-mac80211_append_reserved_ifnames() {
+# 尝试通过 ubus 热重载 hostapd 配置（无需重启进程）
+hostapd_reload_config() {
 	local phy="$1"
-	local max_ap="${MTK_RESERVED_AP_BSSID_NUM:-4}"
-	local max_sta="${MTK_RESERVED_APCLI_NUM:-1}"
-	local idx
+	local conf="$2"
+	local ifname="$3"
 
-	idx=0
-	while [ "$idx" -lt "$max_ap" ]; do
-		append active_ifnames "${phy}-ap${idx}"
-		idx=$((idx + 1))
-	done
-
-	idx=0
-	while [ "$idx" -lt "$max_sta" ]; do
-		append active_ifnames "${phy}-sta${idx}"
-		idx=$((idx + 1))
-	done
-}
-
-mac80211_create_reserved_vif() {
-	local phy="$1"
-	local ifname="$2"
-	local type="$3"
-
-	mac80211_netdev_exists "$ifname" && return 0
-
-	if iw phy "$phy" interface add "$ifname" type "$type" >/dev/null 2>&1; then
-		[ "$type" = "managed" ] && iw dev "$ifname" set 4addr on >/dev/null 2>&1
-		logger -t mac80211.sh "Created reserved wireless interface $ifname ($type)"
+	# 方法1：新版 hostapd 支持 config_set 直接推送配置
+	if ubus_call hostapd config_set "{\"phy\":\"$phy\",\"config\":\"$(cat $conf | base64 -w 0)\",\"prev_config\":\"\"}" 2>/dev/null; then
+		logger -t mac80211.sh "hostapd hot-reload succeeded via config_set for $ifname"
 		return 0
 	fi
 
-	logger -t mac80211.sh "ERROR: failed to create reserved wireless interface $ifname ($type)"
+	# 方法2：通过接口级别的 reload 命令
+	if ubus_call hostapd.${ifname} reload 2>/dev/null; then
+		logger -t mac80211.sh "hostapd hot-reload succeeded via reload for $ifname"
+		return 0
+	fi
+
 	return 1
 }
 
-mac80211_create_reserved_ifnames() {
-	local phy="$1"
-	local max_ap="${MTK_RESERVED_AP_BSSID_NUM:-4}"
-	local max_sta="${MTK_RESERVED_APCLI_NUM:-1}"
-	local idx
-
-	idx=0
-	while [ "$idx" -lt "$max_ap" ]; do
-		mac80211_create_reserved_vif "$phy" "${phy}-ap${idx}" "__ap"
-		idx=$((idx + 1))
-	done
-
-	idx=0
-	while [ "$idx" -lt "$max_sta" ]; do
-		mac80211_create_reserved_vif "$phy" "${phy}-sta${idx}" "managed"
-		idx=$((idx + 1))
-	done
-}
-
-mac80211_acquire_hostapd_lock() {
-	local phy="$1"
-	local lock_dir="/tmp/mac80211-hostapd.lock"
-	local wait=0
-	local max_wait=30
-
-	while ! mkdir "$lock_dir" 2>/dev/null; do
-		if [ -f "$lock_dir/owner" ]; then
-			local owner_pid="$(cat "$lock_dir/owner" 2>/dev/null | cut -d: -f1)"
-			if [ -n "$owner_pid" ] && ! kill -0 "$owner_pid" 2>/dev/null; then
-				logger -t mac80211.sh "WARNING: removing stale hostapd lock from pid=$owner_pid"
-				rm -rf "$lock_dir" 2>/dev/null
-				continue
-			fi
-		fi
-
-		wait=$((wait + 1))
-		if [ "$wait" -ge "$max_wait" ]; then
-			logger -t mac80211.sh "ERROR: timeout waiting hostapd lock for $phy"
-			return 1
-		fi
-		sleep 1
-	done
-
-	echo "$$:$phy" > "$lock_dir/owner" 2>/dev/null
-	return 0
-}
-
-mac80211_release_hostapd_lock() {
-	local lock_dir="/tmp/mac80211-hostapd.lock"
-
-	[ -d "$lock_dir" ] || return 0
-	rm -f "$lock_dir/owner" 2>/dev/null
-	rmdir "$lock_dir" 2>/dev/null
-	return 0
-}
-
 hostapd_set_config() {
-	# 启动所有为该 phy 生成的 hostapd 配置文件
-	# 格式：/var/run/hostapd-${phy}-ap${index}.conf
 	local phy="$1"
 	local logfile="/var/log/hostapd.log"
 	local started=0
-	local skip_confs="/tmp/hostapd_skip_${phy}_$$.tmp"
-	local stale_pids="/tmp/hostapd_stale_${phy}_$$.tmp"
+	local conf ifname ap_index pidfile
 
-	# 第一步：关闭那些没有配置文件的hostapd进程，保留默认VAP接口池
-	# 查找所有该phy的pid文件
-	for pidfile in /var/run/hostapd-${phy}-ap*.pid; do
-		[ ! -f "$pidfile" ] && continue
-		local pid=$(cat "$pidfile" 2>/dev/null)
-		[ -z "$pid" ] && continue
-		
-		# 从pid文件名提取ap_index
-		local ap_index=$(basename "$pidfile" | sed "s/hostapd-${phy}-ap\([0-9]*\)\.pid/\1/")
-		local conf="/var/run/hostapd-${phy}-ap${ap_index}.conf"
-		
-		# 如果配置文件不存在，只关闭这个hostapd进程，不删除默认VAP接口
-		if [ ! -f "$conf" ]; then
-			logger -t mac80211.sh "Closing hostapd process (no config file): pid=$pid, conf=$conf"
-			kill "$pid" 2>/dev/null
-			sleep 1
-			if kill -0 "$pid" 2>/dev/null; then
-				kill -9 "$pid" 2>/dev/null
-				sleep 1
-			fi
-			rm -f "$pidfile"
-		fi
-	done
-
-	# 第二步：先停掉该 phy 上当前配置相关的所有 hostapd，避免边杀边起导致同频冲突
-	rm -f "$stale_pids"
+	# 遍历该 phy 的所有配置文件
 	for conf in /var/run/hostapd-${phy}-ap*.conf; do
-		local ap_index pidfile ifname old_pid
-
 		[ -f "$conf" ] || continue
 
 		ap_index=$(basename "$conf" | sed "s/hostapd-${phy}-ap\([0-9]*\)\.conf/\1/")
+		ifname=$(grep "^interface=" "$conf" | cut -d'=' -f2 | head -1)
+		[ -z "$ifname" ] && ifname="${phy}-ap${ap_index}"
 		pidfile="/var/run/hostapd-${phy}-ap${ap_index}.pid"
-		ifname=$(grep "^interface=" "$conf" 2>/dev/null | cut -d'=' -f2 | head -1)
-		[ -z "$ifname" ] && ifname="${phy}-ap${ap_index}"
 
-		if [ -f "$pidfile" ]; then
-			old_pid=$(cat "$pidfile" 2>/dev/null)
-			[ -n "$old_pid" ] && echo "$old_pid" >> "$stale_pids"
-			rm -f "$pidfile"
+		# 确保接口存在（可从预留池恢复）
+		if ! mac80211_netdev_exists "$ifname"; then
+			logger -t mac80211.sh "Interface $ifname missing, skip config $conf"
+			continue
 		fi
+		ip link set dev "$ifname" up 2>/dev/null
 
-		ps | grep "[h]ostapd" | while read line; do
-			if echo "$line" | grep -q "$(basename "$conf")" || echo "$line" | grep -q "$ifname"; then
-				local existing_pid=$(echo "$line" | awk '{print $1}')
-				[ -n "$existing_pid" ] && echo "$existing_pid" >> "$stale_pids"
-			fi
-		done
-	done
-
-	if [ -f "$stale_pids" ]; then
-		while read existing_pid; do
-			[ -z "$existing_pid" ] && continue
-			if kill -0 "$existing_pid" 2>/dev/null; then
-				logger -t mac80211.sh "Stopping stale hostapd process on $phy: pid=$existing_pid"
-				kill "$existing_pid" 2>/dev/null
-				sleep 1
-				if kill -0 "$existing_pid" 2>/dev/null; then
-					kill -9 "$existing_pid" 2>/dev/null
-					sleep 1
-				fi
-			fi
-		done < "$stale_pids"
-	fi
-
-	# 第三步：只检查默认接口池，不再根据配置动态创建接口
-	rm -f "$skip_confs"
-	for conf in /var/run/hostapd-${phy}-ap*.conf; do
-		local ap_index ifname
-
-		[ -f "$conf" ] || continue
-
-		ap_index=$(basename "$conf" | sed "s/hostapd-${phy}-ap\([0-9]*\)\.conf/\1/")
-		ifname=$(grep "^interface=" "$conf" 2>/dev/null | cut -d'=' -f2 | head -1)
-		[ -z "$ifname" ] && ifname="${phy}-ap${ap_index}"
-
-		if mac80211_netdev_exists "$ifname"; then
-			ip link set dev "$ifname" up 2>/dev/null
-		else
-			logger -t mac80211.sh "ERROR: Interface $ifname is missing from default pool, will skip hostapd start for $conf"
-			echo "$conf" >> "$skip_confs"
-		fi
-	done
-
-	# 第四步：启动所有匹配的 hostapd 配置文件
-	for conf in /var/run/hostapd-${phy}-ap*.conf; do
-		# 检查文件是否存在（避免通配符未匹配时的情况）
-		[ ! -f "$conf" ] && continue
-		[ -f "$skip_confs" ] && grep -qxF "$conf" "$skip_confs" && continue
-		
-		# 从文件名提取 ap_index（如 hostapd-phy0-ap1.conf -> 1）
-		local ap_index=$(basename "$conf" | sed "s/hostapd-${phy}-ap\([0-9]*\)\.conf/\1/")
-		local pidfile="/var/run/hostapd-${phy}-ap${ap_index}.pid"
-		
-		# 从配置文件读取接口名
-		local ifname=$(grep "^interface=" "$conf" 2>/dev/null | cut -d'=' -f2 | head -1)
-		[ -z "$ifname" ] && ifname="${phy}-ap${ap_index}"
-		
-		# 启动 hostapd
-		logger -t mac80211.sh "Starting hostapd with config: $conf (interface: $ifname)"
-		/usr/sbin/hostapd -B -P "$pidfile" -f "$logfile" "$conf"
-		ret=$?
-		if [ "$ret" = "0" ]; then
-			sleep 1
-			if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile" 2>/dev/null)" 2>/dev/null; then
+		# 如果 hostapd 已在运行，尝试热重载（不中断服务）
+		if [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+			if hostapd_reload_config "$phy" "$conf" "$ifname"; then
 				started=$((started + 1))
-				# 让 netifd 记录这个进程
-				wireless_add_process "$(cat "$pidfile" 2>/dev/null)" "/usr/sbin/hostapd" 1 1
-				logger -t mac80211.sh "hostapd started successfully for $conf (pid: $(cat "$pidfile" 2>/dev/null))"
-			else
-				logger -t mac80211.sh "ERROR: hostapd process died immediately after start for $conf"
+				continue
 			fi
-		else
-			logger -t mac80211.sh "hostapd start failed for $conf, ret=$ret"
+			# 热重载失败，则关闭旧进程再重新启动
+			logger -t mac80211.sh "Hot-reload failed for $ifname, restarting hostapd"
+			kill "$(cat "$pidfile")" 2>/dev/null
+			sleep 1
+		fi
+
+		# 启动新的 hostapd 进程
+		/usr/sbin/hostapd -B -P "$pidfile" -f "$logfile" "$conf"
+		if [ $? -eq 0 ] && [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
+			started=$((started + 1))
+			wireless_add_process "$(cat "$pidfile")" "/usr/sbin/hostapd" 1 1
+			logger -t mac80211.sh "hostapd started for $ifname (pid: $(cat "$pidfile"))"
 		fi
 	done
 
-	# 如果没有启动任何 hostapd，返回错误
-	if [ "$started" -eq 0 ]; then
-		rm -f "$stale_pids"
-		rm -f "$skip_confs"
-		logger -t mac80211.sh "No hostapd configs found or started for phy=$phy"
+	[ $started -eq 0 ] && {
+		logger -t mac80211.sh "No hostapd instance could be started for phy=$phy"
 		wireless_setup_failed HOSTAPD_START_FAILED
 		return 1
-	fi
-
-	rm -f "$stale_pids"
-	rm -f "$skip_confs"
-
+	}
 	logger -t mac80211.sh "Started $started hostapd instance(s) for phy=$phy"
 	return 0
 }
-
 
 wpa_supplicant_start() {
 	local phy="$1"
@@ -1650,25 +1533,6 @@ mac80211_setup_vif() {
 	/sbin/smp.sh
 }
 
-mac80211_start_sta_vif() {
-	json_select config
-	json_get_var ifname _ifname
-	json_get_var mode mode
-
-	if [ "$mode" = "sta" ]; then
-		if mac80211_netdev_exists "$ifname"; then
-			ip link set dev "$ifname" up 2>/dev/null
-			ubus_call wpa_supplicant config_remove '{ "iface": "'"$ifname"'" }' >/dev/null 2>&1
-			wpa_supplicant_run "$ifname"
-		else
-			logger -t mac80211.sh "ERROR: STA interface $ifname is missing from default pool"
-			wireless_setup_vif_failed NO_DEVICE
-		fi
-	fi
-
-	json_select ..
-}
-
 get_freq() {
 	local phy="$1"
 	local channel="$2"
@@ -1706,141 +1570,161 @@ mac80211_set_noscan() {
 }
 
 drv_mac80211_cleanup() {
-	hostapd_common_cleanup
+	:
 }
 
 mac80211_reset_config() {
-	local phy="$1"
-
-	hostapd_conf_file="/var/run/hostapd-$phy.conf"
-	#ubus_call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
-	#ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
+	hostapd_conf_file="/var/run/hostapd-$phy$vif_phy_suffix.conf"
 	ubus_call hostapd config_set '{ "phy": "'"$phy"'", "radio": '"$radio"', "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
 	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "radio": '"$radio"', "config": [] }' > /dev/null
+	wdev_tool "$phy$phy_suffix" set_config '{}'
+	mv "$hostapd_conf_file" "$hostapd_conf_file.bk"
 }
 
-mac80211_get_first_ap_macaddr() {
-	local _macaddr=""
-	local _ifaces _iface _type
+mac80211_set_suffix() {
+	[ "$radio" = "-1" ] && radio=
+	phy_suffix="${radio:+:$radio}"
+	vif_phy_suffix="${radio:+.$radio}"
+	set_default radio -1
+}
 
-	json_get_keys _ifaces interfaces
-	json_select interfaces 2>/dev/null || return 1
+mac80211_count_ap_radio() {
+	local radio
+	local iface
 
-	for _iface in $_ifaces; do
-		json_select "$_iface" 2>/dev/null || continue
-		json_select config 2>/dev/null || { json_select ..; continue; }
-		json_get_var _type mode
-		if [ "$_type" = "ap" ]; then
-			json_get_var _macaddr macaddr
-			json_select ..
-			json_select ..
-			break
-		fi
-		json_select ..
-		json_select ..
+	for radio in $(uci show wireless | grep '=wifi-device' | cut -d. -f2 | cut -d= -f1); do
+		local radio_disabled=$(uci get wireless.$radio.disabled 2>/dev/null)
+		# skip disabled radios
+		[ "$radio_disabled" = "1" ] && continue
+
+		# Check for at least one enabled AP iface on this radio
+		for iface in $(uci show wireless | grep '=wifi-iface' | cut -d. -f2 | cut -d= -f1); do
+			local iface_device=$(uci get wireless.$iface.device 2>/dev/null)
+			# skip mismatched wifi-iface
+			[ "$iface_device" != "$radio" ] && continue
+
+			local iface_disabled=$(uci get wireless.$iface.disabled 2>/dev/null)
+			# skip disabled wifi-iface
+			[ "$iface_disabled" = "1" ] && continue
+
+			iface_mode=$(uci get wireless.$iface.mode 2>/dev/null)
+			[ "$iface_mode" = "ap" ] && {
+				# Extract the radio index (e.g., radio0 -> 0)
+				local idx=$(echo "$radio" | sed 's/[^0-9]*//g')
+
+				used_radio_mask=$((used_radio_mask | (1 << idx)))
+				break
+			}
+		done
 	done
-
-	echo "$_macaddr"
 }
 
-mac80211_device_needs_restart() {
-	local phy="$1"
-	local changes=""
-
-	[ -n "$prev_phy" ] || return 1
-	[ "$prev_phy" = "$phy" ] || return 1
-
-	[ "${prev_channel:-}" = "${channel:-}" ] || append changes "channel:${prev_channel:--}->${channel:--}" ", "
-	[ "${prev_band:-}" = "${band:-}" ] || append changes "band:${prev_band:--}->${band:--}" ", "
-	[ "${prev_htmode:-}" = "${htmode:-}" ] || append changes "htmode:${prev_htmode:--}->${htmode:--}" ", "
-	[ "${prev_country:-}" = "${country:-}" ] || append changes "country:${prev_country:--}->${country:--}" ", "
-	[ "${prev_chanbw:-}" = "${chanbw:-}" ] || append changes "chanbw:${prev_chanbw:--}->${chanbw:--}" ", "
-	[ "${prev_macaddr:-}" = "${macaddr:-}" ] || append changes "macaddr:${prev_macaddr:--}->${macaddr:--}" ", "
-
-	[ -n "$changes" ] || return 1
-
-	logger -t mac80211.sh "Radio config changed on $phy, forcing full reload: $changes"
-	return 0
+mac80211_count_ap() {
+	total_num_ap=$(($total_num_ap + 1))
 }
 
+country_consistent_check() {
+	local i
+	inconsistent_country=0
+	country_list="$(cat /etc/config/wireless | grep country | cut -d ' ' -f3 | tr -s "'\n" ' ')"
+	for i in $country_list
+	do
+		ret="$(echo $country_list | awk '{print ($2 == "" || $1 == $2)}')"
+		[ $ret = '0' ] && {
+			inconsistent_country=1
+			return
+		}
+		country_list="$(echo $country_list | sed -r 's/[A-Z]{2}( )*//')"
+	done
+}
+
+# 简化版强制重载：仅停止进程和关闭接口
 mac80211_force_phy_reload() {
-	local phy="$1"
-	local pidfile pid wdev
+	local phy="$1" pid pidfile wdev
 
-	logger -t mac80211.sh "Running full reload cleanup for $phy"
-	mac80211_reset_config "$phy"
-
+	logger -t mac80211.sh "Force reloading $phy"
 	for pidfile in /var/run/hostapd-${phy}-ap*.pid; do
 		[ -f "$pidfile" ] || continue
-
-		pid="$(cat "$pidfile" 2>/dev/null)"
-		if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-			logger -t mac80211.sh "Stopping hostapd before reload on $phy: pid=$pid"
-			kill "$pid" 2>/dev/null
-			sleep 1
-			if kill -0 "$pid" 2>/dev/null; then
-				kill -9 "$pid" 2>/dev/null
-				sleep 1
-			fi
-		fi
-
+		pid=$(cat "$pidfile" 2>/dev/null)
+		[ -n "$pid" ] && kill "$pid" 2>/dev/null
 		rm -f "$pidfile"
 	done
 
-	ps | grep "[h]ostapd" | grep "${phy}-ap" | while read pid _rest; do
-		[ -n "$pid" ] || continue
-		kill "$pid" 2>/dev/null
-	done
-
-	for wdev in $(list_phy_interfaces "$phy"); do
+	for wdev in $(iw dev | awk -F: "/Interface/ {print \$2}" | grep "^${phy}-ap"); do
 		ip link set dev "$wdev" down 2>/dev/null
 	done
-
 	sleep 1
+}
+
+set_antenna() {
+	local phy=$1
+	local radio_list="$(uci show wireless | grep wifi-device | cut -d '=' -f 1 | cut -d '.' -f 2)"
+	local radio
+	local radio_idx
+	local is_disabled
+	local antenna_mask
+	local offset
+	local radio_tx_antenna
+	local radio_rx_antenna
+	local wiphy_tx_antenna=0
+	local wiphy_rx_antenna=0
+
+	for radio in $radio_list
+	do
+		is_disabled="$(uci show wireless.${radio} | grep "disabled" | cut -d '=' -f 2 | tr -d "'")"
+		radio_idx="$(uci show wireless.${radio}.radio | cut -d '=' -f 2 | tr -d "'")"
+		radio_tx_antenna="$(uci show wireless.${radio} | grep txantenna | cut -d '=' -f 2 | tr -d "'")"
+		radio_rx_antenna="$(uci show wireless.${radio} | grep rxantenna | cut -d '=' -f 2 | tr -d "'")"
+		antenna_mask="$(iw phy ${phy} info | grep "wiphy radio" -A 21 | grep "Idx $radio_idx" -A 2 | grep "antenna_mask" | cut -d ' ' -f 2 | cut -d 'x' -f 2)"
+		antenna_mask=$((0x$antenna_mask))
+
+		offset=0
+		while [ $(($antenna_mask & 1)) -eq 0 ]
+		do
+			antenna_mask=$(($antenna_mask >> 1))
+			offset=$(($offset + 1))
+		done
+
+		if [ "$is_disabled" -ne "1" ] && [ -n "$radio_tx_antenna" ]; then
+			radio_tx_antenna=$(($radio_tx_antenna & $antenna_mask))
+		else
+			radio_tx_antenna=$antenna_mask
+		fi
+
+		wiphy_tx_antenna=$(($wiphy_tx_antenna+$(($radio_tx_antenna << $offset))))
+
+		if [ "$is_disabled" -ne "1" ] && [ -n "$radio_rx_antenna" ]; then
+			radio_rx_antenna=$(($radio_rx_antenna & $antenna_mask))
+		else
+			radio_rx_antenna=$antenna_mask
+		fi
+
+		wiphy_rx_antenna=$(($wiphy_rx_antenna+$(($radio_rx_antenna << $offset))))
+	done
+
+	iw phy $phy set antenna $wiphy_tx_antenna $wiphy_rx_antenna >/dev/null 2>&1
 }
 
 drv_mac80211_setup() {
 	json_select config
 	json_get_vars \
-		phy path \
+		radio phy path \
 		country chanbw distance \
 		txpower \
 		rxantenna txantenna \
 		frag rts beacon_int:100 htmode \
-		num_global_macaddr:1 multiple_bssid
+		num_global_macaddr:1 multiple_bssid \
+		sr_enable sr_enhanced
 	json_get_values basic_rate_list basic_rate
 	json_get_values scan_list scan_list
 	json_select ..
 
-	local macaddr
-	json_select interfaces 2>/dev/null && {
-		local _ifaces _iface _type _found
-		json_get_keys _ifaces
-		for _iface in $_ifaces; do
-			json_select "$_iface" 2>/dev/null || continue
-			json_select config 2>/dev/null || { json_select ..; continue; }
-			json_get_var _type mode
-			[ "$_type" = "ap" -a -z "$_found" ] && {
-				json_get_var macaddr macaddr
-				_found=1
-			}
-			json_select ..
-			json_select ..
-			[ -n "$_found" ] && break
-		done
-		json_select ..
-	}
+	mac80211_set_suffix
 
-	json_select data && {
-		json_get_var prev_phy phy
-		json_get_var prev_channel channel
-		json_get_var prev_band band
-		json_get_var prev_htmode htmode
-		json_get_var prev_country country
-		json_get_var prev_chanbw chanbw
-		json_get_var prev_rxantenna rxantenna
-		json_get_var prev_txantenna txantenna
-		json_get_var prev_macaddr macaddr
+	# 获取上次配置用于比较
+	json_select data 2>/dev/null && {
+		json_get_vars prev_phy prev_channel prev_band prev_htmode \
+			prev_country prev_chanbw prev_rxantenna prev_txantenna prev_macaddr
 		json_select ..
 	}
 
@@ -1849,22 +1733,6 @@ drv_mac80211_setup() {
 		wireless_set_retry 0
 		return 1
 	}
-
-	case "$phy" in
-  		phy0)
-			[ "$band" = "2g" ] || { echo "force band=2g for $phy"; band=2g; }
-		;;
-		phy1)
-			[ "$band" = "5g" ] || { echo "force band=5g for $phy"; band=5g; }
-		;;
-		phy2)
-			[ "$band" = "6g" ] || { echo "force band=6g for $phy"; band=6g; }
-		;;
-	esac
-
-	local wdev
-	local cwdev
-	local found
 
 	# convert channel to frequency
 	[ "$auto_channel" -gt 0 ] || freq="$(get_freq "$phy" "$channel" "$band")"
@@ -1876,7 +1744,7 @@ drv_mac80211_setup() {
 		}
 	}
 
-	hostapd_conf_file="/var/run/hostapd-$phy.conf"
+	hostapd_conf_file="/var/run/hostapd-$phy$vif_phy_suffix.conf"
 
 	macidx=0
 	staidx=0
@@ -1898,49 +1766,33 @@ drv_mac80211_setup() {
 	[ "$txantenna" = "all" ] && txantenna=0xffffffff
 	[ "$rxantenna" = "all" ] && rxantenna=0xffffffff
 
-	if mac80211_device_needs_restart "$phy"; then
-		mac80211_force_phy_reload "$phy"
-	fi
-
 	[ "$rxantenna" = "$prev_rxantenna" -a "$txantenna" = "$prev_txantenna" ] || mac80211_reset_config "$phy"
-	wireless_set_data \
-		phy="$phy" \
-		channel="${channel:-}" \
-		band="${band:-}" \
-		htmode="${htmode:-}" \
-		country="${country:-}" \
-		chanbw="${chanbw:-}" \
-		macaddr="${macaddr:-}" \
-		txantenna="$txantenna" \
-		rxantenna="$rxantenna"
+	wireless_set_data phy="$phy" radio="$radio" txantenna="$txantenna" rxantenna="$rxantenna"
 
-	iw phy "$phy" set antenna $txantenna $rxantenna >/dev/null 2>&1
+	# each phy sleeps different times to prevent for ubus race condition.
+	[ "$phy" = "phy1" -o "$radio" = "1" ] && sleep 3
+	[ "$phy" = "phy2" -o "$radio" = "2" ] && sleep 6
+
+	set_antenna $phy
 	iw phy "$phy" set distance "$distance" >/dev/null 2>&1
-
-	if [ -n "$txpower" ]; then
-		iw phy "$phy" set txpower fixed "${txpower%%.*}00"
-	else
-		iw phy "$phy" set txpower auto
-	fi
 
 	[ -n "$frag" ] && iw phy "$phy" set frag "${frag%%.*}"
 	[ -n "$rts" ] && iw phy "$phy" set rts "${rts%%.*}"
 
 	has_ap=
-	has_sta=
 	hostapd_ctrl=
 	ap_ifname=
 	hostapd_noscan=
 	wpa_supp_init=
 	for_each_interface "ap" mac80211_check_ap
-	for_each_interface "sta" mac80211_check_sta
 
-	# 不再需要备份旧配置文件，mtk_wifi_config.sh 会直接生成新的
-	# [ -f "$hostapd_conf_file" ] && mv "$hostapd_conf_file" "$hostapd_conf_file.prev"
+	used_radio_mask=0
+	mac80211_count_ap_radio
+
+	[ -f "$hostapd_conf_file" ] && mv "$hostapd_conf_file" "$hostapd_conf_file.prev"
 
 	for_each_interface "sta adhoc mesh" mac80211_set_noscan
-	# 注意：原来的 mac80211_hostapd_setup_base 在这里被调用，但现在我们移到后面
-	# 因为需要先准备好所有接口信息
+	[ -n "$has_ap" ] && mac80211_hostapd_setup_base "$phy"
 
 	local prev
 	json_set_namespace wdev_uc prev
@@ -1949,50 +1801,46 @@ drv_mac80211_setup() {
 
 	wpa_supplicant_init_config
 
+	total_num_ap=0
+	max_mbssid=1
+	for_each_interface "ap" mac80211_count_ap
+	total_num_ap=$(($total_num_ap - 1))
+	while [ $total_num_ap -gt 0 ]
+	do
+		total_num_ap=$(($total_num_ap >> 1))
+		max_mbssid=$(($max_mbssid << 1))
+	done
+
 	mac80211_prepare_iw_htmode
 	active_ifnames=
-	mac80211_append_reserved_ifnames "$phy"
 	for_each_interface "ap sta adhoc mesh monitor" mac80211_prepare_vif
 	for_each_interface "ap sta adhoc mesh monitor" mac80211_setup_vif
 
-	# 使用 mtk_wifi_config.sh 生成 DAT 和 hostapd 配置（在所有接口准备完成后）
-	# 替换原来的 mac80211_hostapd_setup_base 逻辑
-	logger -t mac80211.sh "has_ap=$has_ap has_sta=$has_sta, calling mtk_wifi_config functions"
-	local hostapd_lock_acquired=
-	[ -n "$has_ap" -o -n "$has_sta" ] && {
-		if mac80211_acquire_hostapd_lock "$phy"; then
-			hostapd_lock_acquired=1
-		else
-			logger -t mac80211.sh "WARNING: continue without hostapd lock on $phy"
-		fi
+	find_colocated_sta "$radio"
 
-		logger -t mac80211.sh "Generating DAT configs..."
-		generate_dat_from_uci "$phy" || logger -t mac80211.sh "ERROR: generate_dat_from_uci failed with code $?"
-		[ -n "$has_ap" ] && {
-			logger -t mac80211.sh "Generating hostapd configs..."
-			generate_hostapd_from_uci_improved "$phy" || logger -t mac80211.sh "ERROR: generate_hostapd_from_uci_improved failed with code $?"
-		}
-		logger -t mac80211.sh "DAT/hostapd configs generation completed"
-	} || {
-		logger -t mac80211.sh "WARNING: has_ap and has_sta are empty, skipping config generation"
-	}
+	country_consistent_check
 
-	#[ -x /usr/sbin/wpa_supplicant ] && wpa_supplicant_set_config "$phy"
+	[ -x /usr/sbin/wpa_supplicant ] && wpa_supplicant_set_config "$phy" "$radio"
+	[ -x /usr/sbin/hostapd ] && hostapd_set_config "$phy" "$radio"
+
+	[ -x /usr/sbin/wpa_supplicant ] && [ "$used_radio_mask" -eq 0 ] && wpa_supplicant_start "$phy" "$radio"
+
 	json_set_namespace wdev_uc prev
-	wdev_tool "$phy" set_config "$(json_dump)" $active_ifnames
+	wdev_tool "$phy$phy_suffix" set_config "$(json_dump)" $active_ifnames
 	json_set_namespace "$prev"
-	if [ -n "$has_ap" -a -x /usr/sbin/hostapd ]; then
-		hostapd_set_config "$phy"
-		mac80211_create_reserved_ifnames "$phy"
+
+	if [ -n "$txpower" ]; then
+		iw phy "$phy" set txpower fixed "${txpower%%.*}00" radio "$radio"
 	else
-		mac80211_create_reserved_ifnames "$phy"
+		iw phy "$phy" set txpower auto radio "$radio"
 	fi
-	[ -n "$hostapd_lock_acquired" ] && mac80211_release_hostapd_lock
 
-	#[ -x /usr/sbin/wpa_supplicant ] && wpa_supplicant_start "$phy"
-
-	for_each_interface "sta" mac80211_start_sta_vif
 	wireless_set_up
+
+	echo /tmp/%e.core > /proc/sys/kernel/core_pattern
+	phy_idx=$(echo "$phy" | sed 's/phy//')
+	[ -n "$sr_enable" ] && echo "$sr_enable" > /sys/kernel/debug/ieee80211/phy0/mt76/band$phy_idx/sr_enable
+	[ -n "$sr_enhanced" ] && echo "$sr_enhanced" > /sys/kernel/debug/ieee80211/phy0/mt76/band$phy_idx/sr_enhanced_enable
 }
 
 _list_phy_interfaces() {
@@ -2015,18 +1863,15 @@ list_phy_interfaces() {
 
 drv_mac80211_teardown() {
 	json_select data
-	json_get_vars phy
+	json_get_vars phy radio
 	json_select ..
 	[ -n "$phy" ] || {
 		echo "Bug: PHY is undefined for device '$1'"
 		return 1
 	}
 
+	mac80211_set_suffix
 	mac80211_reset_config "$phy"
-
-	for wdev in $(list_phy_interfaces "$phy"); do
-		ip link set dev "$wdev" down
-	done
 }
 
 add_driver mac80211

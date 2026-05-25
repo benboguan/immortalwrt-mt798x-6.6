@@ -101,8 +101,12 @@ function wdev_create(phy, name, data)
 		req["4addr"] = data["4addr"];
 	if (data.macaddr)
 		req.mac = data.macaddr;
-	if (data.radio != null && data.radio >= 0)
+	if (data.radio_mask > 0)
+		req.vif_radio_mask = data.radio_mask;
+	else if (data.radio != null && data.radio >= 0)
 		req.vif_radio_mask = 1 << data.radio;
+	else if (data.mld_radio_mask != null && data.mld_radio_mask > 0)
+		req.vif_radio_mask = data.mld_radio_mask;
 
 	nl80211.error();
 
@@ -181,6 +185,7 @@ const phy_proto = {
 	macaddr_init: function(used, options) {
 		this.macaddr_options = options ?? {};
 		this.macaddr_list = {};
+		this.mbssid_list = [];
 
 		if (type(used) == "object")
 			for (let addr in used)
@@ -203,7 +208,6 @@ const phy_proto = {
 		let idx = int(data.id ?? 0);
 		let mbssid = int(data.mbssid ?? 0) > 0;
 		let num_global = int(data.num_global ?? 1);
-		let use_global = !mbssid && idx < num_global;
 
 		let base_addr = phy_sysfs_file(phy, "macaddress");
 		if (!base_addr)
@@ -213,7 +217,12 @@ const phy_proto = {
 		if (!base_mask)
 			return null;
 
-		if (base_mask == "00:00:00:00:00:00" &&
+		if (base_mask == "00:00:00:00:00:00")
+			base_mask = "ff:ff:ff:ff:ff:ff";
+
+		if (data.macaddr_base)
+			base_addr = data.macaddr_base;
+		else if (base_mask == "ff:ff:ff:ff:ff:ff" &&
 		    (radio_idx > 0 || idx >= num_global)) {
 			let addrs = split(phy_sysfs_file(phy, "addresses"), "\n");
 
@@ -221,25 +230,22 @@ const phy_proto = {
 				if (radio_idx && radio_idx < length(addrs))
 					base_addr = addrs[radio_idx];
 				else
-					idx += radio_idx * 16;
+					idx += radio_idx * 32;
 			} else {
 				if (idx < length(addrs))
 					return addrs[idx];
-
-				base_mask = "ff:ff:ff:ff:ff:ff";
 			}
 		}
 
 		if (!idx && !mbssid)
 			return base_addr;
 
+		let use_global = !mbssid && idx < num_global;
 		let addr = macaddr_split(base_addr);
 		let mask = macaddr_split(base_mask);
 		let type;
 
-		if (mbssid)
-			type = "b5";
-		else if (use_global)
+		if (use_global)
 			type = "add";
 		else if (mask[0] > 0)
 			type = "b1";
@@ -249,22 +255,21 @@ const phy_proto = {
 			type = "add";
 
 		switch (type) {
-		case "b1":
-			if (!(addr[0] & 2))
-				idx--;
-			addr[0] |= 2;
-			addr[0] ^= idx << 2;
-			break;
 		case "b5":
 			if (mbssid)
 				addr[0] |= 2;
 			addr[5] ^= idx;
 			break;
+		case "b1":
+			addr[0] |= 2;
+			addr[0] ^= (radio_idx ?? 0) << 2;
+			// fallthrough
 		default:
-			for (let i = 5; i > 0; i--) {
+			for (let i = 4; i > 0; i--) {
 				addr[i] += idx;
 				if (addr[i] < 256)
 					break;
+				idx = addr[i] / 256;
 				addr[i] %= 256;
 			}
 			break;
@@ -273,9 +278,42 @@ const phy_proto = {
 		return macaddr_join(addr);
 	},
 
+	mbssid_macaddr_generate: function(data) {
+		/* check if we can keep MAC addresses for non-TX BSSes */
+		let base_addr = macaddr_split(this.mbssid_list[0]);
+		let num_bss = 1 << data.mbssid_indicator;
+		let b5 = base_addr[5] % num_bss;
+		let list = this.macaddr_list;
+		let mbssid_list = this.mbssid_list;
+
+		for (let i = 1; i < num_bss; i++) {
+			let addr = [...base_addr];
+			addr[5] = base_addr[5] - b5 + ((b5 + i) % num_bss);
+
+			let addr_str = macaddr_join(addr);
+			if (list[addr_str] != null)
+				return -1;
+
+			list[addr_str] = -1;
+			mbssid_list[i] = addr_str;
+		}
+
+		return 0;
+	},
+
+	set_mbssid_macaddr: function(tx_addr) {
+		let data = this.macaddr_options ?? {};
+
+		this.mbssid_list[0] = tx_addr;
+		return this.mbssid_macaddr_generate(data)
+	},
+
 	macaddr_next: function(val) {
 		let data = this.macaddr_options ?? {};
 		let list = this.macaddr_list;
+
+		if (data.mbssid && val > 0 && val < length(this.mbssid_list))
+			return this.mbssid_list[val];
 
 		for (let i = 0; i < 32; i++) {
 			data.id = i;
@@ -286,6 +324,12 @@ const phy_proto = {
 
 			if (list[mac] != null)
 				continue;
+
+			if (data.mbssid && val == 0) {
+				this.mbssid_list[0] = mac;
+				if (this.mbssid_macaddr_generate(data))
+					continue;
+			}
 
 			list[mac] = val != null ? val : -1;
 			return mac;
@@ -312,7 +356,7 @@ const phy_proto = {
 			if (wdev.iftype == nl80211.const.NL80211_IFTYPE_AP_VLAN)
 				continue;
 			if (this.radio != null && wdev.vif_radio_mask != null &&
-			    !(wdev.vif_radio_mask & (1 << this.radio)))
+			    wdev.vif_radio_mask != (1 << this.radio))
 				continue;
 			mac_wdev[wdev.mac] = wdev;
 		}

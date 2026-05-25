@@ -1,4 +1,4 @@
-<%#
+{#
 	Argon is a clean HTML5 theme for LuCI. It is based on luci-theme-material Argon Template
 
 	luci-theme-argon
@@ -7,39 +7,48 @@
 	Have a bug? Please create an issue here on GitHub!
 	https://github.com/jerrykuku/luci-theme-argon/issues
 
-	luci-theme-material: 
+	luci-theme-material:
 	Copyright 2015 Lutty Yang <lutty@wcan.in>
-	
+
 	Agron Theme
-	https://demos.creative-tim.com/argon-dashboard/index.html 
+	https://demos.creative-tim.com/argon-dashboard/index.html
 
-	Licensed to the public under the Apache License 2.0 
--%>
+	Licensed to the public under the Apache License 2.0
+-#}
 
-<% local ver = require "luci.version" %>
-</div>
-<footer class="mobile-hide">
-	<div>
-		<a class="luci-link" href="http://www.manper.me/" target="_blank">Powered by Immortalwrt-21.02-SNAPSHOT </a> /
-						<a href="https://github.com/jerrykuku/luci-theme-argon" target="_blank">ArgonTheme v2.3.1</a> /
-						<%= ver.distversion %>
-		<ul class="breadcrumb pull-right" id="modemenu" style="display:none"></ul>
+		</div>
+		<footer class="mobile-hide" style="text-wrap: auto">
+			<div class="footer-content" style="display: flex; flex-wrap: wrap; gap: 0.5em; justify-content: end;">
+				<a class="luci-link" href="https://github.com/openwrt/luci" target="_blank">Powered by {{ version.luciname }} ({{ version.luciversion }})</a>
+
+				<span class="footer-separator">|</span>
+
+				<a href="https://github.com/jerrykuku/luci-theme-argon" target="_blank">ArgonTheme v2.4.3</a>
+
+				<span class="footer-separator">|</span>
+
+				<a class="luci-link" href="{{ version.disturl }}" target="_blank">{{ version.distname }} {{ version.distversion }}-{{ version.distrevision }}</a>
+
+				<ul class="breadcrumb pull-right" id="modemenu" style="display:none"></ul>
+			</div>
+		</footer>
 	</div>
-</footer>
-</div>
 </div>
 <script>
 	// thanks for Jo-Philipp Wich <jow@openwrt.org>
-	var luciLocation = <%= luci.http.write_json(luci.dispatcher.context.path) %>;
-	var winHeight = $(window).height();
-	$(window).resize(function () {
-		var winWidth = $(window).width()
+	var luciLocation = {{ ctx.path }};
+	var winHeight = window.innerHeight;
+	window.addEventListener('resize', function () {
+		var winWidth = window.innerWidth;
 		if(winWidth < 600){
-			var newHeight = $(this).height();
+			var newHeight = window.innerHeight;
 			var keyboradHeight = newHeight - winHeight;
-			$(".ftc").css("bottom", keyboradHeight + 30);
+			var ftcElement = document.querySelector(".ftc");
+			if (ftcElement) {
+				ftcElement.style.bottom = (keyboradHeight + 30) + "px";
+			}
 		}
-	})
+	});
 </script>
 <script type="text/javascript">L.require('menu-argon')</script>
 <!-- 覆盖层HTML（初始隐藏） -->

@@ -43,6 +43,9 @@ define Package/wifi-scripts/install
 	$(INSTALL_DIR) $(1)
 	$(CP) ./files/* $(1)/
 	$(if $(CONFIG_PACKAGE_wifi-script), \
+		rm -f $(1)/lib/wifi/mac80211.uc; \
+		rm -f $(1)/lib/netifd/hostapd.sh; \
+		rm -f $(1)/lib/netifd/netifd-wireless.sh; \
 		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
 endef
 

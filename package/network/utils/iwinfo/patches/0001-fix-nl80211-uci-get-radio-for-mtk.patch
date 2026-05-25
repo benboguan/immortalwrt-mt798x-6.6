@@ -5,7 +5,7 @@
  	int idx = -1;
  
 -	s = iwinfo_uci_get_radio(name, "mac80211");
-+	s = iwinfo_uci_get_radio(name, "mtk");
++	s = iwinfo_uci_get_radio(name, "mtkwifi");
 +	if (!s)
 +		s = iwinfo_uci_get_radio(name, "mac80211");
  	if (!s)

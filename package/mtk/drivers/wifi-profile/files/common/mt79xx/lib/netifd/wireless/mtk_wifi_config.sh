@@ -2,6 +2,9 @@
 
 . /lib/functions/system.sh
 
+# 
+# 此脚本来自白菜
+#
 # MediaTek WiFi 配置生成器 - 纯 Shell 版本
 # 将 mtkdat.lua 中的逻辑转换为 Shell 脚本
 # 
@@ -10,6 +13,18 @@
 
 MTK_RESERVED_AP_BSSID_NUM="${MTK_RESERVED_AP_BSSID_NUM:-4}"
 MTK_RESERVED_APCLI_NUM="${MTK_RESERVED_APCLI_NUM:-1}"
+L1_PROFILE="/etc/wireless/l1profile.dat"
+
+if [ -f "$L1_PROFILE" ]; then
+    DAT_PATH=$(awk -F= '/^INDEX0_init_path=/ {print $2; exit}' "$L1_PROFILE")
+    if [ -z "$DAT_PATH" ] || [ ! -f "$DAT_PATH" ]; then
+        echo "Error: INDEX0_init_path not found or file does not exist in $L1_PROFILE" >&2
+        exit 1
+    fi
+else
+    echo "Error: Required l1_config file not found at $L1_PROFILE" >&2
+    exit 1
+fi
 
 # 检查是否被 source（当被 source 时，$0 通常是调用它的 shell，而不是脚本名）
 # 如果 $0 包含 "mtk_wifi_config.sh" 或脚本路径，说明是直接执行
@@ -101,31 +116,23 @@ get_uci_value() {
 
 # 获取 DAT 文件路径的函数
 get_dat_file() {
-    local band="$1"
-    local dat_path="/etc/wireless/mediatek/mt7992.1.dat"
-    
-    # 如果配置文件不存在，返回空
-    if [ ! -f "$dat_path" ]; then
-        return 1
-    fi
-    
-    # 将 band 转换为小写进行比较
-    local band_lower=$(echo "$band" | tr '[:upper:]' '[:lower:]')
-    
-    if [ "$band_lower" = "2g" ] || [ "$band_lower" = "2.4g" ]; then
-        # 读取 BN0_profile_path
-        local dat_file=$(cat "$dat_path" 2>/dev/null | grep "^BN0_profile_path=" | awk -F'=' '{print $2}')
-        if [ -n "$dat_file" ]; then
-            echo "$dat_file"
-            return 0
-        fi
-    elif [ "$band_lower" = "5g" ] || [ "$band_lower" = "5g" ]; then
-        # 读取 BN1_profile_path
-        local dat_file=$(cat "$dat_path" 2>/dev/null | grep "^BN1_profile_path=" | awk -F'=' '{print $2}')
-        if [ -n "$dat_file" ]; then
-            echo "$dat_file"
-            return 0
-        fi
+    local band="$1" dat_file=""
+
+    # 配置文件不存在则直接返回失败
+    [ -f "$DAT_PATH" ] || return 1
+
+    # 统一转换为小写，用 case 匹配
+    case "$(echo "$band" | tr '[:upper:]' '[:lower:]')" in
+        2g|2.4g) dat_file=$(grep "^BN0_profile_path=" "$DAT_PATH" | awk -F= '{print $2}') ;;
+        5g)      dat_file=$(grep "^BN1_profile_path=" "$DAT_PATH" | awk -F= '{print $2}') ;;
+        6g)      dat_file=$(grep "^BN2_profile_path=" "$DAT_PATH" | awk -F= '{print $2}') ;;
+        *)       return 1 ;;
+    esac
+
+    # 确认提取到内容，输出并返回成功
+    if [ -n "$dat_file" ]; then
+        echo "$dat_file"
+        return 0
     fi
     
     return 1
@@ -158,6 +165,9 @@ get_default_bssid_mac() {
 
     band_lower="$(echo "$band" | tr '[:upper:]' '[:lower:]')"
     case "$band_lower" in
+        6g)
+            wifi_mac="$(macaddr_add "$wifi_mac" 2)"
+            ;;
         5g)
             wifi_mac="$(macaddr_add "$wifi_mac" 1)"
             ;;
