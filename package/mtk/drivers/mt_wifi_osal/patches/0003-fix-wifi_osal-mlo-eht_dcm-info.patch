@@ -1,0 +1,30 @@
+--- a/inc/mt_osal_cfg80211_vndr.h
++++ b/inc/mt_osal_cfg80211_vndr.h
+@@ -207,6 +207,8 @@ struct mt_peer_mld_link_info
+ 	u64 rx_time;
+ 	u8 tx_sgi;
+ 	u8 rx_sgi;
++	u8 tx_dcm;
++	u8 rx_dcm;
+ };
+ 
+ struct mt_peer_mld_sta_info {
+--- a/mt_osal_cfg80211_vndr.c
++++ b/mt_osal_cfg80211_vndr.c
+@@ -2605,6 +2605,16 @@ mtk_cfg80211_reply_connected_sta_mld_info
+ 			MT_DEBUG_TRACE("nla_put fail.\n");
+ 			goto fail;
+ 		}
++		if (nla_put_u8(skb, MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_AFFILIATED_STA_UL_DCM,
++			peer_mld_link->rx_dcm)) {
++			MT_DEBUG_TRACE("nla_put fail.\n");
++			goto fail;
++		}
++		if (nla_put_u8(skb, MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_AFFILIATED_STA_DL_DCM,
++			peer_mld_link->tx_dcm)) {
++			MT_DEBUG_TRACE("nla_put fail.\n");
++			goto fail;
++		}
+ 		nla_nest_end(skb, tmp_attr2);
+ 	}
+ 	nla_nest_end(skb, tmp_affiliated_sta_attr);

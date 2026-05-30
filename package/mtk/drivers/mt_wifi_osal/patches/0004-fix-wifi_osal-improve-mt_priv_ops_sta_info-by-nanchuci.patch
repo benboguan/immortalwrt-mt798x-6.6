@@ -1,0 +1,90 @@
+--- a/inc/mt_osal_cfg80211.h
++++ b/inc/mt_osal_cfg80211.h
+@@ -378,6 +378,10 @@ struct mt_priv_rate_info
+ 	u16 legacy;
+ 	u8 nss;
+ 	u8 bw;
++	u8 he_gi;
++	u8 he_dcm;
++	u8 eht_gi;
++	u8 eht_dcm; /* From the hardware report, the kernel has no relevant fields, and new reservations are added. */
+ };
+ 
+ struct mt_nl80211_sta_flag {
+@@ -435,6 +439,8 @@ struct mt_priv_ops_sta_info
+ 	struct mt_nl80211_sta_flag sta_flags;/*mask of station flags to set*/
+ 	struct mt_cfg80211_tid_stats pertid[MT_IEEE80211_NUM_TIDS + 1];
+ 	struct mt_cfg80211_sta_bss_info bss_param;
++	signed char noise; /* From the hardware report, the kernel has no relevant fields, and new reservations are added. */
++	u32 expected_throughput;
+ };
+ 
+ #define MTK_MAX_KEY_SIZE 50
+--- a/mt_osal_cfg80211.c
++++ b/mt_osal_cfg80211.c
+@@ -1516,11 +1516,17 @@ static int mt_cfg80211_sta_set_sinfo
+ 	pSinfo->txrate.legacy = pStaInfo->txrate.legacy;
+ 	pSinfo->txrate.nss = pStaInfo->txrate.nss;
+ 	pSinfo->txrate.bw = pStaInfo->txrate.bw;
++	pSinfo->txrate.he_gi = pStaInfo->txrate.he_gi;
++	pSinfo->txrate.he_dcm = pStaInfo->txrate.he_dcm;
++	pSinfo->txrate.eht_gi = pStaInfo->txrate.eht_gi;
+ 	pSinfo->rxrate.flags = pStaInfo->rxrate.flags;
+ 	pSinfo->rxrate.mcs = pStaInfo->rxrate.mcs;
+ 	pSinfo->rxrate.legacy = pStaInfo->rxrate.legacy;
+ 	pSinfo->rxrate.nss = pStaInfo->rxrate.nss;
+ 	pSinfo->rxrate.bw = pStaInfo->rxrate.bw;
++	pSinfo->rxrate.he_gi = pStaInfo->rxrate.he_gi;
++	pSinfo->rxrate.he_dcm = pStaInfo->rxrate.he_dcm;
++	pSinfo->rxrate.eht_gi = pStaInfo->rxrate.eht_gi;
+ 	CFG80211_FILL_BW(&pSinfo->txrate.bw);
+ 	CFG80211_FILL_BW(&pSinfo->rxrate.bw);
+ 
+@@ -1541,10 +1547,10 @@ static int mt_cfg80211_sta_set_sinfo
+ 
+ #ifdef IEEE80211_EHT_OPER_CHAN_WIDTH_320MHZ
+ 	if (pSinfo->txrate.flags & RATE_INFO_FLAGS_EHT_MCS)
+-		if (pSinfo->txrate.mcs > 13 || pSinfo->txrate.bw > RATE_INFO_BW_320)
++		if (pSinfo->txrate.mcs > 15 || pSinfo->txrate.bw > RATE_INFO_BW_320)
+ 			goto ERROR;
+ 	if (pSinfo->rxrate.flags & RATE_INFO_FLAGS_EHT_MCS)
+-		if (pSinfo->rxrate.mcs > 13 || pSinfo->rxrate.bw > RATE_INFO_BW_320)
++		if (pSinfo->rxrate.mcs > 15 || pSinfo->rxrate.bw > RATE_INFO_BW_320)
+ 			goto ERROR;
+ #endif /* IEEE80211_EHT_OPER_CHAN_WIDTH_320MHZ */
+ 
+@@ -1559,6 +1565,10 @@ static int mt_cfg80211_sta_set_sinfo
+ 	/* fill ack signal */
+ 	pSinfo->ack_signal = pStaInfo->ack_signal;
+ 	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_ACK_SIGNAL);
++
++	/* fill noise */
++	pSinfo->signal_avg = pStaInfo->noise; /* signal_avg is not used in mt_wifi, So, reuse to convey the noise value. */
++	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
+ 
+ #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE) || defined(BACKPORT_NOSTDINC)
+ 	/* fill chain signal */
+@@ -1578,10 +1588,10 @@ static int mt_cfg80211_sta_set_sinfo
+ 
+ 	/* fill tx/rx count */
+ 	pSinfo->rx_bytes = pStaInfo->rx_bytes;
+-	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES);
++	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES64);
+ 
+ 	pSinfo->tx_bytes = pStaInfo->tx_bytes;
+-	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES);
++	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
+ 
+ 	pSinfo->rx_packets = pStaInfo->rx_packets;
+ 	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
+@@ -1601,6 +1611,10 @@ static int mt_cfg80211_sta_set_sinfo
+ 	/* fill inactive time */
+ 	pSinfo->inactive_time = pStaInfo->InactiveTime;
+ 	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
++
++	/* fill expected_throughput */
++	pSinfo->expected_throughput = pStaInfo->expected_throughput;
++	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_EXPECTED_THROUGHPUT);
+ 
+ 	/*fill stainfos*/
+ 	CFG80211_FILL_STA_FLAGS(pStaInfo->sta_flags, pSinfo);
