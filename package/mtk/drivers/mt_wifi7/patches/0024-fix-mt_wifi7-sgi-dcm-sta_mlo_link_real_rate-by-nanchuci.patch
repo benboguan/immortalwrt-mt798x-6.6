@@ -1,0 +1,357 @@
+--- a/mt_wifi/common/cmm_info.c
++++ b/mt_wifi/common/cmm_info.c
+@@ -107,6 +107,6 @@
+ #ifdef DOT11_EHT_BE
+ #define MAX_NUM_EHT_BANDWIDTHS 5
+ #define MAX_NUM_EHT_SPATIAL_STREAMS 4
+-#define MAX_NUM_EHT_MCS_ENTRIES 14
++#define MAX_NUM_EHT_MCS_ENTRIES 16
+ UINT16 eht_mcs_phyrate_mapping_table[MAX_NUM_EHT_BANDWIDTHS]
+ 									[MAX_NUM_EHT_SPATIAL_STREAMS]
+@@ -112,34 +112,34 @@ UINT16 eht_mcs_phyrate_mapping_table[
+ 									[MAX_NUM_EHT_SPATIAL_STREAMS]
+ 									[MAX_NUM_EHT_MCS_ENTRIES] = {
+ 	{	/* 20 Mhz */
+-		{8,  17,  25,  34,  51,  68,  77,  86, 103, 114, 129, 143, 154, 172}, /*1SS*/
+-		{17, 34,  51,  68, 103, 137, 154, 172, 206, 229, 258, 286, 309, 344}, /*2SS*/
+-		{25, 51,  77, 103, 154, 206, 232, 258, 309, 344, 387, 430, 464, 516}, /*3SS*/
+-		{34, 68, 103, 137, 206, 275, 306, 344, 412, 458, 516, 573, 619, 688}  /*4SS*/
+-	},
+-	{	/*40 Mhz */
+-		{17,  34,  51,  68, 103, 137, 154, 172, 206, 229,  258,  286,  309,  344},
+-		{34,  68, 103, 137, 206, 275, 309, 344, 412, 458,  516,  573,  619,  688},
+-		{51, 103, 154, 206, 309, 412, 464, 516, 619, 688,  774,  860,  929, 1032},
+-		{68, 137, 206, 275, 412, 550, 619, 688, 825, 917, 1032, 1147, 1238, 1376}
+-	},
+-	{	/* 80 Mhz */
+-		{ 36,  72, 108, 144, 216,  288,  324,  360,  432,  480,  540,  600,  648,  720},
+-		{ 72, 144, 216, 288, 432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441},
+-		{108, 216, 324, 432, 648,  864,  972, 1080, 1297, 1441, 1621, 1801, 1945, 2161},
+-		{144, 288, 432, 576, 864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882}
+-	},
+-	{	/* 160 Mhz */
+-		{ 72, 144, 216,  288,  432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441},
+-		{144, 288, 432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882},
+-		{216, 432, 648,  864, 1297, 1729, 1945, 2161, 2594, 2882, 3242, 3602, 3891, 4323},
+-		{288, 576, 864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803, 5188, 5764}
+-	},
+-	{	/* 320 Mhz */
+-		{144,  288,  432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2401,  2594,  2882},
+-		{288,  576,  864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803,  5188,  5764},
+-		{432,  864, 1297, 1729, 2594, 3458, 3891, 4323, 5188, 5764, 6485, 7205,  7782,  8647},
+-		{576, 1152, 1729, 2305, 3458, 4611, 5188, 5764, 6917, 7686, 8647, 9607, 10376, 11529}
++		{8,  17,  25,  34,  51,  68,  77,  86, 103, 114, 129, 143, 154, 172, 0,  4}, /*1SS*/
++		{17, 34,  51,  68, 103, 137, 154, 172, 206, 229, 258, 286, 309, 344, 0,  8}, /*2SS*/
++		{25, 51,  77, 103, 154, 206, 232, 258, 309, 344, 387, 430, 464, 516, 0, 12}, /*3SS*/
++		{34, 68, 103, 137, 206, 275, 306, 344, 412, 458, 516, 573, 619, 688, 0, 17}  /*4SS*/
++	},
++	{	/*40 Mhz */
++		{17,  34,  51,  68, 103, 137, 154, 172, 206, 229,  258,  286,  309,  344,  0,  8},
++		{34,  68, 103, 137, 206, 275, 309, 344, 412, 458,  516,  573,  619,  688,  0, 17},
++		{51, 103, 154, 206, 309, 412, 464, 516, 619, 688,  774,  860,  929, 1032,  0, 25},
++		{68, 137, 206, 275, 412, 550, 619, 688, 825, 917, 1032, 1147, 1238, 1376,  0, 34}
++	},
++	{	/* 80 Mhz */
++		{ 36,  72, 108, 144, 216,  288,  324,  360,  432,  480,  540,  600,  648,  720, 144, 18},
++		{ 72, 144, 216, 288, 432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441, 288, 36},
++		{108, 216, 324, 432, 648,  864,  972, 1080, 1297, 1441, 1621, 1801, 1945, 2161, 432, 54},
++		{144, 288, 432, 576, 864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882, 576, 72}
++	},
++	{	/* 160 Mhz */
++		{ 72, 144, 216,  288,  432,  576,  648,  720,  864,  960, 1080, 1201, 1297, 1441,  288,  36},
++		{144, 288, 432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2402, 2594, 2882,  576,  72},
++		{216, 432, 648,  864, 1297, 1729, 1945, 2161, 2594, 2882, 3242, 3602, 3891, 4323,  864, 108},
++		{288, 576, 864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803, 5188, 5764, 1152, 144}
++	},
++	{	/* 320 Mhz */
++		{144,  288,  432,  576,  864, 1152, 1297, 1441, 1729, 1921, 2161, 2401,  2594,  2882,  576,   72},
++		{288,  576,  864, 1152, 1729, 2305, 2594, 2882, 3458, 3843, 4323, 4803,  5188,  5764,  1152, 144},
++		{432,  864, 1297, 1729, 2594, 3458, 3891, 4323, 5188, 5764, 6485, 7205,  7782,  8647,  1729, 216},
++		{576, 1152, 1729, 2305, 3458, 4611, 5188, 5764, 6917, 7686, 8647, 9607, 10376, 11529,  2305, 288}
+ 	}
+ };
+ #endif /* DOT11_EHT_BE */
+@@ -12240,12 +12240,12 @@ INT  get_mac_entry_trx_statistics(PMAC
+ INT  get_mac_entry_trx_statistics(PMAC_TABLE_ENTRY pEntry, UCHAR *tx_phymode,
+ 	UCHAR *rx_phymode, UCHAR *tx_bw, UCHAR *rx_bw, UCHAR *tx_nss, UCHAR *rx_nss,
+ 	UCHAR *tx_mcs, UCHAR *rx_mcs, ULONG *tx_rate, ULONG *rx_rate, UCHAR *tx_sgi,
+-	UCHAR *rx_sgi, UCHAR *snr)
++	UCHAR *rx_sgi, UCHAR *snr, UCHAR *tx_dcm, UCHAR *rx_dcm)
+ {
+-	UCHAR phy_mode, rate, bw, sgi, stbc;
+-	UCHAR phy_mode_r, rate_r, bw_r, sgi_r, stbc_r;
++	UCHAR phy_mode, rate, bw, sgi, stbc, dcm;
++	UCHAR phy_mode_r, rate_r, bw_r, sgi_r, stbc_r, dcm_r;
+ 	UCHAR nss;
+-	UCHAR nss_r = 0;
++	UCHAR nss_r;
+ 	UINT32 RawData;
+ 	UINT32 lastTxRate;
+ 	UINT32 lastRxRate = pEntry->LastRxRate;
+@@ -12288,10 +12288,11 @@ INT  get_mac_entry_trx_statistics(PMAC
+ 	RawData = lastTxRate;
+ 	phy_mode = rTxStatResult.rEntryTxRate.MODE;
+ 	rate = RawData & 0x3F;
+-	bw = (RawData >> 7) & 0x7; // max bw enum is 7
++	bw = (rTxStatResult.rEntryTxRate.BW < 4) ? rTxStatResult.rEntryTxRate.BW : BW_320;
+ 	sgi = rTxStatResult.rEntryTxRate.ShortGI;
+ 	stbc = ((RawData >> 10) & 0x1);
+ 	nss = rTxStatResult.rEntryTxRate.VhtNss;
++	dcm = (rTxStatResult.rEntryTxRate.MCS & 0x10) ? 1 : 0;
+ 	MaxConnectedNum = Get_All_Connected_Sta_Rate(pAd, pEntry->EntryType);
+ 
+ 	/* First, get rxrate from result, if not find, then get by wcid */
+@@ -12307,15 +12308,17 @@ INT  get_mac_entry_trx_statistics(PMAC
+ 	if (LastRxRate.field.MODE >= MODE_VHT)
+ 		LastRxRate.field.MCS = ((rRxStatResult.u1RxNsts & 0x3) << 4) + rRxStatResult.u1RxRate;
+ 	else if (LastRxRate.field.MODE == MODE_OFDM)
+-		LastRxRate.field.MCS = getLegacyOFDMMCSIndex(rRxStatResult.u1RxRate & 0xF);
++		LastRxRate.field.MCS = getLegacyOFDMMCSIndex(rRxStatResult.u1RxRate) & 0x0000003F;
+ 	else
+ 		LastRxRate.field.MCS = rRxStatResult.u1RxRate;
+ 
+ 	phy_mode_r = rRxStatResult.u1RxMode;
+ 	rate_r = rRxStatResult.u1RxRate & 0x3F;
+-	bw_r = rRxStatResult.u1BW;
++	bw_r = (rRxStatResult.u1BW < 4) ? rRxStatResult.u1BW : BW_320;
+ 	sgi_r = rRxStatResult.u1Gi;
+ 	stbc_r = rRxStatResult.u1Stbc;
++	nss_r = rRxStatResult.u1RxNsts + 1;
++	dcm_r = (rRxStatResult.u1RxRate & 0x10) ? 1 : 0;
+ 
+ 	*tx_phymode = phy_mode;
+ 	*rx_phymode = phy_mode_r;
+@@ -12323,6 +12326,8 @@ INT  get_mac_entry_trx_statistics(PMAC
+ 	*rx_bw = bw_r;
+ 	*tx_sgi = sgi;
+ 	*rx_sgi = sgi_r;
++	*tx_dcm = dcm;
++	*rx_dcm = dcm_r;
+ 
+ #ifdef DOT11_VHT_AC
+ 	if (phy_mode >= MODE_VHT)
+@@ -12392,10 +12397,10 @@ INT  get_mac_entry_trx_statistics(PMAC
+ 	if (phy_mode >= MODE_HE) {
+ #ifdef DOT11_EHT_BE
+ 		if ((phy_mode == MODE_EHT) || (phy_mode == MODE_EHT_ER_SU) || (phy_mode == MODE_EHT_TB) || (phy_mode == MODE_EHT_MU))
+-			get_rate_eht((rate & 0xf), bw, nss, 0, &DataRate);
++			get_rate_eht((rate & 0xf), bw, nss, dcm, &DataRate); /* or: get_rate_he use NL80211_RATE_INFO_HE_DCM in nl80211. */
+ 		else
+ #endif
+-			get_rate_he((rate & 0xf), bw, nss, 0, &DataRate);
++			get_rate_he((rate & 0xf), bw, nss, dcm, &DataRate);
+ 		if (sgi == 1)
+ 			DataRate = (DataRate * 967) >> 10;
+ 		if (sgi == 2)
+@@ -12407,10 +12412,10 @@ INT  get_mac_entry_trx_statistics(PMAC
+ 	if (phy_mode_r >= MODE_HE) {
+ #ifdef DOT11_EHT_BE
+ 		if ((phy_mode_r == MODE_EHT) || (phy_mode_r == MODE_EHT_ER_SU) || (phy_mode_r == MODE_EHT_TB) || (phy_mode_r == MODE_EHT_MU))
+-			get_rate_eht((rate_r & 0xf), bw_r, nss_r, 0, &DataRate_r);
++			get_rate_eht((rate_r & 0xf), bw_r, nss_r, dcm_r, &DataRate_r); /* or: get_rate_he use NL80211_RATE_INFO_HE_DCM in nl80211. */
+ 		else
+ #endif
+-			get_rate_he((rate_r & 0xf), bw_r, nss_r, 0, &DataRate_r);
++			get_rate_he((rate_r & 0xf), bw_r, nss_r, dcm_r, &DataRate_r);
+ 		if (sgi_r == 1)
+ 			DataRate_r = (DataRate_r * 967) >> 10;
+ 		if (sgi_r == 2)
+@@ -12432,7 +12437,7 @@ INT get_station_info_from_mac_entry(struct
+ 	PMAC_TABLE_ENTRY pEntry;
+ 	union _HTTRANSMIT_SETTING PhyMode;
+ 	struct _RTMP_ADAPTER *ad;
+-	UCHAR tx_sgi, rx_sgi, snr;
++	UCHAR tx_sgi, rx_sgi, snr, tx_dcm, rx_dcm;
+ 	int rssi_len;
+ #ifdef RACTRL_FW_OFFLOAD_SUPPORT
+ 	struct _RTMP_CHIP_CAP *cap;
+@@ -12476,7 +12481,7 @@ INT get_station_info_from_mac_entry(struct
+ 	if (cap->fgRateAdaptFWOffload == TRUE/*&& (pEntry->bAutoTxRateSwitch == TRUE)*/) {
+ 		get_mac_entry_trx_statistics(pEntry, &(sta->tx_phymode), &(sta->rx_phymode), &(sta->tx_bw),  &(sta->rx_bw),
+ 			&(sta->tx_nss), &(sta->rx_nss), &(sta->tx_mcs), &(sta->rx_mcs), &(sta->tx_rate), &(sta->rx_rate),
+-			&tx_sgi, &rx_sgi, &snr);
++			&tx_sgi, &rx_sgi, &snr, &(sta->tx_dcm), &(sta->rx_dcm));
+ 	}
+ #endif /* RACTRL_FW_OFFLOAD_SUPPORT */
+ 	sta->cap_phymode = pEntry->MaxHTPhyMode.field.MODE;
+@@ -12498,6 +12503,7 @@ INT get_station_info_from_mac_entry(struct
+ 			for (j = 0, n = 0; j < MLD_LINK_MAX && n < 3; j++) {
+ 				pEntry_link = mld->link_entry[j];
+ 				if (pEntry_link) {
++					memset(&sta->mlo_link[n], 0, sizeof(sta->mlo_link[n]));
+ 					COPY_MAC_ADDR(sta->mlo_link[n].link_address,
+ 						pEntry_link->Addr);
+ 					sta->mlo_link[n].valid = 1;
+@@ -12507,11 +12513,15 @@ INT get_station_info_from_mac_entry(struct
+ 					sta->mlo_link[n].tx_packets = pEntry_link->TxPackets.QuadPart;
+ 					if (pEntry_link->pAd) {
+ 						rssi_len = MCS_NSS_CAP(((struct _RTMP_ADAPTER *)pEntry_link->pAd))->max_path[MAX_PATH_RX];
++						sta->mlo_link[n].rssi[0] = -127;
++						sta->mlo_link[n].rssi[1] = -127;
++						sta->mlo_link[n].rssi[2] = -127;
++						sta->mlo_link[n].rssi[3] = -127;
+ 						rtmp_get_rssi(pEntry_link->pAd, pEntry_link->wcid, sta->mlo_link[n].rssi, rssi_len);
+ 						UniCmdPerStaGetSNR(pEntry_link->pAd, pEntry_link->wcid, sta->mlo_link[n].snr);
+-						get_mac_entry_trx_statistics(pEntry, &tmp_u8, &tmp_u8, &tmp_u8, &tmp_u8,
++						get_mac_entry_trx_statistics(pEntry_link, &tmp_u8, &tmp_u8, &tmp_u8, &tmp_u8,
+ 								&tmp_u8, &tmp_u8, &tmp_u8, &tmp_u8,
+-								&(sta->mlo_link[n].tx_rate), &(sta->mlo_link[n].rx_rate), &tx_sgi, &rx_sgi, &snr);
++								&(sta->mlo_link[n].tx_rate), &(sta->mlo_link[n].rx_rate), &tx_sgi, &rx_sgi, &snr, &tx_dcm, &rx_dcm);
+ 					}
+ 					n++;
+ 				}
+@@ -16015,8 +16025,12 @@ void  get_rate_eht(UINT8
+ 		bw = MAX_NUM_EHT_BANDWIDTHS - 1;
+ 
+ 	value = eht_mcs_phyrate_mapping_table[bw][nss][mcs];
++	/*EHT-MCS15 is always DCM (EHT-MCS14 only support 6G), others are similar to HE*/
++	if (mcs <= 13 && dcm && value)
++		value = value / 2 ;
++
+ 	*last_tx_rate = value;
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_HW, CATHW_PHY, DBG_LVL_INFO,
+ 				"BW: %d MCS: %d Antenna num: %d  Rate = %llu\n",
+ 				bw, mcs, nss+1, value);
+--- a/mt_wifi/os/linux/cfg80211/cfg80211_vndr_cmm.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211_vndr_cmm.c
+@@ -592,7 +592,7 @@ extern INT get_mac_entry_trx_statistics(PMAC
+ extern INT get_mac_entry_trx_statistics(PMAC_TABLE_ENTRY pEntry, UCHAR *tx_phymode,
+ 	UCHAR *rx_phymode, UCHAR *tx_bw, UCHAR *rx_bw, UCHAR *tx_nss, UCHAR *rx_nss,
+ 	UCHAR *tx_mcs, UCHAR *rx_mcs, ULONG *tx_rate, ULONG *rx_rate, UCHAR *tx_sgi,
+-	UCHAR *rx_sgi, UCHAR *snr);
++	UCHAR *rx_sgi, UCHAR *snr, UCHAR *tx_dcm, UCHAR *rx_dcm);
+ 
+ static int mtk_cfg80211_fill_connected_sta_mld(
+ 	struct _RTMP_ADAPTER *pAd,
+@@ -658,7 +658,7 @@ extern INT get_mac_entry_trx_statistics(PMAC
+ 		if (get_mac_entry_trx_statistics(pEntry, &(sta->tx_phymode), &(sta->rx_phymode),
+ 			&(sta->tx_bw),  &(sta->rx_bw), &(sta->tx_nss), &(sta->rx_nss),
+ 			&(sta->tx_mcs), &(sta->rx_mcs), &(sta->tx_rate), &(sta->rx_rate),
+-			&peer_mld_link->tx_sgi, &peer_mld_link->rx_sgi, &peer_mld_link->snr)) {
++			&peer_mld_link->tx_sgi, &peer_mld_link->rx_sgi, &peer_mld_link->snr, &peer_mld_link->tx_dcm, &peer_mld_link->rx_dcm)) {
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR,
+ 				"get_mac_entry_trx_statistics fail!! i = %d link_addr "MACSTR"\n",
+ 				i, MAC2STR(mld_sta->mld_link[i].link_addr));
+--- a/mt_wifi/os/linux/cfg80211/cfg80211drv.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211drv.c
+@@ -1596,8 +1596,8 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 
+ #ifdef RACTRL_FW_OFFLOAD_SUPPORT
+ 	if (cap->fgRateAdaptFWOffload == TRUE) {
+-		UCHAR phy_mode, rate, bw, sgi, stbc;
+-		UCHAR phy_mode_r, rate_r, bw_r, sgi_r, stbc_r;
++		UCHAR phy_mode, rate, bw, sgi, stbc, dcm;
++		UCHAR phy_mode_r, rate_r, bw_r, sgi_r, stbc_r, dcm_r;
+ 		UCHAR nss;
+ 		UCHAR nss_r;
+ 		UINT32 RawData;
+@@ -1637,6 +1637,7 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 		sgi = rTxStatResult.rEntryTxRate.ShortGI;
+ 		stbc = ((RawData >> 10) & 0x1);
+ 		nss = rTxStatResult.rEntryTxRate.VhtNss;
++		dcm = (rTxStatResult.rEntryTxRate.MCS & 0x10) ? 1 : 0;
+ 
+ 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
+ 			"Tx: phy_mode=%d, rate=%d, bw=%d, sgi=%d, stbc=%d, nss=%d\n",
+@@ -1663,6 +1664,7 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 		sgi_r = rRxStatResult.u1Gi;
+ 		stbc_r = rRxStatResult.u1Stbc;
+ 		nss_r = rRxStatResult.u1RxNsts + 1;
++		dcm_r = (rRxStatResult.u1RxRate & 0x10) ? 1 : 0;
+ 
+ 		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
+ 			"Rx: phy_mode_r=%d, rate_r=%d, bw_r=%d, sgi_r=%d, stbc_r=%d, nss_r=%d\n",
+@@ -1732,11 +1734,16 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 		}
+ 
+ 		/*tx_gi*/
+-		if (sgi)
++		if (sgi && phy_mode <= MODE_VHT)
+ 			txrate->flags |= RATE_INFO_FLAGS_SHORT_GI;
++		else
++			txrate->flags &= ~RATE_INFO_FLAGS_SHORT_GI;
++
+ 		/*rx_gi*/
+-		if (sgi_r)
++		if (sgi_r && phy_mode_r <= MODE_VHT)
+ 			rxrate->flags |= RATE_INFO_FLAGS_SHORT_GI;
++		else
++			rxrate->flags &= ~RATE_INFO_FLAGS_SHORT_GI;
+ 
+ 		/* tx rate calculation */
+ 		if (phy_mode >= MODE_HE) {
+@@ -1743,11 +1750,11 @@ static VOID CFG80211DRV_GetTxRxRate(
+ #ifdef DOT11_EHT_BE
+ 			/* be tx */
+ 			if ((phy_mode == MODE_EHT) || (phy_mode == MODE_EHT_ER_SU) || (phy_mode == MODE_EHT_TB) || (phy_mode == MODE_EHT_MU))
+-				get_rate_eht((rate & 0xf), bw, nss, 0, &DataRate);
++				get_rate_eht((rate & 0xf), bw, nss, dcm, &DataRate);
+ 			else
+ #endif
+ 			/* ax tx */
+-				get_rate_he((rate & 0xf), bw, nss, 0, &DataRate);
++				get_rate_he((rate & 0xf), bw, nss, dcm, &DataRate);
+ 			if (sgi == 1)
+ 				DataRate = (DataRate * 967) >> 10;
+ 			if (sgi == 2)
+@@ -1761,11 +1768,11 @@ static VOID CFG80211DRV_GetTxRxRate(
+ #ifdef DOT11_EHT_BE
+ 			/* be rx */
+ 			if ((phy_mode_r == MODE_EHT) || (phy_mode_r == MODE_EHT_ER_SU) || (phy_mode_r == MODE_EHT_TB) || (phy_mode_r == MODE_EHT_MU))
+-				get_rate_eht((rate_r & 0xf), bw_r, nss_r, 0, &DataRate_r);
++				get_rate_eht((rate_r & 0xf), bw_r, nss_r, dcm_r, &DataRate_r);
+ 			else
+ #endif
+ 			/* ax rx */
+-				get_rate_he((rate_r & 0xf), bw_r, nss_r, 0, &DataRate_r);
++				get_rate_he((rate_r & 0xf), bw_r, nss_r, dcm_r, &DataRate_r);
+ 			if (sgi_r == 1)
+ 				DataRate_r = (DataRate_r * 967) >> 10;
+ 			if (sgi_r == 2)
+@@ -1781,9 +1788,19 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 		prate_info->legacy = (UINT16)DataRate;
+ 		prate_info->nss = nss;
+ 		prate_info->bw = bw;
++		if (phy_mode >= MODE_HE) {
++#ifdef DOT11_EHT_BE
++			if ((phy_mode == MODE_EHT) || (phy_mode == MODE_EHT_ER_SU) || (phy_mode == MODE_EHT_TB) || (phy_mode == MODE_EHT_MU)) {
++				prate_info->eht_gi = sgi;
++				prate_info->eht_dcm = dcm;
++			} else
++#endif
++				prate_info->he_gi = sgi;
++			prate_info->he_dcm = dcm;
++		}
+-		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
+-			"Tx: flag=%u, mcs=%u, legacy=%u, nss=%u, bw=%u\n",
+-			prate_info->flags, prate_info->mcs, prate_info->legacy, prate_info->nss, prate_info->bw);
++		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
++			"Tx: flag=%u, mcs=%u, legacy=%u, nss=%u, bw=%u, sgi=%u, dcm=%u\n",
++			prate_info->flags, prate_info->mcs, prate_info->legacy, prate_info->nss, prate_info->bw, prate_info->he_gi, prate_info->he_dcm);
+ 
+ 		/*rx rate infos*/
+ 		prate_info = rxrate;
+@@ -1792,9 +1809,19 @@ static VOID CFG80211DRV_GetTxRxRate(
+ 		prate_info->legacy = (UINT16)DataRate_r;
+ 		prate_info->nss = nss_r;
+ 		prate_info->bw = bw_r;
++		if (phy_mode_r >= MODE_HE) {
++#ifdef DOT11_EHT_BE
++			if ((phy_mode_r == MODE_EHT) || (phy_mode_r == MODE_EHT_ER_SU) || (phy_mode_r == MODE_EHT_TB) || (phy_mode_r == MODE_EHT_MU)) {
++				prate_info->eht_gi = sgi_r;
++				prate_info->eht_dcm = dcm_r;
++			} else
++#endif
++				prate_info->he_gi = sgi_r;
++			prate_info->he_dcm = dcm_r;
++		}
+-		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
+-			"Rx: flag=%u, mcs=%u, legacy=%u, nss=%u, bw=%u\n",
+-			prate_info->flags, prate_info->mcs, prate_info->legacy, prate_info->nss, prate_info->bw);
++		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
++			"Rx: flag=%u, mcs=%u, legacy=%u, nss=%u, bw=%u, sgi=%u, dcm=%u\n",
++			prate_info->flags, prate_info->mcs, prate_info->legacy, prate_info->nss, prate_info->bw, prate_info->he_gi, prate_info->he_dcm);
+ 	}
+ 	if (txrate)
+ 		CFG80211DRV_BW_Set(&txrate->bw);
