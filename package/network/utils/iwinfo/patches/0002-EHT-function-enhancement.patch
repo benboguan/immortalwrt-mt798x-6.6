@@ -1,33 +1,28 @@
---- a/api/nl80211.h
-+++ b/api/nl80211.h
-@@ -3677,6 +3677,7 @@ enum nl80211_rate_info - bitrate information
-  * @NL80211_RATE_INFO_EHT_NSS: EHT NSS value (u8, 1-8)
-  * @NL80211_RATE_INFO_EHT_GI: EHT guard interval identifier
-  *	(u8, see &enum nl80211_eht_gi)
-+ * @NL80211_RATE_INFO_EHT_DCM: EHT DCM value (u8, 0/1)
-  * @NL80211_RATE_INFO_EHT_RU_ALLOC: EHT RU allocation, if not present then
-  *	non-OFDMA was used (u8, see &enum nl80211_eht_ru_alloc)
-  * @NL80211_RATE_INFO_S1G_MCS: S1G MCS index (u8, 0-10)
-@@ -3711,6 +3712,7 @@ enum nl80211_rate_info {
- 	NL80211_RATE_INFO_EHT_MCS,
- 	NL80211_RATE_INFO_EHT_NSS,
- 	NL80211_RATE_INFO_EHT_GI,
-+	NL80211_RATE_INFO_EHT_DCM,
- 	NL80211_RATE_INFO_EHT_RU_ALLOC,
- 	NL80211_RATE_INFO_S1G_MCS,
- 	NL80211_RATE_INFO_S1G_NSS,
 --- a/iwinfo_nl80211.c
 +++ b/iwinfo_nl80211.c
 @@ -2159,6 +2159,8 @@ static void nl80211_parse_rateinfo(struct
  			re->nss = nla_get_u8(ri[NL80211_RATE_INFO_EHT_NSS]);
  		if (ri[NL80211_RATE_INFO_EHT_GI])
  			re->eht_gi = nla_get_u8(ri[NL80211_RATE_INFO_EHT_GI]);
-+		if (ri[NL80211_RATE_INFO_EHT_DCM])
-+			re->eht_dcm = nla_get_u8(ri[NL80211_RATE_INFO_EHT_DCM]);
++		if (ri[NL80211_RATE_INFO_HE_DCM])
++			re->eht_dcm = nla_get_u8(ri[NL80211_RATE_INFO_HE_DCM]);
  	}
  	else if (ri[NL80211_RATE_INFO_HE_MCS])
  	{
-@@ -3230,12 +3232,16 @@ static int nl80211_get_freqlist_cb(struct
+@@ -2364,6 +2366,12 @@ static int nl80211_get_assoclist_cb(struct
+ 	if (attr[NL80211_ATTR_MAC])
+ 		memcpy(e->mac, nla_data(attr[NL80211_ATTR_MAC]), 6);
+ 
++	if (attr[NL80211_ATTR_MLD_ADDR])
++		memcpy(e->mlo_addr, nla_data(attr[NL80211_ATTR_MLD_ADDR]), 6);
++
++	if (attr[NL80211_ATTR_MLO_LINK_ID])
++		e->mlo_link_id = nla_get_u8(attr[NL80211_ATTR_MLO_LINK_ID]);
++
+ 	if (attr[NL80211_ATTR_STA_INFO] &&
+ 	    !nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
+ 	                      attr[NL80211_ATTR_STA_INFO], stats_policy))
+@@ -3230,12 +3238,16 @@ static int nl80211_get_freqlist_cb(struct
  						e->flags |= IWINFO_FREQ_NO_80MHZ;
  					if (freqs[NL80211_FREQUENCY_ATTR_NO_160MHZ])
  						e->flags |= IWINFO_FREQ_NO_160MHZ;
@@ -46,22 +41,20 @@
  						e->flags |= IWINFO_FREQ_NO_IR;
 --- a/include/iwinfo.h
 +++ b/include/iwinfo.h
-@@ -140,7 +140,9 @@ enum iwinfo_freq_flag {
- 	IWINFO_FREQ_NO_HT40MINUS,
+@@ -141,6 +141,8 @@ enum iwinfo_freq_flag {
  	IWINFO_FREQ_NO_80MHZ,
  	IWINFO_FREQ_NO_160MHZ,
-+	IWINFO_FREQ_NO_320MHZ,
  	IWINFO_FREQ_NO_HE,
++	IWINFO_FREQ_NO_320MHZ,
 +	IWINFO_FREQ_NO_EHT,
  	IWINFO_FREQ_NO_IR,
  	IWINFO_FREQ_INDOOR_ONLY,
  
-@@ -154,7 +156,9 @@
- #define IWINFO_FREQ_NO_HT40MINUS   (1 << IWINFO_FREQ_NO_HT40MINUS)
+@@ -155,6 +157,8 @@
  #define IWINFO_FREQ_NO_80MHZ       (1 << IWINFO_FREQ_NO_80MHZ)
  #define IWINFO_FREQ_NO_160MHZ      (1 << IWINFO_FREQ_NO_160MHZ)
-+#define IWINFO_FREQ_NO_320MHZ      (1 << IWINFO_FREQ_NO_320MHZ)
  #define IWINFO_FREQ_NO_HE          (1 << IWINFO_FREQ_NO_HE)
++#define IWINFO_FREQ_NO_320MHZ      (1 << IWINFO_FREQ_NO_320MHZ)
 +#define IWINFO_FREQ_NO_EHT         (1 << IWINFO_FREQ_NO_EHT)
  #define IWINFO_FREQ_NO_IR          (1 << IWINFO_FREQ_NO_IR)
  #define IWINFO_FREQ_INDOOR_ONLY    (1 << IWINFO_FREQ_INDOOR_ONLY)
@@ -74,25 +67,25 @@
  };
  
  struct iwinfo_assoclist_entry {
-@@ -275,6 +280,10 @@ struct iwinfo_assoclist_entry {
+@@ -275,6 +280,11 @@ struct iwinfo_assoclist_entry {
  	char local_ps[16];
  	char peer_ps[16];
  	char nonpeer_ps[16];
-+	//struct iwinfo_rate_entry mlo_rx_rate;
-+	//struct iwinfo_rate_entry mlo_tx_rate;
++	//struct iwinfo_rate_entry mlo_rx_rate[MLD_LINK_MAX];
++	//struct iwinfo_rate_entry mlo_tx_rate[MLD_LINK_MAX];
 +	uint8_t mlo_valid:1;
 +	uint8_t	mlo_addr[6];
++	uint8_t	mlo_link_id;
  };
  
  struct iwinfo_survey_entry {
 --- a/iwinfo_lib.c
 +++ b/iwinfo_lib.c
-@@ -109,7 +109,9 @@ const char * const IWINFO_FREQ_FLAG_NAMES
- 	"NO_HT40-",
+@@ -110,6 +110,8 @@ const char * const IWINFO_FREQ_FLAG_NAMES
  	"NO_80MHZ",
  	"NO_160MHZ",
-+	"NO_320MHZ",
  	"NO_HE",
++	"NO_320MHZ",
 +	"NO_EHT",
  	"NO_IR",
  	"INDOOR_ONLY",
