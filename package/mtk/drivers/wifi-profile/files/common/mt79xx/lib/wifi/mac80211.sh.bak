@@ -1,0 +1,135 @@
+#!/bin/sh
+. /lib/functions.sh
+. /lib/functions/system.sh
+
+wifi_config() {
+	[ -n "$(uci -q show wireless | grep wifi-device)" ] && return
+
+	local idx=0
+	local commit=0
+	local phy_path=""
+	local mld_id=1
+	local has_mlo=0
+	local has_6g=0
+	local device_list=""
+
+	local assocresp_elements="dd07000ce700000000"
+	local mld_encryption="sae"
+	local mld_encryption_rsno="sae"
+	local mld_ieee80211w="2"
+
+	uci -q delete wireless
+
+	local phy_list=$(ls -1 /sys/class/ieee80211/ 2>/dev/null | grep '^phy[0-9]')
+	for phy in $phy_list; do
+		local band="2g"
+		local channel="auto"
+		local htmode="EHT40"
+		local country="US"
+		local noscan=1
+		local mbssid=0
+		local rnr=0
+		local background_radar=0
+		local mbo=0
+		local encryption="none"
+		local ssid=""
+
+		phy_path="$(iwinfo nl80211 path "$phy")"
+
+		case "$phy" in
+			phy2)
+				encryption="sae"
+				band="6g"
+				htmode=EHT320
+				mbo=1
+				ssid="ImmortalWrt_6G"
+				mbssid=1
+				has_6g=1
+				has_mlo=1
+				;;
+			phy1)
+				encryption="none"
+				noscan=1
+				band="5g"
+				htmode=EHT160
+				rnr=1
+				background_radar=1
+				has_mlo=1
+				ssid="ImmortalWrt_5G"
+				;;
+			phy0|*)
+				encryption="none"
+				noscan=1
+				band="2g"
+				htmode=EHT40
+				rnr=1
+				has_mlo=1
+				ssid="ImmortalWrt_2.4G"
+				;;
+		esac
+
+		uci set wireless.radio${idx}=wifi-device
+		uci set wireless.radio${idx}.type=mac80211
+		uci set wireless.radio${idx}.phy="$phy"
+		uci set wireless.radio${idx}.path="$phy_path"
+		uci set wireless.radio${idx}.band="$band"
+		uci set wireless.radio${idx}.channel="$channel"
+		uci set wireless.radio${idx}.htmode="$htmode"
+		uci set wireless.radio${idx}.country="$country"
+		uci set wireless.radio${idx}.disabled=0
+		uci set wireless.radio${idx}.cell_density=0
+		uci set wireless.radio${idx}.noscan=$noscan
+		uci set wireless.radio${idx}.tx_burst=0.0
+		uci set wireless.radio${idx}.rnr=$rnr
+		uci set wireless.radio${idx}.background_radar=$background_radar
+		[ $mbssid -gt 0 ] && uci set wireless.radio${idx}.mbssid=$mbssid
+
+		uci set wireless.default_radio${idx}=wifi-iface
+		uci set wireless.default_radio${idx}.device=radio${idx}
+		uci set wireless.default_radio${idx}.network=lan
+		uci set wireless.default_radio${idx}.mode=ap
+		uci set wireless.default_radio${idx}.ssid="$ssid"
+		uci set wireless.default_radio${idx}.encryption="$encryption"
+		uci set wireless.default_radio${idx}.key=""
+		uci set wireless.default_radio${idx}.mbo=$mbo
+		uci set wireless.default_radio${idx}.assocresp_elements="$assocresp_elements"
+
+		if [ "$encryption" = "sae" ]; then
+			uci set wireless.default_radio${idx}.key=12345678
+			uci set wireless.default_radio${idx}.sae_pwe=2
+			uci set wireless.default_radio${idx}.ieee80211w=2
+		fi
+
+		device_list="$device_list radio${idx}"
+		commit=1
+		idx=$((idx+1))
+	done
+
+	# MLD
+	if [ $has_mlo -eq 1 ] && [ $commit -eq 1 ]; then
+		uci set wireless.ap_mld_1=wifi-iface
+		uci delete wireless.ap_mld_1.device
+		for dev in $device_list; do
+			uci add_list wireless.ap_mld_1.device="$dev"
+		done
+
+		uci set wireless.ap_mld_1.ifname=ap-mld-1
+		uci set wireless.ap_mld_1.network=lan
+		uci set wireless.ap_mld_1.mode=ap
+		uci set wireless.ap_mld_1.mlo=1
+		uci set wireless.ap_mld_1.mld_id=$mld_id
+		uci set wireless.ap_mld_1.ssid=ImmortalWrt_MLO
+		uci set wireless.ap_mld_1.encryption_rsno_2=sae-ext
+		uci set wireless.ap_mld_1.key=12345678
+		uci set wireless.ap_mld_1.sae_pwe=2
+		uci set wireless.ap_mld_1.ieee80211w=$mld_ieee80211w
+		uci set wireless.ap_mld_1.encryption=$mld_encryption
+		uci set wireless.ap_mld_1.assocresp_elements="$assocresp_elements"
+
+		[ $has_6g -eq 0 ] && uci set wireless.ap_mld_1.encryption_rsno=$mld_encryption_rsno
+	fi
+
+	[ $commit -eq 1 ] && uci commit wireless
+}
+
+wifi_config

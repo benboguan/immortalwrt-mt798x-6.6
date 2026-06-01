@@ -166,6 +166,7 @@ define Package/wifi-script/install
 	$(INSTALL_DIR) $(1)/etc/uci-defaults/
 
 	$(INSTALL_DATA) ./files/common/mt79xx/lib/wifi/mac80211.uc $(1)/lib/wifi/
+	#$(INSTALL_DATA) ./files/common/mt79xx/lib/wifi/mac80211.sh $(1)/lib/wifi/
 	$(INSTALL_DATA) ./files/common/mt79xx/lib/netifd/hostapd.sh $(1)/lib/netifd/
 	$(INSTALL_DATA) ./files/common/mt79xx/lib/netifd/netifd-wireless.sh $(1)/lib/netifd/
 	$(INSTALL_BIN) ./files/common/mt79xx/lib/netifd/wireless/mac80211.sh $(1)/lib/netifd/wireless/
