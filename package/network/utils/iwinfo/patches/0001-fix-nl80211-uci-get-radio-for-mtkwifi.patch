@@ -1,13 +1,17 @@
 --- a/iwinfo_nl80211.c
 +++ b/iwinfo_nl80211.c
-@@ -407,7 +407,9 @@ static int nl80211_phy_idx_from_uci(const
- 	const char *opt;
+@@ -408,8 +408,11 @@ static int nl80211_phy_idx_from_uci(const
  	int idx = -1;
  
--	s = iwinfo_uci_get_radio(name, "mac80211");
-+	s = iwinfo_uci_get_radio(name, "mtkwifi");
-+	if (!s)
-+		s = iwinfo_uci_get_radio(name, "mac80211");
- 	if (!s)
- 		goto out;
+ 	s = iwinfo_uci_get_radio(name, "mac80211");
+-	if (!s)
+-		goto out;
++	if (!s) {
++		s = iwinfo_uci_get_radio(name, "mtkwifi");
++		if(!s)
++			goto out;
++	}
+ 
+ 	opt = uci_lookup_option_string(uci_ctx, s, "path");
+ 	idx = nl80211_phy_idx_from_path(opt);
  

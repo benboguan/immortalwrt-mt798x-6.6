@@ -22,7 +22,56 @@
  	if (attr[NL80211_ATTR_STA_INFO] &&
  	    !nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
  	                      attr[NL80211_ATTR_STA_INFO], stats_policy))
-@@ -3230,12 +3238,16 @@ static int nl80211_get_freqlist_cb(struct
+@@ -2578,37 +2586,30 @@ static int nl80211_get_txpwrlist(const
+ static int nl80211_get_txpwrlist(const char *ifname, char *buf, int *len)
+ {
+ 	int err, ch_cur;
+-	int dbm_max = -1, dbm_cur, dbm_cnt;
++	int dbm_max = -1;
+ 	struct iwinfo_txpwrlist_entry entry;
++	uint8_t dbm[7] = {0, 8, 11, 14, 17, 19, 20};
++	uint16_t mw[7] = {1, 6, 12, 25, 50, 79, 100};
++	int i;
+ 
+ 	if (nl80211_get_channel(ifname, &ch_cur))
+ 		ch_cur = 0;
+ 
+ 	/* initialize the value pointer with channel for callback */
+ 	dbm_max = ch_cur;
+ 
+ 	err = nl80211_request(ifname, NL80211_CMD_GET_WIPHY, 0,
+ 	                      nl80211_get_txpwrlist_cb, &dbm_max);
+ 
+ 	if (!err)
+ 	{
+-		for (dbm_cur = 0, dbm_cnt = 0;
+-		     dbm_cur < dbm_max;
+-		     dbm_cur++, dbm_cnt++)
+-		{
+-			entry.dbm = dbm_cur;
+-			entry.mw  = iwinfo_dbm2mw(dbm_cur);
+-
+-			memcpy(&buf[dbm_cnt * sizeof(entry)], &entry, sizeof(entry));
+-		}
+-
+-		entry.dbm = dbm_max;
+-		entry.mw  = iwinfo_dbm2mw(dbm_max);
+-
+-		memcpy(&buf[dbm_cnt * sizeof(entry)], &entry, sizeof(entry));
+-		dbm_cnt++;
+-
+-		*len = dbm_cnt * sizeof(entry);
++		for (i = 0; i < 7; i++) {
++			entry.dbm = dbm[i];
++			entry.mw  = mw[i];
++			memcpy(&buf[i * sizeof(entry)], &entry, sizeof(entry));
++		}
++
++		*len = 7 * sizeof(entry);
+ 		return 0;
+ 	}
+ 
+@@ -3230,12 +3231,16 @@ static int nl80211_get_freqlist_cb(struct
  						e->flags |= IWINFO_FREQ_NO_80MHZ;
  					if (freqs[NL80211_FREQUENCY_ATTR_NO_160MHZ])
  						e->flags |= IWINFO_FREQ_NO_160MHZ;
