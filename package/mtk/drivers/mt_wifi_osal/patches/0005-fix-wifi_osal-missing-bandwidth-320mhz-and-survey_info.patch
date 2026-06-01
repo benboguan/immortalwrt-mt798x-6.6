@@ -1,0 +1,42 @@
+--- a/mt_osal_cfg80211.c
++++ b/mt_osal_cfg80211.c
+@@ -2125,6 +2125,8 @@ static int mt_cfg80211_ops_set_chanwidth(
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_80P80;
+ 	else if (chandef->width == NL80211_CHAN_WIDTH_160)
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_160;
++	else if (chandef->width == NL80211_CHAN_WIDTH_320)
++		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_320;
+ 	else {
+ 		MT_DEBUG_TRACE("ERROR! channel bandwidth: %d not support.\n", chandef->width);
+ 		return -EOPNOTSUPP;
+@@ -2193,6 +2195,8 @@ static int mt_cfg80211_ops_chan_switch(
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_80P80;
+ 	else if (chandef->width == NL80211_CHAN_WIDTH_160)
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_160;
++	else if (chandef->width == NL80211_CHAN_WIDTH_320)
++		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_320;
+ 	else {
+ 		MT_DEBUG_TRACE("ERROR! channel bandwidth: %d not support.\n", chandef->width);
+ 		return -EOPNOTSUPP;
+@@ -2948,18 +2952,18 @@ static int mt_cfg80211_ops_survey_get(
+ 	survey->filled |= SURVEY_INFO_TIME_BUSY;
+ 	survey->filled |= SURVEY_INFO_NOISE_DBM;
+ #if defined(CFG_CFG80211_VERSION) && (KERNEL_VERSION(6, 1, 0) <= CFG_CFG80211_VERSION)
+-	survey->filled |= SURVEY_INFO_TIME_BSS_RX;
++	survey->filled |= SURVEY_INFO_TIME_BSS_RX | SURVEY_INFO_TIME;
+ #endif
+-	survey->filled |=  SURVEY_INFO_TIME_TX | SURVEY_INFO_TIME_RX | SURVEY_INFO_TIME;
++	survey->filled |= SURVEY_INFO_TIME_TX | SURVEY_INFO_TIME_RX;
+ 
+ 	survey->channel = chan;
+ 	survey->time_busy = div_u64(mt_chan_survey_info.busytime, 1000);
+ 	survey->time_rx = div_u64(mt_chan_survey_info.rx_time,  1000);
+ #if defined(CFG_CFG80211_VERSION) && (KERNEL_VERSION(6, 1, 0) <= CFG_CFG80211_VERSION)
+ 	survey->time_bss_rx = div_u64(mt_chan_survey_info.bss_rx_time, 1000);
+ #endif
+ 	survey->time_tx = div_u64(mt_chan_survey_info.tx_time, 1000);
+-	survey->noise = mt_chan_survey_info.ch_AvgNF;
++	survey->noise = (s8)mt_chan_survey_info.ch_AvgNF;
+ #if defined(CFG_CFG80211_VERSION) && (KERNEL_VERSION(6, 1, 0) <= CFG_CFG80211_VERSION)
+ 	survey->time = div_u64(mt_chan_survey_info.active_time, 1000);
+ #endif

@@ -58,8 +58,8 @@
  	pSinfo->ack_signal = pStaInfo->ack_signal;
  	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_ACK_SIGNAL);
 +
-+	/* fill noise */
-+	pSinfo->signal_avg = pStaInfo->noise; /* signal_avg is not used in mt_wifi, So, reuse to convey the noise value. */
++	/* fill signal_avg */
++	pSinfo->signal_avg = pStaInfo->signal_avg;
 +	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
  
  #if (KERNEL_VERSION(6, 1, 0) <= LINUX_VERSION_CODE) || defined(BACKPORT_NOSTDINC)
