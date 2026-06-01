@@ -1,0 +1,11 @@
+--- a/mt_osal_cfg80211.c
++++ b/mt_osal_cfg80211.c
+@@ -1041,7 +1041,7 @@ static bool mt_cfg80211_sup_band_init(
+ 	}
+ 
+ 	/* get TX power */
+-	CurTxPower = 0; /* unknown */
++	CurTxPower = mt_band_info->MaxTxPwr; /* unknown */
+ 	MT_DEBUG_TRACE("80211> CurTxPower = %d dBm\n", CurTxPower);
+ 
+ 	/* 5. init channel */
