@@ -1,0 +1,16 @@
+--- a/mt_wifi/chip/mac_mt/mt_fmac.c
++++ b/mt_wifi/chip/mac_mt/mt_fmac.c
+@@ -2838,11 +2838,9 @@ UINT16 eht_mcs_phyrate_mapping_table[
+ 	pAd->ApCfg.EpaFeGain = 0;
+ #endif
+ 	if (pAllPow->u1BandIdx == BAND0) {
+-		if (pAd->max_power_2g < pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm)
+-			pAd->max_power_2g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
++		pAd->max_power_2g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_CCK_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
+ 	} else {
+-		if (pAd->max_power_5g < pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm)
+-			pAd->max_power_5g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
++		pAd->max_power_5g = pFPow->ai1FramePowerConfig[TXPOWER_RATE_OFDM_OFFSET][pAllPow->u1BandIdx].i1FramePowerDbm;
+ 	}
+ 	if (g_fgCommand == 0)
+ 		return;
