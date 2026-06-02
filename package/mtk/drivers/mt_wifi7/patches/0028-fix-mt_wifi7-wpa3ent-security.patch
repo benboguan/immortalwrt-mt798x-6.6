@@ -1,0 +1,91 @@
+--- a/mt_wifi/include/common/security/sec_cmm.h
++++ b/mt_wifi/include/common/security/sec_cmm.h
+@@ -93,7 +93,7 @@
+ #define CLEAR_SEC_AKM(_AKMMap)              (_AKMMap = 0x0)
+ #define CLEAR_NONFT_AKM(_AKMMap)              (_AKMMap &= ~((1 << SEC_AKM_WPA2) | (1 << SEC_AKM_WPA2PSK) |\
+ 						(1 << SEC_AKM_WPA2_SHA256) | (1 << SEC_AKM_WPA2PSK_SHA256) |\
+-						(1 << SEC_AKM_SAE_SHA256) | (1 << SEC_AKM_SUITEB_SHA384)))
++						(1 << SEC_AKM_SAE_SHA256) | (1 << SEC_AKM_SAE_EXT) | (1 << SEC_AKM_SUITEB_SHA384)))
+ #define SET_AKM_OPEN(_AKMMap)           (_AKMMap |= (1 << SEC_AKM_OPEN))
+ #define SET_AKM_SHARED(_AKMMap)       (_AKMMap |= (1 << SEC_AKM_SHARED))
+ #define SET_AKM_AUTOSWITCH(_AKMMap)       (_AKMMap |= (1 << SEC_AKM_AUTOSWITCH))
+@@ -655,9 +655,13 @@ #define AKM_AP_MASK 
+ 						 | (1 << SEC_AKM_WPA2PSK) \
+ 						 | (1 << SEC_AKM_WAICERT) \
+ 						 | (1 << SEC_AKM_WAIPSK) \
++						 | (1 << SEC_AKM_FT_WPA2) \
+ 						 | (1 << SEC_AKM_FT_WPA2PSK) \
+ 						 | (1 << SEC_AKM_SAE_SHA256) \
++						 | (1 << SEC_AKM_FT_SAE_SHA256) \
++						 | (1 << SEC_AKM_SUITEB_SHA256) \
+ 						 | (1 << SEC_AKM_SUITEB_SHA384) \
++						 | (1 << SEC_AKM_FT_WPA2_SHA384) \
+ 						 | (1 << SEC_AKM_DPP) \
+ 						 | (1 << SEC_AKM_OWE) \
+ 						 | (1 << SEC_AKM_SAE_EXT) \
+--- a/mt_wifi/common/security/cmm_sec.c
++++ b/mt_wifi/common/security/cmm_sec.c
+@@ -295,8 +295,8 @@ VOID SetWdevAuthMode(
+ 		} else if (rtstrcasecmp(token, "WPA3") == TRUE) {
+ 			/* WPA3 code flow is same as WPA2, */
+ 			/* the usage of SEC_AKM_WPA3 is to force pmf on */
+-			SET_AKM_WPA2(AKMMap);
+ 			SET_AKM_WPA3(AKMMap);
++			SET_AKM_SUITEB_SHA256(AKMMap);
+ 		}
+ 	#ifdef DOT11_SUITEB_SUPPORT
+ 		else if (rtstrcasecmp(token, "WPA3-192") == TRUE)
+@@ -756,7 +756,7 @@ VOID SetWdevAuthMode(
+ 		return "FT-WPA2";
+ 	else if (IS_AKM_FT_WPA2PSK(authMode))
+ 		return "FT-WPA2PSK";
+-	else if (IS_AKM_WPA3(authMode)) /* WPA3 will be always accompanied by WPA2, so it should put before the WPA2 */
++	else if (IS_AKM_WPA3(authMode) || IS_AKM_SUITEB_SHA256(authMode)) /* WPA3 will be always accompanied by WPA2, so it should put before the WPA2 */
+ 		return "WPA3";
+ 	else if (IS_AKM_WPA2(authMode))
+ 		return "WPA2";
+--- a/mt_wifi/common/security/cmm_sec.c
++++ b/mt_wifi/common/security/cmm_sec.c
+@@ -2157,7 +2157,7 @@ static BOOLEAN WPAMakeRsnIeAKM(
+ 
+ #if defined(DOT11_SUITEB_SUPPORT) || defined(HOSTAPD_SUITEB_SUPPORT)
+ 
+-		if (IS_AKM_SUITEB_SHA256(pSecConfig->AKMMap) && pSecConfig->ft_only == FALSE) {
++		if ((IS_AKM_WPA3(pSecConfig->AKMMap) || IS_AKM_SUITEB_SHA256(pSecConfig->AKMMap)) && pSecConfig->ft_only == FALSE) {
+ 			NdisMoveMemory(rsnie_auth_oui + offset, OUI_WPA2_AKM_SUITEB_SHA256, 4);
+ 			AkmCnt++;
+ 			offset += 4;
+@@ -2397,10 +2397,13 @@ VOID WPAMakeRSNIE (
+ 	    IS_AKM_WPA2PSK(pSecConfig->AKMMap) ||
+ 	    IS_AKM_WPA3PSK(pSecConfig->AKMMap) ||
+ #ifdef DOT11R_FT_SUPPORT
++	    IS_AKM_FT_WPA2(pSecConfig->AKMMap) ||
+ 	    IS_AKM_FT_WPA2PSK(pSecConfig->AKMMap) ||
+-	    IS_AKM_FT_SAE_EXT(pSecConfig->AKMMap) ||
++	    IS_AKM_FT_WPA2_SHA384(pSecConfig->AKMMap) ||
++	    IS_AKM_FT_SAE(pSecConfig->AKMMap) ||
+ #endif /* DOT11R_FT_SUPPORT */
+ 	    IS_AKM_DPP(pSecConfig->AKMMap) ||
++	    (IS_AKM_WPA3(pSecConfig->AKMMap) || IS_AKM_SUITEB_SHA256(pSecConfig->AKMMap)) ||
+ 	    IS_AKM_WPA3_192BIT(pSecConfig->AKMMap) ||
+ 	    IS_AKM_OWE(pSecConfig->AKMMap)) {
+ 		pSecConfig->RSNE_Type[1] = SEC_RSNIE_WPA2_IE;
+@@ -2690,8 +2693,10 @@ BOOLEAN WPACheckAKM(
+ 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA384;
+ 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_FT_SAE_EXT, 4)) {
+ 				SET_AKM_FT_SAE_EXT(pSecConfigEntry->AKMMap);
++				SET_AKM_SAE_EXT(pSecConfigEntry->AKMMap);
+ 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA384;
+ 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_SUITEB_SHA256, 4)) {
++				SET_AKM_WPA3(pSecConfigEntry->AKMMap);
+ 				SET_AKM_SUITEB_SHA256(pSecConfigEntry->AKMMap);
+ 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA256;
+ 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_SUITEB_SHA384, 4)) {
+@@ -6800,6 +6805,7 @@ VOID PeerPairMsg4Action(
+ 
+ 	if (IS_AKM_WPA2(pSecConfig->AKMMap)
+ 		|| IS_AKM_WPA2PSK(pSecConfig->AKMMap)
++		|| (IS_AKM_WPA3(pSecConfig->AKMMap) || IS_AKM_SUITEB_SHA256(pSecConfig->AKMMap))
+ 		|| IS_AKM_WPA3_192BIT(pSecConfig->AKMMap)
+ 		|| IS_AKM_WPA3PSK(pSecConfig->AKMMap)
+ 		|| IS_AKM_OWE(pSecConfig->AKMMap)
