@@ -1,0 +1,101 @@
+--- a/mt_wifi/os/linux/cfg80211/cfg80211drv.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211drv.c
+@@ -1811,7 +1811,7 @@ BOOLEAN CFG80211DRV_StaGet(
+ 	STA_ADMIN_CONFIG *pstacfg = NULL;
+ 	MAC_TABLE_ENTRY *pEntry = NULL;
+ 	STA_TR_ENTRY *tr_entry;
+-	UINT8 i;
++	UINT8 i, u1Snr = 0; /* SNR From the hardware report, the kernel has no relevant fields, and new reservations are added. */
+ 	RSSI_SAMPLE rx_rssi_sample;
+ 	UINT8 RxPath;
+ #ifdef VOW_SUPPORT
+@@ -1878,6 +1878,40 @@ BOOLEAN CFG80211DRV_StaGet(
+ 	/* fill tx/rx rate */
+ 	CFG80211DRV_GetTxRxRate(pAd, pEntry, &pIbssInfo->txrate, &pIbssInfo->rxrate);
+ 
++	if (pIbssInfo->txrate.legacy) {
++		UINT32 phy_rate = pIbssInfo->txrate.legacy;       /* Mbps */
++		UINT32 tx_packets = pIbssInfo->tx_packets;
++		UINT32 tx_failed  = pIbssInfo->tx_failed;
++		UINT32 total_pkts = tx_packets + tx_failed;
++		UINT32 success_pct = 100;
++		UINT32 thr_kbps = 0;
++
++		if (total_pkts > 0) {
++			success_pct = (tx_packets * 100) / total_pkts;
++			if (success_pct > 100)
++				success_pct = 100;
++		}
++
++		UINT32 ampdu_len   = 16;
++		UINT32 pkt_size    = 1200;        /* bytes */
++		UINT32 overhead_us = 100;         /* MAC/PHY (us) */
++		UINT32 bits_per_ampdu = ampdu_len * pkt_size * 8;   /* 153600 bits */
++
++		UINT32 tx_time_us = bits_per_ampdu / phy_rate;
++		UINT32 total_time_us = tx_time_us + overhead_us;
++
++		UINT64 thr_bps = (UINT64)bits_per_ampdu * 1000000 / total_time_us;
++		thr_kbps = (UINT32)(thr_bps / 1000);
++
++		thr_kbps = (thr_kbps * success_pct) / 100;
++
++		pIbssInfo->expected_throughput = thr_kbps;
++
++		MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO,
++			"Throughput: phy_rate=%u Mbps, success=%u%%, ampdu_len=%u, throughput=%u kbps\n",
++			phy_rate, success_pct, ampdu_len, pIbssInfo->expected_throughput);
++	}
++
+ 	/* fill signal */
+ 	pIbssInfo->Signal = RTMPAvgRssi(pAd, &pEntry->RssiSample);
+ 
+@@ -1904,6 +1938,21 @@ BOOLEAN CFG80211DRV_StaGet(
+ 		pIbssInfo->ack_signal = RTMPAvgRssi(pAd, &rx_rssi_sample);
+ 	}
+ 
++	/* fill signal_avg */
++	INT Rssi_temp = 0;
++	RxPath = pAd->Antenna.field.RxPath;
++	RxPath = min(RxPath, (UINT8)(sizeof(rx_rssi_sample.AvgRssi) / sizeof(CHAR)));
++	rx_rssi_sample = pEntry->RssiSample;
++	for (i = 0; i < RxPath; i++) {
++		Rssi_temp += rx_rssi_sample.AvgRssi[i];
++	}
++	pIbssInfo->signal_avg = (CHAR)(Rssi_temp/RxPath);
++
++	/* Fill in SNR per entry*/
++	UniCmdPerStaGetSNR(pAd, pEntry->wcid, &u1Snr);
++	/* fill noise */
++	pIbssInfo->noise = RTMPAvgRssi(pAd, &pEntry->RssiSample) - u1Snr;
++
+ 	/* fill associated at */
+ 	pIbssInfo->assoc_at = pEntry->assoc_at;
+ 
+@@ -4479,12 +4528,26 @@ static int CFG80211DRV_OpsStaChg
+ 				"80211> STA("MACSTR") ==> PortSecured\n",
+ 				MAC2STR(mt_priv_info->mac_addr));
+ 			CFG80211_StaPortSecured(pAd, mt_priv_info->mac_addr, 1);
++			if (!pAd->noise_floor) {
++#ifdef WIFI_UNIFIED_COMMAND
++				UniCmdSetNoiseFloorControl(pAd, UNI_CMD_NF_INFO, 1, 20, 2, 0);
++#else
++				EnableNF(pAd, 1, 20, 2, 0);
++#endif
++			}
+ 		}
+ 	} else {
+ 		if (mt_priv_info->authorized) {
+ 			MTWF_DBG(NULL, DBG_CAT_CFG80211, CATCFG80211_AP, DBG_LVL_INFO,
+ 				"80211> STA("MACSTR") ==> PortSecured\n",
+ 				MAC2STR(mt_priv_info->mac_addr));
+ 			CFG80211_StaPortSecured(pAd, mt_priv_info->mac_addr, 1);
++			if (!pAd->noise_floor) {
++#ifdef WIFI_UNIFIED_COMMAND
++				UniCmdSetNoiseFloorControl(pAd, UNI_CMD_NF_INFO, 1, 20, 2, 0);
++#else
++				EnableNF(pAd, 1, 20, 2, 0);
++#endif
++			}
+ 		}
+ 	}
