@@ -1,0 +1,139 @@
+--- a/mt_wifi/os/linux/cfg80211/cfg80211drv.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211drv.c
+@@ -1075,15 +1075,26 @@ void CFG8021DRV_AP_PHYINIT(RTMP
+ void CFG8021DRV_AP_PHYINIT(RTMP_ADAPTER *pAd, struct wifi_dev *wdev, UINT8 channel)
+ {
+ 	CHANNEL_CTRL *pchctrl = NULL;
++	UINT32 freq = 0;
++	int i;
+-
+-	/*phy mode setting */
+-	if (channel > 14) {
+-		wdev->PhyMode = (WMODE_A | WMODE_AN | WMODE_AC | WMODE_AX_5G);
+-	} else {
+-		wdev->PhyMode = (WMODE_B | WMODE_G | WMODE_GN | WMODE_AX_24G);
+-	}
+-	/*change channel state to NONE*/
+ 	pchctrl = hc_get_channel_ctrl(pAd->hdev_ctrl);
++
++	for (i = 0; i < pchctrl->ChListNum; i++) {
++		if (pchctrl->ChList[i].Channel == channel) {
++			freq = pchctrl->ChList[i].frequency;
++			break;
++		}
++	}
++
++	if (freq >= 2412 && freq <= 2484)
++		wdev->PhyMode = (WMODE_B | WMODE_G | WMODE_GN | WMODE_AX_24G | WMODE_BE_24G);
++	else if (freq >= 5160 && freq <= 5885)
++		wdev->PhyMode = (WMODE_A | WMODE_AN | WMODE_AC | WMODE_AX_5G | WMODE_BE_5G);
++	else if (freq >= 5925 && freq <= 7125)
++		wdev->PhyMode = (WMODE_AX_6G | WMODE_BE_6G);
++	else
++		wdev->PhyMode = (WMODE_B | WMODE_G | WMODE_GN | WMODE_AX_24G);
++
+ 	hc_set_ChCtrlChListStat(pchctrl, CH_LIST_STATE_NONE);
+ #ifdef EXT_BUILD_CHANNEL_LIST
+ 	BuildChannelListEx(pAd, wdev);
+@@ -1126,6 +1137,13 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		if (WLAN_OPER_OK == wlan_operate_set_ht_bw(wdev, HT_BW_20, EXTCHA_NONE)) {
+ 			pAd->CommonCfg.HT_Disable = 1;/*HT disable*/
+ 			SetCommonHtVht(pAd, wdev);
++			wlan_config_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_operate_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_config_set_he_bw(wdev, HE_BW_20);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_20);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_20);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
+@@ -1145,6 +1163,13 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		if (WLAN_OPER_OK == wlan_operate_set_ht_bw(wdev, HT_BW_20, EXTCHA_NONE)) {
+ 			pAd->CommonCfg.HT_Disable = 0;/*HT enable*/
+ 			SetCommonHtVht(pAd, wdev);
++			wlan_config_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_operate_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_config_set_he_bw(wdev, HE_BW_20);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_20);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_20);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
+@@ -1175,6 +1200,13 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		if (WLAN_OPER_OK == wlan_operate_set_ht_bw(wdev, HT_BW_40, ext_cha)) {
+ 			pAd->CommonCfg.HT_Disable = 0;/*HT enable*/
+ 			SetCommonHtVht(pAd, wdev);
++			wlan_config_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_operate_set_vht_bw(wdev, VHT_BW_2040);
++			wlan_config_set_he_bw(wdev, HE_BW_2040);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_2040);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_2040);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
+@@ -1193,6 +1225,11 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		/*set bw*/
+ 		if (WLAN_OPER_OK == wlan_operate_set_vht_bw(wdev, VHT_BW_80)) {
+ 			pAd->CommonCfg.HT_Disable = 0;/*HT disable*/
++			wlan_config_set_he_bw(wdev, HE_BW_80);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_80);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_80);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
+@@ -1213,6 +1250,10 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		if (WLAN_OPER_OK == wlan_operate_set_vht_bw(wdev, VHT_BW_8080)) {
+ 			pAd->CommonCfg.HT_Disable = 0;/*HT disable*/
+ 			wlan_config_set_he_bw(wdev, HE_BW_8080);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_160);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_160);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_ERROR,
+@@ -1232,12 +1273,36 @@ BOOLEAN CFG80211DRV_AP_SetChanBw_byWdev(
+ 		if (WLAN_OPER_OK == wlan_operate_set_vht_bw(wdev, VHT_BW_160)) {
+ 			pAd->CommonCfg.HT_Disable = 0;/*HT disable*/
+ 			wlan_config_set_he_bw(wdev, HE_BW_160);
++#ifdef DOT11_EHT_BE
++			wlan_config_set_eht_bw(wdev, EHT_BW_160);
++			wlan_operate_set_eht_bw(wdev, EHT_BW_160);
++#endif
+ 			ret = TRUE;
+ 		} else {
+ 			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
+ 				"ERROR! wlan_operate_set_ht_bw 160 FAIL\n");
+ 			ret = FALSE;
+ 		}
++#ifdef DOT11_EHT_BE
++	} else if (NL80211_CHAN_WIDTH_320 == pchan_info->ChanType) {
++		bw = wlan_operate_get_eht_bw(wdev);
++		if (EHT_BW_320 == (enum)bw && 0 == pAd->CommonCfg.HT_Disable) {
++			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_INFO,
++				"bw 320 is already set.\n");
++			goto set_channel;
++		}
++		CFG8021DRV_AP_PHYINIT(pAd, wdev, pchan_info->ChanId);
++
++		if (WLAN_OPER_OK == wlan_operate_set_eht_bw(wdev, EHT_BW_320)) {
++			pAd->CommonCfg.HT_Disable = 0;
++			wlan_config_set_eht_bw(wdev, EHT_BW_320);
++			ret = TRUE;
++		} else {
++			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_ERROR,
++				"ERROR! wlan_operate_set_eht_bw 320 FAIL\n");
++			ret = FALSE;
++		}
++#endif
+ 	} else {
+ 		MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_WARN,
+ 			"WARN, bw=%d not support\n", pchan_info->ChanType);
