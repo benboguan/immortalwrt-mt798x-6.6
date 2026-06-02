@@ -1,3 +1,80 @@
+--- a/mt_wifi/ap/ap_cfg.c
++++ b/mt_wifi/ap/ap_cfg.c
+@@ -28329,21 +28329,51 @@ INT32 rtmp_get_macPower
+ 
+ INT32 rtmp_get_macPower(IN VOID *pAdSrc)
+ {
+-	INT32 retPwr = 21;
+ 	UCHAR band = 0;
+ 	PRTMP_ADAPTER ad = (PRTMP_ADAPTER)pAdSrc;
++#ifdef DATA_TXPWR_CTRL
++	INT32 retPwr = 0;
++	POS_COOKIE pObj = NULL;
++	UCHAR apidx = 0;
++	struct wifi_dev *wdev = NULL;
++#else
++	INT32 retPwr = 21;
++#endif
+ 
+ 	if (ad == NULL) {
+ 		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "ad null!\n");
+ 		return -EFAULT;
+ 	}
++#ifdef DATA_TXPWR_CTRL
++	pObj = (POS_COOKIE)ad->OS_Cookie;
++	if (pObj == NULL) {
++		MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_DBGLOG, DBG_LVL_ERROR, "pObj null!\n");
++		return -EFAULT;
++	}
++
++	apidx = pObj->ioctl_if;
++	if ((pObj->ioctl_if_type == INT_MBSSID) || (pObj->ioctl_if_type == INT_MAIN))
++	{
++		if (apidx >= ad->ApCfg.BssidNum)
++			return -EFAULT;
++
++		wdev = &ad->ApCfg.MBSSID[apidx].wdev;
++		band = HcGetBandByWdev(wdev);
++
++		if (band == BAND0)
++			retPwr = (ad->max_power_2g + ad->ApCfg.MaxBaseTxPwr) / 2;
++		else
++			retPwr = (ad->max_power_5g + ad->ApCfg.MaxBaseTxPwr) / 2;
++	}
++#else
+ 	band = hc_get_hw_band_idx(ad);
+ 	TxPowerShowInfo(ad, 2, band);
+ 	if (band == BAND0)
+ 		retPwr = ad->max_power_2g;
+ 	else
+ 		retPwr = ad->max_power_5g;
+ 	retPwr /= 2;
++#endif
+ 
+ 	MTWF_DBG(NULL, DBG_CAT_CFG, CATCFG_CMD, DBG_LVL_INFO, "%s Power %d\n",
+ 			(band == BAND0)?"2G":"5G", retPwr);
+--- a/mt_wifi/common/cmm_cfg.c
++++ b/mt_wifi/common/cmm_cfg.c
+@@ -5432,6 +5432,7 @@ INT SetPowerDropCtrl(RTMP
+ 	MTWF_PRINT("%s: ucPowerDrop = %d\n", __func__, ucPowerDrop);
+ 
+ 	/* Update Profile Info for Power Percentage Drop Value */
++	pAd->CommonCfg.ucTxPowerDefault = ucPowerDrop;
+ 	pAd->CommonCfg.ucTxPowerPercentage = ucPowerDrop;
+ 
+ #ifdef CONFIG_ATE
+@@ -8077,7 +8078,10 @@ INT show_data_frame_power(RTMP
+ 			return TRUE;
+ 		}
+ 		pAd->ApCfg.data_pwr_cmd_flag = FALSE;
+-		MaxBasePwr = pAd->ApCfg.MaxBaseTxPwr / 2;
++		if (BandIdx == BAND0)
++			MaxBasePwr = (pAd->max_power_2g + pAd->ApCfg.MaxBaseTxPwr) / 2;
++		else
++			MaxBasePwr = (pAd->max_power_5g + pAd->ApCfg.MaxBaseTxPwr) / 2;
+ 
+ 		if (pAd->ApCfg.MaxBaseTxPwr % 2 == 0)
+ 			MTWF_PRINT("=== BandIdx: %d, Max Base Pwr: %d dbm ===\n", BandIdx, MaxBasePwr);
 --- a/mt_wifi/chip/mac_mt/mt_fmac.c
 +++ b/mt_wifi/chip/mac_mt/mt_fmac.c
 @@ -2838,11 +2838,9 @@ UINT16 eht_mcs_phyrate_mapping_table[
