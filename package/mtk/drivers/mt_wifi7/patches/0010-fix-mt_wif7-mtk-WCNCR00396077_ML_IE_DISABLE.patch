@@ -22,7 +22,7 @@ Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
  
  	for (i = 0, macptr = rstrtok(Buffer, ";"); macptr;
  			macptr = rstrtok(NULL, ";"), i++) {
-@@ -1004,17 +1005,23 @@ static void rtmp_read_mld_group_idx_from
+@@ -1010,17 +1011,23 @@ static void rtmp_read_mld_group_idx_from
  				break;
  
  			pMbss = &pAd->ApCfg.MBSSID[i];
@@ -52,7 +52,7 @@ Index: mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/protocol/be/mgmt_eht.c
 +++ mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
-@@ -57,6 +57,10 @@ uint8_t *eht_build_multi_link_ie(
+@@ -58,6 +58,10 @@ uint8_t *eht_build_multi_link_ie(
  	} else {
  		struct query_mld_info mld_query = {0};
  

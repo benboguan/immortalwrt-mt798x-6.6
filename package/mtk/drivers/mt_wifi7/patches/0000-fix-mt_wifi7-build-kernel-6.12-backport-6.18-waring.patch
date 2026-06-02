@@ -1,6 +1,6 @@
 --- a/warp_driver/warp/warp_tx_bm_v2.c
 +++ b/warp_driver/warp/warp_tx_bm_v2.c
-@@ -7,6 +7,7 @@
+@@ -18,6 +18,7 @@
  #include "wdma.h"
  #include <linux/version.h>
  #include <linux/pci.h>
@@ -10,7 +10,7 @@
  dump_pkt_info(struct wed_buf_res *res)
 --- a/warp_driver/warp/warp_rx_bm.c
 +++ b/warp_driver/warp/warp_rx_bm.c
-@@ -7,6 +7,7 @@
+@@ -18,6 +18,7 @@
  #include "wdma.h"
  #include <linux/version.h>
  #include <linux/pci.h>
@@ -20,7 +20,7 @@
  wed_rx_bm_dma_cb_exit(struct wed_entry *wed, struct warp_dma_cb *dma_cb)
 --- a/warp_driver/warp/warp_rx_page_bm.c
 +++ b/warp_driver/warp/warp_rx_page_bm.c
-@@ -8,6 +8,7 @@
+@@ -19,6 +19,7 @@
  #include "warp_utility.h"
  #include <linux/version.h>
  #include <linux/pci.h>
@@ -30,7 +30,7 @@
  wed_msdu_page_hash(dma_addr_t pa)
 --- a/mt_wifi/include/rtmp_def.h
 +++ b/mt_wifi/include/rtmp_def.h
-@@ -2649,6 +2649,9 @@
+@@ -2636,6 +2636,9 @@
  #define WCID_SHIFT 0x200
  #endif
  
@@ -42,7 +42,7 @@
  #endif /* __RTMP_DEF_H__ */
 --- a/wlan_hwifi/core.h
 +++ b/wlan_hwifi/core.h
-@@ -84,6 +84,9 @@ struct mtk_hw_ops {
+@@ -102,6 +102,9 @@ struct mtk_hw_ops {
  };
  
  #define MAC_WATCHDOG_TIME		(HZ / 10)
@@ -54,7 +54,7 @@
  	u16 ack_fail_cnt;
 --- a/wlan_hwifi/chips/mt7990/mt7990_option_table.h
 +++ b/wlan_hwifi/chips/mt7990/mt7990_option_table.h
-@@ -4,6 +4,8 @@
+@@ -32,6 +32,8 @@
  #ifndef __MTK_CHIP_MT7990_OPTION_TABLE_H
  #define __MTK_CHIP_MT7990_OPTION_TABLE_H
  
@@ -65,7 +65,7 @@
  
 --- a/wlan_hwifi/chips/mt7992/mt7992_option_table.h
 +++ b/wlan_hwifi/chips/mt7992/mt7992_option_table.h
-@@ -4,6 +4,8 @@
+@@ -32,6 +32,8 @@
  #ifndef __MTK_CHIP_MT7992_OPTION_TABLE_H
  #define __MTK_CHIP_MT7992_OPTION_TABLE_H
  
@@ -76,7 +76,7 @@
  #define MT7992_SDB_BAND_SEL_DEFAULT 1
 --- a/wlan_hwifi/chips/mt7993/mt7993_option_table.h
 +++ b/wlan_hwifi/chips/mt7993/mt7993_option_table.h
-@@ -4,6 +4,8 @@
+@@ -32,6 +32,8 @@
  #ifndef __MTK_CHIP_MT7993_OPTION_TABLE_H
  #define __MTK_CHIP_MT7993_OPTION_TABLE_H
  
@@ -87,7 +87,7 @@
  enum mt7993_chip_opt {
 --- a/wlan_hwifi/utility.h
 +++ b/wlan_hwifi/utility.h
-@@ -11,15 +11,17 @@
+@@ -38,15 +38,17 @@
  
  #define __bf_shf(x) (__builtin_ffsll(x) - 1)
  

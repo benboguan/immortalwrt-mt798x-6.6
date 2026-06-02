@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/common/cmm_info.c
 +++ mt_wifi7/mt_wifi/common/cmm_info.c
-@@ -6843,7 +6843,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6938,7 +6938,7 @@ VOID RTMPCommSiteSurveyData(
  	if (wireless_mode == Ndis802_11FH ||
  		wireless_mode == Ndis802_11DS) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -11,7 +11,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6851,7 +6851,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6946,7 +6946,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM5) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -20,7 +20,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6859,7 +6859,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6954,7 +6954,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM5_N) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -29,7 +29,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6867,7 +6867,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6962,7 +6962,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM5_AC) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -38,7 +38,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6875,7 +6875,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6970,7 +6970,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM24) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -47,7 +47,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6883,7 +6883,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6978,7 +6978,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM24_N) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -56,7 +56,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6891,7 +6891,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6986,7 +6986,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM24_HE) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -65,7 +65,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6899,7 +6899,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -6994,7 +6994,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM5_HE) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -74,7 +74,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6907,7 +6907,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -7002,7 +7002,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM24_EHT) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -83,7 +83,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6915,7 +6915,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -7010,7 +7010,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else if (wireless_mode == Ndis802_11OFDM5_EHT) {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -92,7 +92,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -6923,7 +6923,7 @@ VOID RTMPCommSiteSurveyData(
+@@ -7018,7 +7018,7 @@ VOID RTMPCommSiteSurveyData(
  		}
  	} else {
  		LeftBufSize = MsgLen - strlen(msg);
@@ -101,7 +101,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  		if (os_snprintf_error(LeftBufSize, ret)) {
  			MTWF_DBG(NULL, DBG_CAT_CHN, CATCHN_SCAN, DBG_LVL_ERROR,
  						"Snprintf failed!\n");
-@@ -7144,7 +7144,7 @@ INT mtk_cfg80211_get_scan_result(struct
+@@ -7239,7 +7239,7 @@ INT mtk_cfg80211_get_scan_result(struct
  #else
  	LeftBufSize = TotalLen - strlen(msg);
  	Status = snprintf(msg + strlen(msg), LeftBufSize,
@@ -110,7 +110,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  	"No", "Ch", "SSID", "BSSID", "Security", "Siganl(%)", "W-Mode", " ExtCH",
  	"BW", " NT", " SSID_Len");
  	if (os_snprintf_error(LeftBufSize, Status)) {
-@@ -7153,6 +7153,15 @@ INT mtk_cfg80211_get_scan_result(struct
+@@ -7248,6 +7248,15 @@ INT mtk_cfg80211_get_scan_result(struct
  		goto ERROR;
  	}
  #endif
@@ -126,7 +126,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
  #ifdef WSC_INCLUDED
  	LeftBufSize = TotalLen - strlen(msg);
  	Status = snprintf(msg + strlen(msg) - 1, LeftBufSize, "%-4s%-5s\n", " WPS", " DPID");
-@@ -7239,6 +7248,15 @@ INT mtk_cfg80211_get_scan_result(struct
+@@ -7332,6 +7341,15 @@ INT mtk_cfg80211_get_scan_result(struct
  			goto ERROR;
  		}
  		RTMPCommSiteSurveyData(msg, pBss, TotalLen);
@@ -146,7 +146,7 @@ Index: mt_wifi7/mt_wifi/common/mld_link_mgr.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/common/mld_link_mgr.c
 +++ mt_wifi7/mt_wifi/common/mld_link_mgr.c
-@@ -3472,6 +3472,7 @@ VOID mld_parse_per_link_cap(RTMP_ADAPTER
+@@ -3114,6 +3114,7 @@ VOID mld_parse_per_link_cap(RTMP_ADAPTER
  		goto end;
  	}
  
@@ -158,7 +158,7 @@ Index: mt_wifi7/mt_wifi/include/mlme.h
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/include/mlme.h
 +++ mt_wifi7/mt_wifi/include/mlme.h
-@@ -1720,6 +1720,7 @@ typedef struct _BSS_ENTRY {
+@@ -1636,6 +1636,7 @@ typedef struct _BSS_ENTRY {
  #endif
  #ifdef DOT11_EHT_BE
  	uint8_t ml_capable;
@@ -170,7 +170,7 @@ Index: mt_wifi7/mt_wifi/protocol/ax/bss_ops.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/protocol/ax/bss_ops.c
 +++ mt_wifi7/mt_wifi/protocol/ax/bss_ops.c
-@@ -921,7 +921,7 @@ VOID BssEntrySet(
+@@ -903,7 +903,7 @@ VOID BssEntrySet(
  		eht_store_basic_multi_link_info(pBss->basic_multi_link_ie, cmm_ies);
  		mld_parse_per_link_cap(pAd, ie_list, &pBss->ml_info);
  		pBss->ml_capable = TRUE;

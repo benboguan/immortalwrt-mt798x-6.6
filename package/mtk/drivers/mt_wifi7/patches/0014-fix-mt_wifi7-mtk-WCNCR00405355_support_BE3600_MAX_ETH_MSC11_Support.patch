@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/common/cmm_cfg.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/common/cmm_cfg.c
 +++ mt_wifi7/mt_wifi/common/cmm_cfg.c
-@@ -1722,7 +1722,9 @@ IOCTL_ATE_ERROR:
+@@ -1721,7 +1721,9 @@ IOCTL_ATE_ERROR:
  			}
  			Antenna = wlan_config_get_eht_tx_nss(wdev);
  			BW =  wlan_operate_get_eht_bw(wdev);
@@ -17,7 +17,7 @@ Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/profiles/ap_profile.c
 +++ mt_wifi7/mt_wifi/profiles/ap_profile.c
-@@ -1582,7 +1582,20 @@ void read_ap_eht_config_from_file(
+@@ -1524,7 +1524,20 @@ void read_ap_eht_config_from_file(
  	}
  	if (RTMPGetKeyParameter("EHT_MaxMcs", tmpbuf,
  			MAX_PARAMETER_LEN, pBuffer, TRUE)) {
@@ -39,7 +39,7 @@ Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
  		for (idx = 0, macptr = rstrtok(tmpbuf, ";");
  			(macptr && idx < pAd->ApCfg.BssidNum);
  			macptr = rstrtok(NULL, ";"), idx++) {
-@@ -1599,7 +1612,7 @@ void read_ap_eht_config_from_file(
+@@ -1541,7 +1554,7 @@ void read_ap_eht_config_from_file(
  				wlan_config_set_eht_max_mcs(
  					wdev, ((u8)value) == 0 ? MCS_13:(u8)value);
  			}

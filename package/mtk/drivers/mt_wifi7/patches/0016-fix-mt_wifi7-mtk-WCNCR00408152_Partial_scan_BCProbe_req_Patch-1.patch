@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
 ===================================================================
 --- mt_wifi7/mt_wifi/common/scan.c
 +++ mt_wifi7/mt_wifi/common/scan.c
-@@ -1401,7 +1401,7 @@
+@@ -1325,7 +1325,7 @@
  
  #ifdef CONFIG_STA_SUPPORT
  			if ((wdev->wdev_type == WDEV_TYPE_STA) &&

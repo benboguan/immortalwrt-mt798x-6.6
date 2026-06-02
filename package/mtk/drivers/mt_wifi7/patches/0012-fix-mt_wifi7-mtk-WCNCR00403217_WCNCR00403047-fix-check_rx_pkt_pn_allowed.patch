@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
 +++ mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
-@@ -686,6 +686,9 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pA
+@@ -640,6 +640,9 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pA
  	}
  #endif /*defined(CONFIG_MAP_SUPPORT) */
  

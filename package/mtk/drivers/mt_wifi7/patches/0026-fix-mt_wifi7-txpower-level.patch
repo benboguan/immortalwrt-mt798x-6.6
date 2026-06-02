@@ -1,6 +1,6 @@
 --- a/mt_wifi/ap/ap_cfg.c
 +++ b/mt_wifi/ap/ap_cfg.c
-@@ -28329,21 +28329,51 @@ INT32 rtmp_get_macPower
+@@ -28328,21 +28328,51 @@ INT32 rtmp_get_macPower
  
  INT32 rtmp_get_macPower(IN VOID *pAdSrc)
  {
@@ -55,7 +55,7 @@
  			(band == BAND0)?"2G":"5G", retPwr);
 --- a/mt_wifi/common/cmm_cfg.c
 +++ b/mt_wifi/common/cmm_cfg.c
-@@ -5432,6 +5432,7 @@ INT SetPowerDropCtrl(RTMP
+@@ -5344,6 +5344,7 @@ INT SetPowerDropCtrl(RTMP
  	MTWF_PRINT("%s: ucPowerDrop = %d\n", __func__, ucPowerDrop);
  
  	/* Update Profile Info for Power Percentage Drop Value */
@@ -63,7 +63,7 @@
  	pAd->CommonCfg.ucTxPowerPercentage = ucPowerDrop;
  
  #ifdef CONFIG_ATE
-@@ -8077,7 +8078,10 @@ INT show_data_frame_power(RTMP
+@@ -8079,7 +8080,10 @@ INT show_data_frame_power(RTMP
  			return TRUE;
  		}
  		pAd->ApCfg.data_pwr_cmd_flag = FALSE;

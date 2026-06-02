@@ -117,7 +117,7 @@
 +#ifdef DOT11_EHT_BE
 +	} else if (NL80211_CHAN_WIDTH_320 == pchan_info->ChanType) {
 +		bw = wlan_operate_get_eht_bw(wdev);
-+		if (EHT_BW_320 == (enum)bw && 0 == pAd->CommonCfg.HT_Disable) {
++		if (EHT_BW_320 == bw && 0 == pAd->CommonCfg.HT_Disable) {
 +			MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_CHN, DBG_LVL_INFO,
 +				"bw 320 is already set.\n");
 +			goto set_channel;

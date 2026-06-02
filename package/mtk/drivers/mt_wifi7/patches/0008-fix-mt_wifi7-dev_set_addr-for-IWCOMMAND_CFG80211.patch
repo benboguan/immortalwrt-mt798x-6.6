@@ -1,6 +1,6 @@
 --- a/mt_wifi/sta/sta.c
 +++ b/mt_wifi/sta/sta.c
-@@ -479,8 +479,13 @@ INT sta_inf_open(struct wifi_dev *wdev)
+@@ -478,8 +478,13 @@ INT sta_inf_open(struct wifi_dev *wdev)
  #ifdef IWCOMMAND_CFG80211_SUPPORT
  		AsicSetWdevIfAddr(pAd, wdev, OPMODE_STA);
  		if (wdev->if_dev) {

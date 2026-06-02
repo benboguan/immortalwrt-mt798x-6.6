@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/common/scan.c
 +++ mt_wifi7/mt_wifi/common/scan.c
-@@ -625,7 +625,7 @@ static INT scan_active(RTMP_ADAPTER *pAd
+@@ -621,7 +621,7 @@ static INT scan_active(RTMP_ADAPTER *pAd
  	/* There is no need to send broadcast probe request if active scan is in effect.*/
  	SsidLen = 0;
  
@@ -15,7 +15,7 @@ Index: mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211drv.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/os/linux/cfg80211/cfg80211drv.c
 +++ mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211drv.c
-@@ -3521,8 +3521,10 @@ static int CFG80211_OpsScan(
+@@ -3638,8 +3638,10 @@ static int CFG80211_OpsScan(
  	scan_cmd.ScanType = SCAN_ACTIVE;
  	if (iftype == NL80211_IFTYPE_STATION) {
  		scan_cmd.StaIndex = staIndex;

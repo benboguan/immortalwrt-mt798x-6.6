@@ -1,6 +1,6 @@
 --- a/mt_wifi/os/linux/cfg80211/cfg80211drv.c
 +++ b/mt_wifi/os/linux/cfg80211/cfg80211drv.c
-@@ -1811,7 +1811,7 @@ BOOLEAN CFG80211DRV_StaGet(
+@@ -1838,7 +1838,7 @@ BOOLEAN CFG80211DRV_StaGet(
  	STA_ADMIN_CONFIG *pstacfg = NULL;
  	MAC_TABLE_ENTRY *pEntry = NULL;
  	STA_TR_ENTRY *tr_entry;
@@ -9,7 +9,7 @@
  	RSSI_SAMPLE rx_rssi_sample;
  	UINT8 RxPath;
  #ifdef VOW_SUPPORT
-@@ -1878,6 +1878,40 @@ BOOLEAN CFG80211DRV_StaGet(
+@@ -1905,6 +1905,40 @@ BOOLEAN CFG80211DRV_StaGet(
  	/* fill tx/rx rate */
  	CFG80211DRV_GetTxRxRate(pAd, pEntry, &pIbssInfo->txrate, &pIbssInfo->rxrate);
  
@@ -50,7 +50,7 @@
  	/* fill signal */
  	pIbssInfo->Signal = RTMPAvgRssi(pAd, &pEntry->RssiSample);
  
-@@ -1904,6 +1938,21 @@ BOOLEAN CFG80211DRV_StaGet(
+@@ -1931,6 +1965,21 @@ BOOLEAN CFG80211DRV_StaGet(
  		pIbssInfo->ack_signal = RTMPAvgRssi(pAd, &rx_rssi_sample);
  	}
  
@@ -72,7 +72,7 @@
  	/* fill associated at */
  	pIbssInfo->assoc_at = pEntry->assoc_at;
  
-@@ -4479,12 +4528,26 @@ static int CFG80211DRV_OpsStaChg
+@@ -4506,12 +4557,26 @@ static int CFG80211DRV_OpsStaChg
  				"80211> STA("MACSTR") ==> PortSecured\n",
  				MAC2STR(mt_priv_info->mac_addr));
  			CFG80211_StaPortSecured(pAd, mt_priv_info->mac_addr, 1);

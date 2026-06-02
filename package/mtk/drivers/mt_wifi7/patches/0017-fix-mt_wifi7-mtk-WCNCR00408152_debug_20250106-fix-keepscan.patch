@@ -10,7 +10,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
  }
  
  DECLARE_TIMER_FUNCTION(restart_partial_scan);
-@@ -1008,6 +1009,7 @@
+@@ -992,6 +993,7 @@
  			ScanCtrl->Channel = 0;
  			scan_ch_restore(pAd, OpMode, wdev);
  			ScanCtrl->PartialScan.bScanning = FALSE;
@@ -18,7 +18,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
  			if (ScanCtrl->opAbortScan == TRUE)
  				ScanCtrl->opAbortScan = FALSE;
  
-@@ -1203,10 +1205,12 @@
+@@ -1175,10 +1177,12 @@
  			if (ScanType == SCAN_PARTIAL) {
  				if (ScanCtrl->PartialScan.TimerInterval > 0) {
  					ScanCtrl->PartialScan.bScanning = FALSE;
@@ -31,7 +31,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
  					ScanCtrl->PartialScan.pwdev = NULL;
  					ScanCtrl->ScanType = SCAN_ACTIVE;
  				}
-@@ -1607,7 +1611,8 @@
+@@ -1531,7 +1535,8 @@
  					  ScanInfo->LastScanChannel,
  					  ScanCtrl->PartialScan.bScanning,
  					  ScanCtrl->PartialScan.BreakTime, scan_in_run_state(pAd, wdev));
@@ -41,7 +41,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
  				ScanCtrl->PartialScan.BreakTime++;
  			/* When partialscan is pending, count breaktime;
  			*  We should wait (BeaconPeriod + 100ms), then trigger next scan.*/
-@@ -1645,10 +1650,12 @@
+@@ -1569,10 +1574,12 @@
  				}
  				NdisZeroMemory(&ScanReq, sizeof(MLME_SCAN_REQ_STRUCT));
  				ScanParmFill(pAd, &ScanReq, ScanCtrl->Ssid, ScanCtrl->SsidLen, BSS_ANY, SCAN_PARTIAL);
@@ -54,7 +54,7 @@ Index: mt_wifi7/mt_wifi/common/scan.c
  					ScanCtrl->PartialScan.bScanning = FALSE;
  					if (GetCurrentChannelOpOwner(pAd, wdev) == CH_OP_OWNER_PARTIAL_SCAN)
  						ReleaseChannelOpCharge(pAd, wdev, CH_OP_OWNER_PARTIAL_SCAN);
-@@ -1667,6 +1674,7 @@
+@@ -1591,6 +1598,7 @@
  
  	PartialScanCtrl = &pAd->ScanCtrl.PartialScan;
  	PartialScanCtrl->bScanning = FALSE;
@@ -66,7 +66,7 @@ Index: mt_wifi7/mt_wifi/common/fsm/fsm_sync.c
 ===================================================================
 --- mt_wifi7/mt_wifi/common/fsm/fsm_sync.c
 +++ mt_wifi7/mt_wifi/common/fsm/fsm_sync.c
-@@ -1506,6 +1506,7 @@
+@@ -1492,6 +1492,7 @@
  		ScanInfo->LastScanChannel, ScanCtrl->BandIdx);
  	/*ASSERT(wdev);*/
  
@@ -91,7 +91,7 @@ Index: mt_wifi7/mt_wifi/include/rtmp.h
 ===================================================================
 --- mt_wifi7/mt_wifi/include/rtmp.h
 +++ mt_wifi7/mt_wifi/include/rtmp.h
-@@ -5404,6 +5404,7 @@
+@@ -5328,6 +5328,7 @@
  #define DEFLAUT_PARTIAL_SCAN_BREAK_TIME	4  /* Period of partial scaning: unit: 100ms */
  typedef struct _PARTIAL_SCAN_ {
  	BOOLEAN bScanning;			/* Doing partial scan or not */

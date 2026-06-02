@@ -44,8 +44,8 @@
  		return "WPA3";
  	else if (IS_AKM_WPA2(authMode))
  		return "WPA2";
---- a/mt_wifi/common/security/cmm_sec.c
-+++ b/mt_wifi/common/security/cmm_sec.c
+--- a/mt_wifi/common/security/cmm_wpa.c
++++ b/mt_wifi/common/security/cmm_wpa.c
 @@ -2157,7 +2157,7 @@ static BOOLEAN WPAMakeRsnIeAKM(
  
  #if defined(DOT11_SUITEB_SUPPORT) || defined(HOSTAPD_SUITEB_SUPPORT)

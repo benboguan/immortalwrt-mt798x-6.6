@@ -1,6 +1,6 @@
 --- a/wlan_hwifi/Makefile
 +++ b/wlan_hwifi/Makefile
-@@ -81,7 +81,9 @@ ifeq ($(CONFIG_HWIFI_ARCH_NEW_FWDL), y)
+@@ -79,7 +79,9 @@ ifeq ($(CONFIG_HWIFI_ARCH_NEW_FWDL), y)
  	ccflags-y += -DCONFIG_HWIFI_ARCH_NEW_FWDL
  endif
  

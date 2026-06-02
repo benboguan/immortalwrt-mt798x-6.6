@@ -2,7 +2,7 @@ Index: mt_wifi7/mt_wifi/common/fsm/sta_mgmt_sync.c
 ===================================================================
 --- mt_wifi7.orig/mt_wifi/common/fsm/sta_mgmt_sync.c
 +++ mt_wifi7/mt_wifi/common/fsm/sta_mgmt_sync.c
-@@ -551,8 +551,8 @@ static BOOLEAN sta_rx_peer_response_upda
+@@ -532,8 +532,8 @@ static BOOLEAN sta_rx_peer_response_upda
  				}
  
  				HW_SET_PROTECT(pAd, wdev, PROT_PROTOCOL, 0, 0);
