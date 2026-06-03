@@ -761,14 +761,36 @@ return view.extend({
 						E('small', `(${bss.network.getIfname()})`)
 					])
 				]),
-				bss.mac,
+				E('span', {}, [
+					bss.mac,
+					bss.mlo_enable ? E('br') : null,
+					bss.mlo_enable ? E('small', _('MLD: %s').format(bss.mld_mac)) : null
+				]),
 				hint,
 				render_signal_badge(Math.min((bss.signal + 110) / 70 * 100, 100), bss.signal, bss.noise),
-				E('span', {}, [
-					E('span', format_wifirate(bss.rx)),
-					E('br'),
-					E('span', format_wifirate(bss.tx))
-				]),
+				E('span', {}, (function() {
+					if (bss.mlo_enable && bss.mlo_links) {
+						var spans = [];
+						bss.mlo_links.forEach(function(link, idx) {
+							spans.push(
+								E('span', {}, [
+									E('strong', _('Link %d').format(idx + 1)),
+									E('br'),
+									E('span', format_wifirate(link.rx)),
+									E('br'),
+									E('span', format_wifirate(link.tx))
+								]),
+								idx < bss.mlo_links.length - 1 ? E('br') : null
+							);
+						});
+						return spans;
+					}
+					return [
+						E('span', format_wifirate(bss.rx)),
+						E('br'),
+						E('span', format_wifirate(bss.tx))
+					];
+				})()),
 				timestr
 			];
 
