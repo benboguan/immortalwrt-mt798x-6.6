@@ -1,0 +1,18 @@
+--- a/mt_wifi/os/linux/cfg80211/cfg80211drv.c
++++ b/mt_wifi/os/linux/cfg80211/cfg80211drv.c
+@@ -1980,6 +1980,15 @@ BOOLEAN CFG80211DRV_StaGet(
+ 	/* fill noise */
+ 	pIbssInfo->noise = RTMPAvgRssi(pAd, &pEntry->RssiSample) - u1Snr;
+ 
++	/* fill mlo_enable */
++	pIbssInfo->mlo_params_valid = pEntry->mlo.mlo_en;
++
++	/* fill assoc_link_id */
++	pIbssInfo->assoc_link_id = pEntry->mlo.link_info.link_id;
++
++	/* fill mld_addr */
++	COPY_MAC_ADDR(pIbssInfo->mld_addr, pEntry->mlo.mld_addr);
++
+ 	/* fill associated at */
+ 	pIbssInfo->assoc_at = pEntry->assoc_at;
+ 
