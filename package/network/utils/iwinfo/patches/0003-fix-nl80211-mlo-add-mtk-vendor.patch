@@ -8,61 +8,7 @@
  
  #define min(x, y) ((x) < (y)) ? (x) : (y)
  
-@@ -481,6 +481,53 @@ static struct nl80211_msg_conveyor
- 	nl80211_free(cv);
- 	return NULL;
- }
-+
-+static struct nl80211_msg_conveyor * nl80211_subcmd_msg_mtk(const char *ifname,
-+                                                 int cmd, int subcmd, int flags)
-+{
-+	unsigned int ifidx = 0;
-+	int phyidx = -1;
-+	struct nl80211_msg_conveyor *cv;
-+
-+	if (ifname == NULL)
-+		return NULL;
-+
-+	if (nl80211_init() < 0)
-+		return NULL;
-+
-+	if (!strncmp(ifname, "mon.", 4))
-+		ifidx = if_nametoindex(&ifname[4]);
-+	else if (nl80211_is_ifname(ifname))
-+		ifidx = if_nametoindex(ifname);
-+	else
-+	{
-+		phyidx = nl80211_phy_idx_from_phy(ifname);
-+		if (phyidx < 0)
-+			phyidx = nl80211_phy_idx_from_uci(ifname);
-+	}
-+
-+	/* Valid ifidx must be greater than 0 */
-+	if ((ifidx <= 0) && (phyidx < 0))
-+		return NULL;
-+
-+	cv = nl80211_new(nls->nl80211, cmd, flags);
-+	if (!cv)
-+		return NULL;
-+
-+	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_ID, MTK_NL80211_VENDOR_ID);
-+	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_SUBCMD, subcmd);
-+
-+	if (ifidx > 0)
-+		NLA_PUT_U32(cv->msg, NL80211_ATTR_IFINDEX, ifidx);
-+	else if (phyidx > -1)
-+		NLA_PUT_U32(cv->msg, NL80211_ATTR_WIPHY, phyidx);
-+
-+	return cv;
-+
-+nla_put_failure:
-+	nl80211_free(cv);
-+	return NULL;
-+}
- 
- static int nl80211_send(struct nl80211_msg_conveyor *cv,
-                         int (*cb_func)(struct nl_msg *, void *),
-@@ -2159,6 +2207,8 @@ static void nl80211_parse_rateinfo(struct
+@@ -2159,6 +2160,8 @@ static void nl80211_parse_rateinfo(struct
  			re->nss = nla_get_u8(ri[NL80211_RATE_INFO_EHT_NSS]);
  		if (ri[NL80211_RATE_INFO_EHT_GI])
  			re->eht_gi = nla_get_u8(ri[NL80211_RATE_INFO_EHT_GI]);
@@ -71,7 +17,7 @@
  	}
  	else if (ri[NL80211_RATE_INFO_HE_MCS])
  	{
-@@ -2359,6 +2409,99 @@ static int nl80211_get_assoclist_cb(struct
+@@ -2359,6 +2362,125 @@ static int nl80211_get_assoclist_cb(struct
  	}
  }
  
@@ -150,11 +96,37 @@
 +                                  int count)
 +{
 +	struct nl80211_msg_conveyor *cv;
++	unsigned int ifidx = 0;
++	int phyidx = -1;
 +
-+	cv = nl80211_subcmd_msg_mtk(ifname, NL80211_CMD_VENDOR,
-+	                            MTK_NL80211_VENDOR_SUBCMD_GET_CONNECTED_STA_MLD, 0);
++	if (count <= 0)
++		return;
++
++	if (!strncmp(ifname, "mon.", 4))
++		ifidx = if_nametoindex(&ifname[4]);
++	else if (nl80211_is_ifname(ifname))
++		ifidx = if_nametoindex(ifname);
++	else {
++		phyidx = nl80211_phy_idx_from_phy(ifname);
++		if (phyidx < 0)
++			phyidx = nl80211_phy_idx_from_uci(ifname);
++	}
++
++	if (ifidx <= 0 && phyidx < 0)
++		return;
++
++	cv = nl80211_new(nls->nl80211, NL80211_CMD_VENDOR, 0);
 +	if (!cv)
 +		return;
++
++	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_ID, MTK_NL80211_VENDOR_ID);
++	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_SUBCMD,
++			MTK_NL80211_VENDOR_SUBCMD_GET_CONNECTED_STA_MLD);
++
++	if (ifidx > 0)
++		NLA_PUT_U32(cv->msg, NL80211_ATTR_IFINDEX, ifidx);
++	else if (phyidx >= 0)
++		NLA_PUT_U32(cv->msg, NL80211_ATTR_WIPHY, phyidx);
 +
 +	NLA_PUT_U8(cv->msg, MTK_NL80211_VENDOR_ATTR_AP_MLD_INDEX_TO_DUMP, 0);
 +
@@ -171,7 +143,7 @@
  static int nl80211_get_assoclist_cb(struct nl_msg *msg, void *arg)
  {
  	struct nl80211_array_buf *arr = arg;
-@@ -2364,6 +2507,12 @@ static int nl80211_get_assoclist_cb(struct
+@@ -2364,6 +2486,12 @@ static int nl80211_get_assoclist_cb(struct
  	if (attr[NL80211_ATTR_MAC])
  		memcpy(e->mac, nla_data(attr[NL80211_ATTR_MAC]), 6);
  
@@ -184,7 +156,7 @@
  	if (attr[NL80211_ATTR_STA_INFO] &&
  	    !nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
  	                      attr[NL80211_ATTR_STA_INFO], stats_policy))
-@@ -2566,6 +2715,9 @@ static int nl80211_get_assoclist(const
+@@ -2566,6 +2694,9 @@ static int nl80211_get_assoclist(const
  			for (i = 0, e = arr.buf; i < arr.count; i++, e++)
  				e->noise = noise;
  
@@ -194,7 +166,7 @@
  		*len = (arr.count * sizeof(struct iwinfo_assoclist_entry));
  		return 0;
  	}
-@@ -2578,37 +2730,30 @@ static int nl80211_get_txpwrlist(const
+@@ -2578,37 +2703,30 @@ static int nl80211_get_txpwrlist(const
  static int nl80211_get_txpwrlist(const char *ifname, char *buf, int *len)
  {
  	int err, ch_cur;
@@ -243,7 +215,7 @@
  		return 0;
  	}
  
-@@ -3230,12 +3375,16 @@ static int nl80211_get_freqlist_cb(struct
+@@ -3230,12 +3348,16 @@ static int nl80211_get_freqlist_cb(struct
  						e->flags |= IWINFO_FREQ_NO_80MHZ;
  					if (freqs[NL80211_FREQUENCY_ATTR_NO_160MHZ])
  						e->flags |= IWINFO_FREQ_NO_160MHZ;
@@ -260,7 +232,7 @@
  					if (freqs[NL80211_FREQUENCY_ATTR_NO_IR] &&
  					    !freqs[NL80211_FREQUENCY_ATTR_RADAR])
  						e->flags |= IWINFO_FREQ_NO_IR;
-@@ -3389,7 +3538,7 @@ static void nl80211_eval_modelist(struct
+@@ -3389,7 +3511,7 @@ static void nl80211_eval_modelist(struct
  		/* Treat any nonzero capability as 11ac */
  		if (m->nl_vht > 0)
  		{
