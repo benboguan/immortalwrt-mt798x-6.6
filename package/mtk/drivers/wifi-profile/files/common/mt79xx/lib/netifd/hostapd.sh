@@ -397,6 +397,7 @@ hostapd_common_add_bss_config() {
 
 	config_add_array bssid_blacklist
 	config_add_array bssid_whitelist
+	config_add_array wpa_supplicant_options
 
 	config_add_int mcast_rate
 	config_add_array basic_rate
@@ -2007,12 +2008,16 @@ wpa_supplicant_add_network() {
 	[ -n "$bssid" ] && append network_data "bssid=$bssid" "$N$T"
 	[ -n "$beacon_int" ] && append network_data "beacon_int=$beacon_int" "$N$T"
 
-	local bssid_blacklist bssid_whitelist
+	local bssid_blacklist bssid_whitelist wpa_supplicant_opts
 	json_get_values bssid_blacklist bssid_blacklist
 	json_get_values bssid_whitelist bssid_whitelist
+	json_get_values wpa_supplicant_opts wpa_supplicant_options
 
 	[ -n "$bssid_blacklist" ] && append network_data "bssid_blacklist=$bssid_blacklist" "$N$T"
 	[ -n "$bssid_whitelist" ] && append network_data "bssid_whitelist=$bssid_whitelist" "$N$T"
+	for val in $wpa_supplicant_opts; do
+		append network_data "$val" "$N$T"
+	done
 
         local disable_eht
         local disable_he

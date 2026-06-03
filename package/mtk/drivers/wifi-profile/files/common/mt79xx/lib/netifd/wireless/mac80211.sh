@@ -1150,6 +1150,9 @@ mac80211_prepare_iw_htmode() {
 		VHT160|HE160|EHT160)
 			iw_htmode="160MHz"
 		;;
+		EHT320*)
+			iw_htmode="320MHz"
+		;;
 		NONE|NOHT)
 			iw_htmode="NOHT"
 		;;
