@@ -25,6 +25,7 @@ PKG_BUILD_FLAGS:=no-lto
 IWINFO_ABI_VERSION:=20230701
 
 include $(INCLUDE_DIR)/package.mk
+include $(INCLUDE_DIR)/kernel.mk
 
 
 define Package/libiwinfo
