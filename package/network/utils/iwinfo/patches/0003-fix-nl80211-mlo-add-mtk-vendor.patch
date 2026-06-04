@@ -41,7 +41,7 @@
 +		e->mlo_rx_rate[e->mlo_num_links].rate =
 +			nla_get_u32(link_attrs[MTK_NL80211_VENDOR_ATTR_CONNECTED_STA_MLD_AFFILIATED_STA_LAST_UL_RATE]) * 100;
 +	}
-+
++	/* more items can be added from the mtk vendor */
 +	e->mlo_num_links++;
 +	if (e->mlo_num_links > 3) e->mlo_num_links = 3;
 +}
@@ -147,12 +147,12 @@
  	if (attr[NL80211_ATTR_MAC])
  		memcpy(e->mac, nla_data(attr[NL80211_ATTR_MAC]), 6);
  
-+	if (attr[NL80211_ATTR_MLD_ADDR])
++	/* if (attr[NL80211_ATTR_MLD_ADDR])
 +		memcpy(e->mld_mac, nla_data(attr[NL80211_ATTR_MLD_ADDR]), 6);
 +
 +	if (attr[NL80211_ATTR_MLO_LINK_ID])
 +		e->mlo_link_id = nla_get_u8(attr[NL80211_ATTR_MLO_LINK_ID]);
-+
++	*/
  	if (attr[NL80211_ATTR_STA_INFO] &&
  	    !nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
  	                      attr[NL80211_ATTR_STA_INFO], stats_policy))
