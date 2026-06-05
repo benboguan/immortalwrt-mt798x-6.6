@@ -90,7 +90,7 @@
 +
 +	return NL_SKIP;
 +}
-+
++/*
 +static void nl80211_fill_mlo_info(const char *ifname,
 +                                  struct iwinfo_assoclist_entry *entries,
 +                                  int count)
@@ -138,7 +138,7 @@
 +
 +nla_put_failure:
 +	nl80211_free(cv);
-+}
++} */
 +
  static int nl80211_get_assoclist_cb(struct nl_msg *msg, void *arg)
  {
@@ -147,12 +147,12 @@
  	if (attr[NL80211_ATTR_MAC])
  		memcpy(e->mac, nla_data(attr[NL80211_ATTR_MAC]), 6);
  
-+	/* if (attr[NL80211_ATTR_MLD_ADDR])
++	if (attr[NL80211_ATTR_MLD_ADDR])
 +		memcpy(e->mld_mac, nla_data(attr[NL80211_ATTR_MLD_ADDR]), 6);
 +
 +	if (attr[NL80211_ATTR_MLO_LINK_ID])
 +		e->mlo_link_id = nla_get_u8(attr[NL80211_ATTR_MLO_LINK_ID]);
-+	*/
++
  	if (attr[NL80211_ATTR_STA_INFO] &&
  	    !nla_parse_nested(sinfo, NL80211_STA_INFO_MAX,
  	                      attr[NL80211_ATTR_STA_INFO], stats_policy))
@@ -161,7 +161,7 @@
  				e->noise = noise;
  
 +		/* MTK STA MLO */
-+		nl80211_fill_mlo_info(ifname, arr.buf, arr.count);
++		//nl80211_fill_mlo_info(ifname, arr.buf, arr.count);
 +
  		*len = (arr.count * sizeof(struct iwinfo_assoclist_entry));
  		return 0;
