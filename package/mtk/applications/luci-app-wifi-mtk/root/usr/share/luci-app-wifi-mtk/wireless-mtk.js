@@ -761,27 +761,30 @@ return view.extend({
 						E('small', `(${bss.network.getIfname()})`)
 					])
 				]),
-				E('span', {}, [
-					bss.mac,
-					bss.mlo_enable ? E('br') : null,
-					bss.mlo_enable ? E('small', _('MLD: %s').format(bss.mld_mac)) : null
-				]),
+				E('span', {}, (function() {
+					const children = [bss.mac];
+					if (bss.mlo_enable && bss.mld_mac) {
+						children.push(E('br'));
+						children.push(E('small', _('MLD: %s').format(bss.mld_mac)));
+					}
+					return children;
+				})()),
 				hint,
 				render_signal_badge(Math.min((bss.signal + 110) / 70 * 100, 100), bss.signal, bss.noise),
 				E('span', {}, (function() {
 					if (bss.mlo_enable && bss.mlo_links) {
-						var spans = [];
+						const spans = [];
 						bss.mlo_links.forEach(function(link, idx) {
-							spans.push(
-								E('span', {}, [
-									E('strong', _('Link %d').format(idx + 1)),
-									E('br'),
-									E('span', format_wifirate(link.rx)),
-									E('br'),
-									E('span', format_wifirate(link.tx))
-								]),
-								idx < bss.mlo_links.length - 1 ? E('br') : null
-							);
+							const elements = [
+								E('strong', _('Link %d').format(idx + 1)),
+								E('br'),
+								E('span', format_wifirate(link.rx)),
+								E('br'),
+								E('span', format_wifirate(link.tx))
+							];
+							if (idx < bss.mlo_links.length - 1)
+								elements.push(E('br'));
+							spans.push(E('span', {}, elements));
 						});
 						return spans;
 					}
@@ -1117,21 +1120,21 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Flag, 'mu_beamformer', _('MU-MIMO'));
 					o.default = o.enabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'noscan', _('Force 40MHz mode'), _('Always use 40MHz channels even if the secondary channel overlaps. Using this option does not comply with IEEE 802.11n-2009!'));
 					o.default = o.enabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'vendor_vht', _('Enable 256-QAM'), _('802.11n 2.4Ghz Only'));
 					o.depends({'_freq': '2g', '!contains': true});
 					o.default = o.enabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'vht_1024', _('Enable 1024-QAM'), _('802.11ax WiFi6 Only'));
 					o.depends({'_freq': '5g', '!contains': true});
 					o.default = o.enabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.ListValue, 'twt', _('Target Wake Time'));
 					add_dep_eht_feature(o);
@@ -1142,18 +1145,18 @@ return view.extend({
 
 					o = ss.taboption('advanced', form.Flag, 'doth', _('802.11h'), _('Enable or disable IEEE 802.11h support (DFS)'));
 					o.default = o.disabled;
-					o.rmempty = true;
+					o.rmempty = false;
 					//o.optional = false;
 
 					o = ss.taboption('advanced', form.Flag, 'dfs', _('DFS'), _('Dynamic Frequency Selection (DFS)'));
 					o.depends({'_freq': '5g', '!contains': true, 'doth': '1'});
 					o.default = o.disabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'zw_dfs', _('Zero-Wait DFS'), _('Advanced Dynamic Frequency Selection (DFS) technology is designed to seamlessly switch DFS channels without interrupting client connections.'));
 					o.depends({'_freq': '5g', '!contains': true, 'doth': '1'});
 					o.default = o.disabled;
-					o.rmempty = true;
+					o.rmempty = false;
 
 					o = ss.taboption('advanced', form.Flag, 'whnat', _('Wireless HWNAT'));
 					o.default = o.enabled;
