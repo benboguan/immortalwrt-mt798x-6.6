@@ -14,9 +14,8 @@ add_driver() {
 }
 
 wireless_setup_vif_failed() {
-	local iface="${1:-$_w_iface}"
-	local error="$2"
-	echo "Interface ${iface:-unknown} setup failed: $error"
+	local error="$1"
+	echo "Interface $_w_iface setup failed: $error"
 }
 
 wireless_setup_failed() {
@@ -40,11 +39,11 @@ prepare_key_wep() {
 }
 
 _wdev_prepare_channel() {
-	json_get_vars channel band hwmode htmode
-	local wpa3_cipher
+	json_get_vars channel band hwmode
 
 	auto_channel=0
 	enable_ht=0
+	htmode=
 	hwmode="${hwmode##11}"
 
 	case "$channel" in
@@ -80,11 +79,6 @@ _wdev_prepare_channel() {
 				*b|*g) band=2g;;
 			esac
 		;;
-	esac
-
-	case "$htmode" in
-		HE*|EHT*) wpa3_cipher="GCMP-256 ";;
-		*) wpa3_cipher="";;
 	esac
 }
 
@@ -248,8 +242,12 @@ wireless_vif_parse_encryption_rsno() {
 }
 
 wireless_vif_parse_encryption() {
-	json_get_vars encryption
+	json_get_vars encryption htmode
 	set_default encryption none
+
+	local device="$__netifd_device"
+	local htmode=$(uci get wireless.${device}.htmode 2>/dev/null)
+	[ -z "$htmode" ] && htmode=""
 
 	auth_mode_open=1
 	auth_mode_shared=0
@@ -257,6 +255,8 @@ wireless_vif_parse_encryption() {
 
 	if [ "$hwmode" = "ad" ]; then
 		wpa_cipher="GCMP"
+	elif [ "$mode" = "ap" ] && [ "$encryption" = "sae-mixed" -o "$encryption" = "sae" ]; then
+		wpa_cipher="CCMP GCMP-256"
 	elif [ "$_w_mode" = "sta" ]; then
 		wpa_cipher="CCMP CCMP-256 GCMP GCMP-256"
 	elif [ "$encryption" = "sae-ext" ]; then
@@ -318,16 +318,25 @@ wireless_vif_parse_encryption() {
 		wpa3*)
 			auth_type=eap2
 		;;
+		sae-ext)
+			if [ "$_w_mode" = "ap" ]; then
+				encryption="*sae-ext*"
+			fi
+			auth_type=sae
+		;;
 		psk3-mixed*|sae-mixed*)
-			auth_type=psk-sae
+			case "$htmode" in
+				HE*|EHT*) auth_type=psk-sae-ext;;
+				*) auth_type=psk-sae;;
+			esac
 		;;
 		sae-ext-mixed*)
 			auth_type=psk-sae-ext
 		;;
-		sae-ext)
-			auth_type=sae-ext
-		;;
 		psk3*|sae*)
+			if [ "$_w_mode" = "ap" ]; then
+				encryption="sae_sae-ext"
+			fi
 			auth_type=sae
 		;;
 		*psk*)

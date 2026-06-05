@@ -106,6 +106,9 @@ hostapd_append_wpa_key_mgmt() {
 		esac
 	}
 
+	rsno_wpa_cipher="$wpa_pairwise"
+	rsno_wpa_cipher_2="$wpa_pairwise"
+
 	case "$rsno_auth_type" in
 		sae)
 			case "$encryption_rsno" in
@@ -117,6 +120,14 @@ hostapd_append_wpa_key_mgmt() {
 			;;
 			esac
 			set_default sae_pwe 2
+		;;
+		psk)
+			rsn_override_key_mgmt="WPA-PSK"
+			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt="WPA-PSK-SHA256"
+		;;
+		eap*)
+			rsn_override_key_mgmt="WPA-EAP"
+			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt="WPA-EAP-SHA256"
 		;;
 	esac
 
@@ -131,6 +142,14 @@ hostapd_append_wpa_key_mgmt() {
 			;;
 			esac
 			set_default sae_pwe 2
+		;;
+		psk)
+			rsn_override_key_mgmt_2="WPA-PSK"
+			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt_2="WPA-PSK-SHA256"
+		;;
+		eap*)
+			rsn_override_key_mgmt_2="WPA-EAP"
+			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt_2="WPA-EAP-SHA256"
 		;;
 	esac
 
@@ -472,7 +491,7 @@ hostapd_common_add_bss_config() {
 	config_add_string group_mgmt_cipher
 
 	config_add_int assoc_phy
-	config_add_int mld_id mld_link_id mld_assoc_phy mld_allowed_phy_bitmap mld_allowed_links mld_radio_mask rsn_overriding
+	config_add_int mld_id mld_link_id mld_assoc_phy mld_allowed_links mld_radio_mask
 	config_add_boolean mld_primary mld_single_link
 	config_add_string mld_addr
 	config_add_int eml_disable
@@ -693,7 +712,7 @@ hostapd_set_bss_options() {
 		ppsk airtime_bss_weight airtime_bss_limit airtime_sta_weight \
 		multicast_to_unicast_all proxy_arp per_sta_vif \
 		eap_server eap_user_file ca_cert server_cert private_key private_key_passwd server_id radius_server_clients radius_server_auth_port \
-		vendor_elements fils ocv apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
+		vendor_elements fils ocv beacon_prot apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
 		fils_discovery_max_interval rnr group_cipher group_mgmt_cipher \
 		mld_id mld_link_id mld_primary mld_addr mld_allowed_links mld_radio_mask eml_disable eml_resp \
 		assocresp_elements dpp
@@ -950,31 +969,6 @@ hostapd_set_bss_options() {
 
 	json_get_values pairwise pairwise
 	json_get_vars group_cipher
-	if [ -n "$pairwise" ]; then
-		case "$pairwise" in
-			*tkip+aes|*tkip+ccmp|*aes+tkip|*ccmp+tkip)
-				wpa_cipher="CCMP TKIP"
-			;;
-			*ccmp256)
-				wpa_cipher="CCMP-256"
-			;;
-			*aes|*ccmp)
-				wpa_cipher="CCMP"
-			;;
-			*tkip)
-				wpa_cipher="TKIP"
-			;;
-			*gcmp256)
-				wpa_cipher="GCMP-256"
-			;;
-			*gcmp)
-				wpa_cipher="GCMP"
-			;;
-			*)
-				wpa_cipher=""
-			;;
-		esac
-	fi
 	[ -n "$wpa_cipher" ] && wpa_pairwise="$wpa_cipher"
 
 	[ -n "$wpa_pairwise" ] && append bss_conf "wpa_pairwise=$wpa_pairwise" "$N"
@@ -1541,10 +1535,8 @@ wpa_supplicant_prepare_interface() {
 
 	_wpa_supplicant_common "$1"
 
-	json_get_vars mode wds multi_ap assoc_phy mld_single_link mld_assoc_phy mld_allowed_phy_bitmap rsn_overriding
-	json_get_vars disable_rrm
-	set_default mld_allowed_phy_bitmap 0
-	set_default rsn_overriding 2
+	json_get_vars mode wds multi_ap assoc_phy mld_single_link mld_assoc_phy
+	json_get_vars disable_rrm sae_pwe
 
 	[ -n "$network_bridge" ] && {
 		fail=
@@ -1576,62 +1568,6 @@ wpa_supplicant_prepare_interface() {
 		country_str="country=$country"
 	}
 
-	local rsn_overriding_str=
-	[ -n "$rsn_overriding" ] && {
-		rsn_overriding_str="rsn_overriding=$rsn_overriding"
-	}
-
-	local mld_force_single_link=
-	[ -n "$mld_single_link" ] && {
-		mld_force_single_link=$mld_single_link
-	}
-
-	if !([ "$mld_allowed_phy_bitmap" -ge 0 ] && [ "$mld_allowed_phy_bitmap" -le 7 ]); then
-		echo "error: Invalid MLD allowed phy: ${mld_allowed_phy_bitmap}"
-		return 1
-	fi
-
-	[ -n "$assoc_phy" ] && mld_assoc_phy=$assoc_phy
-
-	local mld_connect_band_pref=
-	if [ -n "$mld_assoc_phy" ]; then
-		if [ $(($mld_allowed_phy_bitmap & $((1<<$mld_assoc_phy)))) -eq 0 ]; then
-			echo "error: Conflict between preferred association phy and allowed phy"
-			return 1
-		fi
-
-		if [ $(($mld_allowed_phy_bitmap & $((1<<$radio)))) -eq 0 ]; then
-			echo "error: Conflict between UCI setup phy and allowed phy"
-			return 1
-		fi
-
-		mld_connect_band_pref=$(($mld_assoc_phy+1))
-	fi
-
-	local radio0_scan_list="2412 2417 2422 2427 2432 2437 2442 2447 2452 2457 2462 2467 2472"
-	local radio1_scan_list="5180 5200 5220 5240 5260 5280 5300 5320 5500 5520 5540 5560 5580 5600 5620 5640 5660 5680 5700 5720 5745 5765 5785 5805 5825 5845 5865 5885"
-	local radio2_scan_list="5955 5975 5995 6015 6035 6055 6075 6095 6115 6135 6155 6175 6195 6215 6235 6255 6275 6295 6315 6335 6355 6375 6395 6415 6435 6455 6475 6495 6515 6535 6555 6575 6595 6615 6635 6655 6675 6695 6715 6735 6755 6775 6795 6815 6835 6855 6875 6895 6915 6935 6955 6975 6995 7015 7035 7055 7075 7095 7115"
-	local scan_list=
-	if [ $mld_allowed_phy_bitmap -gt 0 ]; then
-		if [ "$mld_assoc_phy" = "0" ]; then
-			scan_list="$radio0_scan_list"
-		elif [ "$mld_assoc_phy" = "1" ]; then
-			scan_list="$radio1_scan_list"
-		elif [ "$mld_assoc_phy" = "2" ]; then
-			scan_list="$radio2_scan_list"
-		fi
-	else
-		# For Legacy STA
-		if [ "$radio" = "0" ]; then
-			scan_list="$radio0_scan_list"
-		elif [ "$radio" = "1" ]; then
-			scan_list="$radio1_scan_list"
-		elif [ "$radio" = "2" ]; then
-			scan_list="$radio2_scan_list"
-		fi
-	fi
-
-	local tx_queue_data2_burst="tx_queue_data2_burst=0"
 	multiap_flag_file="${_config}.is_multiap"
 	if [ "$multi_ap" = "1" ]; then
 		touch "$multiap_flag_file"
@@ -1642,12 +1578,9 @@ wpa_supplicant_prepare_interface() {
 	cat > "$_config" <<EOF
 ${scan_list:+freq_list=$scan_list}
 $ap_scan
+ctrl_interface=/var/run/wpa_supplicant
 $country_str
-$tx_queue_data2_burst
-${mld_connect_band_pref:+mld_connect_band_pref=$mld_connect_band_pref}
-${mld_force_single_link:+mld_force_single_link=$mld_force_single_link}
-${mld_allowed_phy_bitmap:+mld_allowed_phy=$mld_allowed_phy_bitmap}
-$rsn_overriding_str
+sae_pwe=2
 wps_cred_add_sae=1
 ${disable_rrm:+disable_rrm=$disable_rrm}
 EOF
@@ -1662,16 +1595,16 @@ wpa_supplicant_set_fixed_freq() {
 	append network_data "frequency=$freq" "$N$T"
 	case "$htmode" in
 		NOHT) append network_data "disable_ht=1" "$N$T";;
-		HE20|HT20|VHT20) append network_data "disable_ht40=1" "$N$T";;
-		HT40*|VHT40|VHT80|VHT160|HE40|HE80|HE160) append network_data "ht40=1" "$N$T";;
+		HT20|VHT20|HE20|EHT20) append network_data "disable_ht40=1" "$N$T";;
+		HT40*|VHT40|VHT80|VHT160|HE40*|HE80|HE160|EHT40*|EHT80|EHT160) append network_data "ht40=1" "$N$T";;
 	esac
 	case "$htmode" in
 		VHT*) append network_data "vht=1" "$N$T";;
 	esac
 	case "$htmode" in
-		HE80|VHT80) append network_data "max_oper_chwidth=1" "$N$T";;
-		HE160|VHT160) append network_data "max_oper_chwidth=2" "$N$T";;
-		HE20|HE40|VHT20|VHT40) append network_data "max_oper_chwidth=0" "$N$T";;
+		EHT80|HE80|VHT80) append network_data "max_oper_chwidth=1" "$N$T";;
+		EHT160|HE160|VHT160) append network_data "max_oper_chwidth=2" "$N$T";;
+		EHT20|EHT40*|HE20|HE40*|VHT20|VHT40) append network_data "max_oper_chwidth=0" "$N$T";;
 		*) append network_data "disable_vht=1" "$N$T";;
 	esac
 }
@@ -1688,7 +1621,7 @@ wpa_supplicant_add_network() {
 	json_get_vars \
 		ssid bssid key \
 		basic_rate mcast_rate \
-		ieee80211w ieee80211r fils ocv \
+		ieee80211w ieee80211r fils ocv beacon_prot \
 		multi_ap \
 		default_disabled \
 		mtk_vendor_element
@@ -1699,7 +1632,7 @@ wpa_supplicant_add_network() {
 		sae|owe|eap2|eap192|dpp)
 			set_default ieee80211w 2
 		;;
-		psk-sae)
+		psk-sae|psk-sae-ext)
 			set_default ieee80211w 1
 		;;
 	esac
@@ -1774,7 +1707,7 @@ wpa_supplicant_add_network() {
 
 			key_mgmt="$wpa_key_mgmt"
 
-			if [ "$_w_mode" = "mesh" ] || [ "$auth_type" = "sae" ]; then
+			if [ "$_w_mode" = "mesh" ] || [ "$auth_type" = "psk-sae" -o "$auth_type" = "sae" -o "$auth_type" = "psk-sae-ext" ]; then
 				passphrase="sae_password=\"${key}\""
 			else
 				if [ ${#key} -eq 64 ]; then
@@ -1932,31 +1865,6 @@ wpa_supplicant_add_network() {
 
 	json_get_values pairwise pairwise
 	json_get_vars group_cipher group_mgmt_cipher
-	if [ -n "$pairwise" ]; then
-		case "$pairwise" in
-			*tkip+aes|*tkip+ccmp|*aes+tkip|*ccmp+tkip)
-				wpa_cipher="CCMP TKIP"
-			;;
-			*ccmp256)
-				wpa_cipher="CCMP-256"
-			;;
-			*aes|*ccmp)
-				wpa_cipher="CCMP"
-			;;
-			*tkip)
-				wpa_cipher="TKIP"
-			;;
-			*gcmp256)
-				wpa_cipher="GCMP-256"
-			;;
-			*gcmp)
-				wpa_cipher="GCMP"
-			;;
-			*)
-				wpa_cipher=""
-			;;
-		esac
-	fi
 	[ -n "$wpa_cipher" ] && wpa_pairwise="$wpa_cipher"
 
 	[ "$mode" = mesh ] || {
@@ -1973,8 +1881,14 @@ wpa_supplicant_add_network() {
 		esac
 
 		[ -n "$wpa_pairwise" ] && append network_data "pairwise=$wpa_pairwise" "$N$T"
-		[ -z "$group_cipher" ] && group_cipher="CCMP TKIP CCMP-256 GCMP GCMP-256"
-		[ -n "$group_cipher" ] && append network_data "group=$group_cipher" "$N$T"
+		[ -z "$group_cipher" ] && group_cipher="$wpa_cipher"
+		if [ -n "$group_cipher" ]; then
+			if [ "$group_cipher" == "CCMP TKIP" ] || [ "$group_cipher" == "CCMP GCMP-256" ]; then
+				append network_data "group=CCMP" "$N$T"
+			else
+				append network_data "group=$group_cipher" "$N$T"
+			fi
+		fi
 
 		if [ -n "$sae_groups" -o -n "$owe_groups" ]; then
 			case "$auth_type" in
@@ -1993,13 +1907,33 @@ wpa_supplicant_add_network() {
 				json_get_vars ieee80211w_max_timeout ieee80211w_retry_timeout beacon_prot
 				append network_data "ieee80211w=$ieee80211w" "$N$T"
 				[ "$ieee80211w" -gt "0" ] && {
-					if [ "$auth_type" = "eap192" ]; then
+					if [ -z "$group_mgmt_cipher" ]; then
+						case "$group_cipher" in
+						CCMP-256)
+							ieee80211w_mgmt_cipher="BIP-CMAC-256"
+						;;
+						CCMP)
+							ieee80211w_mgmt_cipher="AES-128-CMAC"
+						;;
+						GCMP-256)
+							ieee80211w_mgmt_cipher="BIP-GMAC-256"
+						;;
+						GCMP)
+							ieee80211w_mgmt_cipher="BIP-GMAC-128"
+						;;
+						esac
+						append network_data "group_mgmt=$ieee80211w_mgmt_cipher" "$N$T"
+					elif [ "$auth_type" = "eap192" ]; then
 						append network_data "group_mgmt=BIP-GMAC-256" "$N$T"
 					elif [ -n "$group_mgmt_cipher" ]; then
 						append network_data "group_mgmt=$group_mgmt_cipher" "$N$T"
 					fi
 					[ -n "$beacon_prot" ] && \
 						append network_data "beacon_prot=$beacon_prot" "$N$T"
+					[ -n "$ieee80211w_max_timeout" ] && \
+						append network_data "assoc_sa_query_max_timeout=$ieee80211w_max_timeout" "$N"
+					[ -n "$ieee80211w_retry_timeout" ] && \
+						append network_data "assoc_sa_query_retry_timeout=$ieee80211w_retry_timeout" "$N"
 				}
 			;;
 		esac
@@ -2077,7 +2011,6 @@ network={
 	$scan_ssid
 	ssid="$ssid"
 	key_mgmt=$key_mgmt
-	sae_pwe=$sae_pwe
 	$network_data
 }
 EOF
@@ -2093,7 +2026,7 @@ wpa_supplicant_run() {
 
 	ubus wait_for wpa_supplicant
 	local supplicant_res="$(ubus call wpa_supplicant config_add "{ \
-		\"driver\": \"${_w_driver:-wext}\", \"ctrl\": \"$_rpath\", \
+		\"driver\": \"${_w_driver:-nl80211}\", \"ctrl\": \"$_rpath\", \
 		\"iface\": \"$ifname\", \"config\": \"$_config\" \
 		${network_bridge:+, \"bridge\": \"$network_bridge\"} \
 		${hostapd_ctrl:+, \"hostapd_ctrl\": \"$hostapd_ctrl\"} \

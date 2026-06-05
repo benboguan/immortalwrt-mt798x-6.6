@@ -5,8 +5,8 @@
 . /lib/netifd/wireless/mtk_wifi_config.sh
 
 init_wireless_driver "$@"
-L1_PROFILE="/etc/wireless/l1profile.dat"
 
+L1_PROFILE="/etc/wireless/l1profile.dat"
 if [ -f "$L1_PROFILE" ]; then
     DAT_PATH=$(awk -F= '/^INDEX0_init_path=/ {print $2; exit}' "$L1_PROFILE")
     if [ -z "$DAT_PATH" ] || [ ! -f "$DAT_PATH" ]; then
@@ -42,11 +42,10 @@ drv_mac80211_init_device_config() {
 	config_add_string path phy 'macaddr:macaddr'
 	config_add_string tx_burst
 	config_add_string distance
-	config_add_int radio beacon_int chanbw frag rts
+	config_add_int beacon_int chanbw frag rts
 	config_add_int mbssid mu_onoff rnr obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
 	config_add_int num_global_macaddr multiple_bssid
-	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar
 	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar background_cert_mode
 	config_add_array ht_capab
 	config_add_array channels
@@ -195,7 +194,7 @@ apply_htmode() {
     local dat_file="$1" htmode="$2"
     shift 2
     # 剩余参数格式：ht_bw vht_bw eht_apbw wireless_mode
-    while [ $# -ge 4 ]; do
+    while [ $# -ge 5 ]; do
         local name="$1" ht_bw="$2" vht_bw="$3" eht_apbw="$4" wireless_mode="$5"
         if [ "$htmode" = "$name" ]; then
             set_dat_base "$dat_file" "$ht_bw" "$vht_bw" "$eht_apbw" "$wireless_mode"
@@ -215,19 +214,19 @@ set_dat_htmode() {
     case "$band" in
         2g)
             apply_htmode "$dat_file" "$htmode" \
-                "NOHT"   "0" "0" "0" "3"  \   # PHY_11BG_MIXED
-                "HT20"   "0" "0" "0" "9"  \   # PHY_11BGN_MIXED
-                "HT40"   "1" "0" "1" "9"  \
-                "HE20"   "0" "0" "0" "16" \   # PHY_11AX_24G
+                "NOHT"   "0" "0" "0" "3" \
+                "HT20"   "0" "0" "0" "9" \
+                "HT40"   "1" "0" "1" "9" \
+                "HE20"   "0" "0" "0" "16" \
                 "HE40"   "1" "0" "1" "16" \
-                "EHT20"  "0" "0" "0" "22" \   # PHY_11BE_24G
+                "EHT20"  "0" "0" "0" "22" \
                 "EHT40"  "1" "0" "1" "22"
             ;;
         5g)
             apply_htmode "$dat_file" "$htmode" \
-                "NOHT"    "0" "0" "0" "2"  \   # PHY_11A
-                "HT20"    "0" "0" "0" "8"  \
-                "HT40"    "1" "0" "1" "8"  \
+                "NOHT"    "0" "0" "0" "2" \
+                "HT20"    "0" "0" "0" "8" \
+                "HT40"    "1" "0" "1" "8" \
                 "VHT20"   "0" "0" "0" "14" \
                 "VHT40"   "1" "0" "1" "14" \
                 "VHT80"   "1" "1" "2" "14" \
@@ -274,7 +273,7 @@ mac80211_hostapd_setup_base() {
 	[ -n "$acs_exclude_dfs" ] && [ "$acs_exclude_dfs" -gt 0 ] &&
 		append base_cfg "acs_exclude_dfs=1" "$N"
 
-	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mbssid mu_onoff rnr obss_interval
+	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mbssid mu_onoff rnr obss_interval vendor_vht
 	json_get_vars etxbfen:1 itxbfen:0 eml_disable eml_resp lpi_psd sku_idx lpi_sku_idx lpi_bcn_enhance
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
@@ -499,7 +498,7 @@ mac80211_hostapd_setup_base() {
 	[ "$hwmode" = "a" ] || enable_ac=0
 	[ "$band" = "6g" ] && enable_ac=0
 
-	if [ "$enable_ac" != "0" ]; then
+	if [ "$enable_ac" != "0" -o "$vendor_vht" = "1" ]; then
 		json_get_vars \
 			rxldpc:1 \
 			short_gi_80:1 \
@@ -807,6 +806,7 @@ mac80211_hostapd_setup_bss() {
 $hostapd_cfg
 #bssid=$macaddr
 ${default_macaddr:+#default_macaddr}
+${random_macaddr:+#random_macaddr}
 ${dtim_period:+dtim_period=$dtim_period}
 ${max_listen_int:+max_listen_interval=$max_listen_int}
 EOF
@@ -823,10 +823,6 @@ mac80211_generate_mac() {
 	local phy="$1"
 	local id="${macidx:-0}"
 
-	if [ "$phy" = "mld" ]; then
-		id=60;
-		phy=phy0;
-	fi
 	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr mbssid=${multiple_bssid:-0}
 }
 
@@ -1058,12 +1054,14 @@ mac80211_prepare_vif() {
 	json_add_string _ifname "$ifname"
 
 	default_macaddr=
+	random_macaddr=
 	if [ -z "$macaddr" ]; then
 		macaddr="$(mac80211_generate_mac $phy)"
 		macidx="$(($macidx + 1))"
 		default_macaddr=1
 	elif [ "$macaddr" = 'random' ]; then
 		macaddr="$(macaddr_random)"
+		random_macaddr=1
 	fi
 	json_add_string _macaddr "$macaddr"
 	json_add_string _default_macaddr "$default_macaddr"
@@ -1309,13 +1307,11 @@ wpa_supplicant_add_interface() {
 
 wpa_supplicant_set_config() {
 	local phy="$1"
-	local radio="$2"
 	local prev
 
 	json_set_namespace wpa_supp prev
 	json_close_array
 	json_add_string phy "$phy"
-	json_add_int radio "$radio"
 	json_add_int num_global_macaddr "$num_global_macaddr"
 	json_add_boolean defer 1
 	local data="$(json_dump)"
@@ -1347,6 +1343,16 @@ mac80211_append_reserved_ifnames() {
 	local max_ap="${MTK_RESERVED_AP_BSSID_NUM:-4}"
 	local max_sta="${MTK_RESERVED_APCLI_NUM:-1}"
 	local idx
+
+	case "$max_ap" in
+		''|*[!0-9]*) max_ap=4 ;;
+	esac
+	[ "$max_ap" -lt 4 ] && max_ap=4
+
+	case "$max_sta" in
+		''|*[!0-9]*) max_sta=1 ;;
+	esac
+	[ "$max_sta" -lt 1 ] && max_sta=1
 
 	idx=0
 	while [ "$idx" -lt "$max_ap" ]; do
@@ -1383,6 +1389,16 @@ mac80211_create_reserved_ifnames() {
 	local max_ap="${MTK_RESERVED_AP_BSSID_NUM:-4}"
 	local max_sta="${MTK_RESERVED_APCLI_NUM:-1}"
 	local idx
+
+	case "$max_ap" in
+		''|*[!0-9]*) max_ap=4 ;;
+	esac
+	[ "$max_ap" -lt 4 ] && max_ap=4
+
+	case "$max_sta" in
+		''|*[!0-9]*) max_sta=1 ;;
+	esac
+	[ "$max_sta" -lt 1 ] && max_sta=1
 
 	idx=0
 	while [ "$idx" -lt "$max_ap" ]; do
@@ -1579,11 +1595,10 @@ hostapd_set_config() {
 
 wpa_supplicant_start() {
 	local phy="$1"
-	local radio="$2"
 
 	[ -n "$wpa_supp_init" ] || return 0
 
-	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "radio": '"$radio"', "num_global_macaddr": '"$num_global_macaddr"' }' > /dev/null
+	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "num_global_macaddr": '"$num_global_macaddr"' }' > /dev/null
 }
 
 mac80211_setup_supplicant() {
@@ -1716,34 +1731,8 @@ mac80211_reset_config() {
 	local phy="$1"
 
 	hostapd_conf_file="/var/run/hostapd-$phy.conf"
-	#ubus_call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
-	#ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
-	ubus_call hostapd config_set '{ "phy": "'"$phy"'", "radio": '"$radio"', "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
-	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "radio": '"$radio"', "config": [] }' > /dev/null
-}
-
-mac80211_get_first_ap_macaddr() {
-	local _macaddr=""
-	local _ifaces _iface _type
-
-	json_get_keys _ifaces interfaces
-	json_select interfaces 2>/dev/null || return 1
-
-	for _iface in $_ifaces; do
-		json_select "$_iface" 2>/dev/null || continue
-		json_select config 2>/dev/null || { json_select ..; continue; }
-		json_get_var _type mode
-		if [ "$_type" = "ap" ]; then
-			json_get_var _macaddr macaddr
-			json_select ..
-			json_select ..
-			break
-		fi
-		json_select ..
-		json_select ..
-	done
-
-	echo "$_macaddr"
+	ubus_call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
+	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
 }
 
 mac80211_device_needs_restart() {
@@ -1883,7 +1872,6 @@ drv_mac80211_setup() {
 
 	macidx=0
 	staidx=0
-	mbssidx=0
 
 	[ "$phy" = "phy1" ] && macidx=20
 	[ "$phy" = "phy2" ] && macidx=40
@@ -1942,6 +1930,7 @@ drv_mac80211_setup() {
 	# [ -f "$hostapd_conf_file" ] && mv "$hostapd_conf_file" "$hostapd_conf_file.prev"
 
 	for_each_interface "sta adhoc mesh" mac80211_set_noscan
+	[ -n "$has_ap" ] && mac80211_hostapd_setup_base "$phy"
 	# 注意：原来的 mac80211_hostapd_setup_base 在这里被调用，但现在我们移到后面
 	# 因为需要先准备好所有接口信息
 
@@ -1984,11 +1973,9 @@ drv_mac80211_setup() {
 	json_set_namespace wdev_uc prev
 	wdev_tool "$phy" set_config "$(json_dump)" $active_ifnames
 	json_set_namespace "$prev"
+	mac80211_create_reserved_ifnames "$phy"
 	if [ -n "$has_ap" -a -x /usr/sbin/hostapd ]; then
 		hostapd_set_config "$phy"
-		mac80211_create_reserved_ifnames "$phy"
-	else
-		mac80211_create_reserved_ifnames "$phy"
 	fi
 	[ -n "$hostapd_lock_acquired" ] && mac80211_release_hostapd_lock
 

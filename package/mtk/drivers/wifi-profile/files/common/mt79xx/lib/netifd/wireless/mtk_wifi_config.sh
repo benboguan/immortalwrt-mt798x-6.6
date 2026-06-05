@@ -3135,25 +3135,38 @@ generate_hostapd_from_uci_improved() {
 
         # 只处理目标 phy，避免不同 radio 的 reload 互相删除配置文件
         [ -n "$target_phy" ] && [ "$target_phy" != "$phy" ] && continue
-        
-        # 清理该phy的所有旧配置文件（在生成新配置前）
-        # 注意：只删除配置文件，不删除pid文件和VAP接口（因为进程可能还在运行）
-        # pid文件和接口的清理应该在hostapd_set_config中进行
+
+        # 获取设备级全局参数（仅供 BSS 配置内部使用，不再生成设备级文件）
+        local raw_band=$(get_uci_value "wifi-device" "$device" "band")
+        local band=$(map_band_value "$raw_band")
+        local htmode=$(get_uci_value "wifi-device" "$device" "htmode")
+        local channel=$(get_uci_value "wifi-device" "$device" "channel")
+        [ -z "$channel" ] && channel="auto"
+        local txpower=$(get_uci_value "wifi-device" "$device" "txpower")
+        local country=$(get_uci_value "wifi-device" "$device" "country")
+        local hwmode="a"
+        [ "$band" = "2.4G" ] && hwmode="g"
+
+        # 清理该phy的所有旧BSS配置文件
         logger -t mtk_wifi_config "Cleaning up old hostapd configs for $phy"
         for old_conf in /var/run/hostapd-${phy}-ap*.conf; do
             [ -f "$old_conf" ] && rm -f "$old_conf"
         done
-        
+
         local ap_index=0  # 每个设备下的AP索引从0开始
-        
-        # 遍历该设备下的所有AP模式接口
+        # 收集该设备下的所有AP接口，以便为多BSSID生成正确的center frequency
+        local ap_interfaces=""
         for iface_name in $(uci show wireless | grep "=wifi-iface" | cut -d'.' -f2 | cut -d'=' -f1); do
             local mode=$(get_uci_value "wifi-iface" "$iface_name" "mode")
             local iface_device=$(get_uci_value "wifi-iface" "$iface_name" "device")
             
             # 只处理当前设备下的AP模式接口
             if [ "$mode" = "ap" ] && [ "$iface_device" = "$device" ]; then
-            # 检查接口是否被禁用
+                ap_interfaces="$ap_interfaces $iface_name"
+            fi
+        done
+
+        for iface_name in $ap_interfaces; do
             local iface_disabled=$(get_uci_value "wifi-iface" "$iface_name" "disabled")
             # 检查设备是否被禁用
             local device_disabled=$(get_uci_value "wifi-device" "$device" "disabled")
@@ -3162,16 +3175,14 @@ generate_hostapd_from_uci_improved() {
             if [ "$iface_disabled" = "1" ] || [ "$device_disabled" = "1" ]; then
                 continue
             fi
-            
+
             local ssid=$(get_uci_value "wifi-iface" "$iface_name" "ssid")
             local encryption=$(get_uci_value "wifi-iface" "$iface_name" "encryption")
             local key=$(get_uci_value "wifi-iface" "$iface_name" "key")
             local network=$(get_uci_value "wifi-iface" "$iface_name" "network")
             
             # 获取设备参数
-            local channel=$(get_uci_value "wifi-device" "$device" "channel")
-            # band 将在后面通过 map_band_value 转换（在写入 hw_mode 之前）
-            local htmode=$(get_uci_value "wifi-device" "$device" "htmode")
+            # channel, band, htmode 已从设备获取，无需重复
             # beacon_int: 先检查 wifi-iface，如果没有再检查 wifi-device（参考 hostapd.lua 行 1327-1334）
             local beacon_int=$(get_uci_value "wifi-iface" "$iface_name" "beacon_int")
             [ -z "$beacon_int" ] && beacon_int=$(get_uci_value "wifi-device" "$device" "beacon_int")
@@ -3275,217 +3286,7 @@ generate_hostapd_from_uci_improved() {
             else
                 echo "bridge=br-lan" >> "$conf_file"
             fi
-            
-            # Channel 设置（参考 hostapd.lua 行 1277-1284）
-            local acs=false
-            if [ "$channel" = "auto" ] || [ "$channel" = "0" ] || [ -z "$channel" ]; then
-                echo "channel=0" >> "$conf_file"
-                acs=true
-            else
-                echo "channel=$channel" >> "$conf_file"
-            fi
-            
-            # Driver（参考 hostapd.lua 行 1288）
-            echo "driver=nl80211" >> "$conf_file"
-            
-            # 转换 band 格式（wireless-old 格式使用 2g/5g，需要转换为 2.4G/5G）
-            local raw_band=$(get_uci_value "wifi-device" "$device" "band")
-            local band=$(map_band_value "$raw_band")
-            
-            # 硬件模式（参考 hostapd.lua 行 1290-1324）
-            if [ "$band" = "2.4G" ]; then
-                if [ "$acs" = true ]; then
-                    echo "hw_mode=any" >> "$conf_file"
-                else
-                    echo "hw_mode=g" >> "$conf_file"
-                fi
-                echo "preamble=1" >> "$conf_file"
-                echo "ieee80211n=1" >> "$conf_file"
-                echo "ieee80211ac=1" >> "$conf_file"
-                echo "ieee80211ax=1" >> "$conf_file"
-                echo "ieee80211be=1" >> "$conf_file"
-            elif [ "$band" = "5G" ]; then
-                if [ "$acs" = true ]; then
-                    echo "hw_mode=any" >> "$conf_file"
-                else
-                    echo "hw_mode=a" >> "$conf_file"
-                fi
-                echo "ieee80211n=1" >> "$conf_file"
-                echo "ieee80211ac=1" >> "$conf_file"
-                echo "ieee80211ax=1" >> "$conf_file"
-                echo "ieee80211be=1" >> "$conf_file"
-            elif [ "$band" = "6G" ]; then
-                if [ "$acs" = true ]; then
-                    echo "hw_mode=any" >> "$conf_file"
-                else
-                    echo "hw_mode=a" >> "$conf_file"
-                fi
-                echo "ieee80211ax=1" >> "$conf_file"
-                echo "ieee80211be=1" >> "$conf_file"
-                echo "he_6ghz_max_mpdu=0" >> "$conf_file"
-                echo "he_6ghz_max_ampdu_len_exp=0" >> "$conf_file"
-                echo "he_6ghz_rx_ant_pat=0" >> "$conf_file"
-                echo "he_6ghz_tx_ant_pat=0" >> "$conf_file"
-                echo "op_class=131" >> "$conf_file"
-            fi
-            
-            # noscan（参考 hostapd.lua 行 1325）
-            echo "noscan=1" >> "$conf_file"
-            
-            # HT/VHT 能力配置（根据参数动态构建 ht_capab 和 vht_capab）
-            # 如果参数未设置，根据 wireless_mode 或 htmode 自动启用
-            local ht_capab_items=""
-            local vht_capab_items=""
-            
-            # 确定带宽（用于 ht_capab 和 vht_capab）
-            local ht_bw=""
-            local vht_bw=""
-            case "$htmode" in
-                "HT20")
-                    ht_bw="HT20"
-                    ;;
-                "HT40"|"HT40+"|"HT40-")
-                    ht_bw="HT40"
-                    ;;
-                "VHT20")
-                    vht_bw="VHT20"
-                    ;;
-                "VHT40")
-                    vht_bw="VHT40"
-                    ;;
-                "VHT80")
-                    vht_bw="VHT80"
-                    ;;
-                "VHT160"|"VHT80_80"|"VHT8080")
-                    vht_bw="VHT160"
-                    ;;
-                "HE20"|"HE40"|"HE80"|"HE160"|"HE320")
-                    # HE 模式也支持 VHT
-                    case "$htmode" in
-                        "HE20") vht_bw="VHT20" ;;
-                        "HE40") vht_bw="VHT40" ;;
-                        "HE80") vht_bw="VHT80" ;;
-                        "HE160"|"HE320") vht_bw="VHT160" ;;
-                    esac
-                    ;;
-                "EHT20"|"EHT40"|"EHT80"|"EHT160"|"EHT320")
-                    # EHT 模式也支持 VHT
-                    case "$htmode" in
-                        "EHT20") vht_bw="VHT20" ;;
-                        "EHT40") vht_bw="VHT40" ;;
-                        "EHT80") vht_bw="VHT80" ;;
-                        "EHT160"|"EHT320") vht_bw="VHT160" ;;
-                    esac
-                    ;;
-            esac
-            
-            # 构建 HT 能力（如果启用了 ieee80211n）
-            if [ -n "$ht_bw" ] || [ "$band" = "2.4G" ] || [ "$band" = "5G" ]; then
-                # 如果参数未设置，根据 wireless_mode 自动启用
-                # 这里我们根据 htmode 来判断，如果包含 HT/HE/EHT，则自动启用
-                local ht_ldpc_val="$ht_ldpc"
-                local ht_stbc_val="$ht_stbc"
-                local ht_gi_val="$ht_gi"
-                
-                if [ -z "$ht_ldpc_val" ]; then
-                    # 如果 htmode 包含 HT/HE/EHT，自动启用
-                    case "$htmode" in
-                        "HT"*|"HE"*|"EHT"*)
-                            ht_ldpc_val="1"
-                            ;;
-                        *)
-                            ht_ldpc_val="0"
-                            ;;
-                    esac
-                fi
-                if [ -z "$ht_stbc_val" ]; then
-                    case "$htmode" in
-                        "HT"*|"HE"*|"EHT"*)
-                            ht_stbc_val="1"
-                            ;;
-                        *)
-                            ht_stbc_val="0"
-                            ;;
-                    esac
-                fi
-                if [ -z "$ht_gi_val" ]; then
-                    case "$htmode" in
-                        "HT"*|"HE"*|"EHT"*)
-                            ht_gi_val="1"
-                            ;;
-                        *)
-                            ht_gi_val="0"
-                            ;;
-                    esac
-                fi
-                
-                # 构建 ht_capab
-                if [ -n "$ht_bw" ]; then
-                    ht_capab_items="$ht_bw"
-                    [ "$ht_ldpc_val" = "1" ] && ht_capab_items="$ht_capab_items LDPC"
-                    [ "$ht_stbc_val" = "1" ] && ht_capab_items="$ht_capab_items STBC"
-                    [ "$ht_gi_val" = "1" ] && ht_capab_items="$ht_capab_items SHORT-GI-20 SHORT-GI-40"
-                    [ "$ht_opmode" = "1" ] && ht_capab_items="$ht_capab_items GF"
-                    [ "$ht_amsdu" = "1" ] && ht_capab_items="$ht_capab_items MAX-AMSDU-7935"
-                fi
-            fi
-            
-            # 构建 VHT 能力（如果启用了 ieee80211ac）
-            if [ -n "$vht_bw" ] || [ "$band" = "5G" ] || [ "$band" = "6G" ]; then
-                # 如果参数未设置，根据 wireless_mode 自动启用
-                local vht_ldpc_val="$vht_ldpc"
-                local vht_stbc_val="$vht_stbc"
-                local vht_sgi_val="$vht_sgi"
-                
-                if [ -z "$vht_ldpc_val" ]; then
-                    # 如果 htmode 包含 VHT/HE/EHT，自动启用
-                    case "$htmode" in
-                        "VHT"*|"HE"*|"EHT"*)
-                            vht_ldpc_val="1"
-                            ;;
-                        *)
-                            vht_ldpc_val="0"
-                            ;;
-                    esac
-                fi
-                if [ -z "$vht_stbc_val" ]; then
-                    case "$htmode" in
-                        "VHT"*|"HE"*|"EHT"*)
-                            vht_stbc_val="1"
-                            ;;
-                        *)
-                            vht_stbc_val="0"
-                            ;;
-                    esac
-                fi
-                if [ -z "$vht_sgi_val" ]; then
-                    case "$htmode" in
-                        "VHT"*|"HE"*|"EHT"*)
-                            vht_sgi_val="1"
-                            ;;
-                        *)
-                            vht_sgi_val="0"
-                            ;;
-                    esac
-                fi
-                
-                # 构建 vht_capab
-                if [ -n "$vht_bw" ]; then
-                    vht_capab_items="$vht_bw"
-                    [ "$vht_ldpc_val" = "1" ] && vht_capab_items="$vht_capab_items LDPC"
-                    [ "$vht_stbc_val" = "1" ] && vht_capab_items="$vht_capab_items STBC"
-                    [ "$vht_sgi_val" = "1" ] && vht_capab_items="$vht_capab_items SHORT-GI-80 SHORT-GI-160"
-                fi
-            fi
-            
-            # 写入 ht_capab 和 vht_capab
-            if [ -n "$ht_capab_items" ]; then
-                echo "ht_capab=[$ht_capab_items]" >> "$conf_file"
-            fi
-            if [ -n "$vht_capab_items" ]; then
-                echo "vht_capab=[$vht_capab_items]" >> "$conf_file"
-            fi
-            
+
             # Beacon 间隔（参考 hostapd.lua 行 1327-1335）
             if [ -n "$beacon_int" ]; then
                 if [ "$beacon_int" -ge 15 ] && [ "$beacon_int" -le 65535 ] 2>/dev/null; then
@@ -3532,12 +3333,10 @@ generate_hostapd_from_uci_improved() {
                 ieee80211w="2"
             else
                 if [ -n "$map_mode" ] && [ "$map_mode" != "0" ]; then
-                    if [ -z "$ieee80211w" ]; then
-                        ieee80211w="1"
-                    fi
+                    [ -z "$ieee80211w" ] && ieee80211w="1"
                 fi
             fi
-            
+
             # 根据加密类型设置参数（参考 hostapd.lua 的 encryption_table）
             case "$encryption" in
                 "none")
@@ -4013,15 +3812,14 @@ generate_hostapd_from_uci_improved() {
                     echo "wps_independent=1" >> "$conf_file"
                 fi
             fi
-            
+
             echo "✅ 已生成改进版 hostapd 配置: $conf_file (interface: $physical_ifname)"
-            
+
             # 增加该设备下的AP索引
             ap_index=$((ap_index + 1))
-            fi
         done
     done
-    
+
     echo "✅ 改进版 hostapd 配置生成完成"
 }
 
