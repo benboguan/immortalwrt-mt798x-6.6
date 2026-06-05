@@ -72,7 +72,20 @@
  	/* fill associated at */
  	pIbssInfo->assoc_at = pEntry->assoc_at;
  
-@@ -4506,12 +4557,26 @@ static int CFG80211DRV_OpsStaChg
+@@ -4159,7 +4208,11 @@ static int CFG80211DRV_OpsSurveyGet
+ 	mt_priv_chan_survey_info->rx_time = pAd->ScanCtrl.rx_time[idx];
+ 	mt_priv_chan_survey_info->bss_rx_time = pAd->ScanCtrl.bss_rx_time[idx];
+ 	mt_priv_chan_survey_info->tx_time = pAd->ScanCtrl.tx_time[idx];
+-	mt_priv_chan_survey_info->ch_AvgNF = pAd->ScanCtrl.ch_AvgNF[idx];
++	if (pAd->ScanCtrl.ch_AvgNF[idx])
++		mt_priv_chan_survey_info->ch_AvgNF = pAd->ScanCtrl.ch_AvgNF[idx];
++	else
++		mt_priv_chan_survey_info->ch_AvgNF = wdev->RssiSample.AvgRssi - wdev->LastSNR0;
++	//mt_priv_chan_survey_info->ch_AvgNF = pAd->noise_floor;
+ 	mt_priv_chan_survey_info->active_time = pAd->ScanCtrl.active_time[idx];
+ 	return 0;
+ #else /* !CFG80211_FULL_OPS_SUPPORT */
+@@ -4506,12 +4561,26 @@ static int CFG80211DRV_OpsStaChg
  				"80211> STA("MACSTR") ==> PortSecured\n",
  				MAC2STR(mt_priv_info->mac_addr));
  			CFG80211_StaPortSecured(pAd, mt_priv_info->mac_addr, 1);

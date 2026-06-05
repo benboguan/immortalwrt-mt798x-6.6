@@ -89,3 +89,14 @@
  		|| IS_AKM_WPA3_192BIT(pSecConfig->AKMMap)
  		|| IS_AKM_WPA3PSK(pSecConfig->AKMMap)
  		|| IS_AKM_OWE(pSecConfig->AKMMap)
+--- a/mt_wifi/protocol/ax/bss_ops.c
++++ b/mt_wifi/protocol/ax/bss_ops.c
+@@ -1573,7 +1573,7 @@ VOID BssTableSsidSort
+ #endif /* CONFIG_STA_SUPPORT */
+ #ifdef DOT11W_PMF_SUPPORT
+ 
+-		if ((IS_AKM_WPA3_192BIT(pSecConfig->AKMMap) || IS_AKM_WPA3PSK(pSecConfig->AKMMap) || IS_AKM_WPA3(pSecConfig->AKMMap))
++		if ((IS_AKM_WPA3_192BIT(pSecConfig->AKMMap) || IS_AKM_WPA3PSK(pSecConfig->AKMMap) || (IS_AKM_WPA3(pSecConfig->AKMMap) || IS_AKM_SUITEB_SHA256(pSecConfig->AKMMap)))
+ 			&& (pInBss)) {
+ 			RSN_CAPABILITIES RsnCap;
+ 
