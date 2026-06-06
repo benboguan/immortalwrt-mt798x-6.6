@@ -255,10 +255,10 @@ wireless_vif_parse_encryption() {
 
 	if [ "$hwmode" = "ad" ]; then
 		wpa_cipher="GCMP"
-	elif [ "$mode" = "ap" ] && [ "$encryption" = "sae-mixed" -o "$encryption" = "sae" ]; then
+	elif [ "$mode" = "ap" ] && [ "$encryption" = "sae-mixed" -o "$encryption" = "sae" -o "$encryption" = "sae_sae-ext" ]; then
 		wpa_cipher="CCMP GCMP-256"
-	elif [ "$_w_mode" = "sta" ]; then
-		wpa_cipher="CCMP CCMP-256 GCMP GCMP-256"
+	elif [ "$_w_mode" = "sta" ] && [ "$encryption" = "sae-mixed" ]; then
+		wpa_cipher="CCMP GCMP-256"
 	elif [ "$encryption" = "sae-ext" ]; then
 		wpa_cipher="GCMP-256"
 	else
@@ -319,7 +319,7 @@ wireless_vif_parse_encryption() {
 			auth_type=eap2
 		;;
 		sae-ext)
-			if [ "$_w_mode" = "ap" ]; then
+			if [ "$mode" = "ap" ]; then
 				encryption="*sae-ext*"
 			fi
 			auth_type=sae
@@ -334,7 +334,7 @@ wireless_vif_parse_encryption() {
 			auth_type=psk-sae-ext
 		;;
 		psk3*|sae*)
-			if [ "$_w_mode" = "ap" ]; then
+			if [ "$mode" = "ap" ]; then
 				encryption="sae_sae-ext"
 			fi
 			auth_type=sae

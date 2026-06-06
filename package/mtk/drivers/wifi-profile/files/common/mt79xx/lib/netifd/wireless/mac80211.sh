@@ -32,10 +32,6 @@ wdev_tool() {
 	ucode /usr/share/hostap/wdev.uc "$@"
 }
 
-ubus_call() {
-	flock /var/run/hostapd.lock ubus call "$@"
-}
-
 drv_mac80211_init_device_config() {
 	hostapd_common_add_device_config
 
@@ -1293,7 +1289,6 @@ wpa_supplicant_add_interface() {
 	json_add_string mode "$mode"
 	json_add_string config "$_config"
 	json_add_string macaddr "$macaddr"
-	json_add_string mld_allowed_phy_bitmap "$mld_allowed_phy_bitmap"
 	[ -n "$network_bridge" ] && json_add_string bridge "$network_bridge"
 	[ -n "$wds" ] && json_add_boolean 4addr "$wds"
 	json_add_boolean powersave "$powersave"
@@ -1312,7 +1307,7 @@ wpa_supplicant_set_config() {
 	json_set_namespace wpa_supp prev
 	json_close_array
 	json_add_string phy "$phy"
-	json_add_int num_global_macaddr "$num_global_macaddr"
+	json_add_int num_global_macaddr "${num_global_macaddr:-1}"
 	json_add_boolean defer 1
 	local data="$(json_dump)"
 
@@ -1325,7 +1320,7 @@ wpa_supplicant_set_config() {
 		ubus wait_for wpa_supplicant
 	}
 
-	local supplicant_res="$(ubus_call wpa_supplicant config_set "$data")"
+	local supplicant_res="$(ubus call wpa_supplicant config_set "$data")"
 	ret="$?"
 	[ "$ret" != 0 -o -z "$supplicant_res" ] && wireless_setup_vif_failed WPA_SUPPLICANT_FAILED
 
@@ -1598,7 +1593,7 @@ wpa_supplicant_start() {
 
 	[ -n "$wpa_supp_init" ] || return 0
 
-	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "num_global_macaddr": '"$num_global_macaddr"' }' > /dev/null
+	ubus call wpa_supplicant config_set '{ "phy": "'"$phy"'", "num_global_macaddr": '"$num_global_macaddr"' }' > /dev/null
 }
 
 mac80211_setup_supplicant() {
@@ -1635,7 +1630,7 @@ mac80211_setup_vif() {
 			json_get_vars $MP_CONFIG_INT $MP_CONFIG_BOOL $MP_CONFIG_STRING
 			wireless_vif_parse_encryption
 			[ -z "$htmode" ] && htmode="NOHT";
-			if [ -x /usr/sbin/wpa_supplicant ] && wpa_supplicant -vmesh; then
+			if wpa_supplicant -vmesh; then
 				mac80211_setup_supplicant || failed=1
 			else
 				mac80211_setup_mesh
@@ -1676,7 +1671,7 @@ mac80211_start_sta_vif() {
 	if [ "$mode" = "sta" ]; then
 		if mac80211_netdev_exists "$ifname"; then
 			ip link set dev "$ifname" up 2>/dev/null
-			ubus_call wpa_supplicant config_remove '{ "iface": "'"$ifname"'" }' >/dev/null 2>&1
+			ubus call wpa_supplicant config_remove '{ "iface": "'"$ifname"'" }' >/dev/null 2>&1
 			wpa_supplicant_run "$ifname"
 		else
 			logger -t mac80211.sh "ERROR: STA interface $ifname is missing from default pool"
@@ -1731,8 +1726,8 @@ mac80211_reset_config() {
 	local phy="$1"
 
 	hostapd_conf_file="/var/run/hostapd-$phy.conf"
-	ubus_call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
-	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
+	ubus call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
+	ubus call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
 }
 
 mac80211_device_needs_restart() {

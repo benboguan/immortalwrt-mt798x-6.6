@@ -106,9 +106,6 @@ hostapd_append_wpa_key_mgmt() {
 		esac
 	}
 
-	rsno_wpa_cipher="$wpa_pairwise"
-	rsno_wpa_cipher_2="$wpa_pairwise"
-
 	case "$rsno_auth_type" in
 		sae)
 			case "$encryption_rsno" in
@@ -120,14 +117,6 @@ hostapd_append_wpa_key_mgmt() {
 			;;
 			esac
 			set_default sae_pwe 2
-		;;
-		psk)
-			rsn_override_key_mgmt="WPA-PSK"
-			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt="WPA-PSK-SHA256"
-		;;
-		eap*)
-			rsn_override_key_mgmt="WPA-EAP"
-			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt="WPA-EAP-SHA256"
 		;;
 	esac
 
@@ -142,14 +131,6 @@ hostapd_append_wpa_key_mgmt() {
 			;;
 			esac
 			set_default sae_pwe 2
-		;;
-		psk)
-			rsn_override_key_mgmt_2="WPA-PSK"
-			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt_2="WPA-PSK-SHA256"
-		;;
-		eap*)
-			rsn_override_key_mgmt_2="WPA-EAP"
-			[ "${ieee80211w:-0}" -gt 0 ] && rsn_override_key_mgmt_2="WPA-EAP-SHA256"
 		;;
 	esac
 
@@ -1922,18 +1903,20 @@ wpa_supplicant_add_network() {
 							ieee80211w_mgmt_cipher="BIP-GMAC-128"
 						;;
 						esac
-						append network_data "group_mgmt=$ieee80211w_mgmt_cipher" "$N$T"
-					elif [ "$auth_type" = "eap192" ]; then
+					else
+						ieee80211w_mgmt_cipher="$group_mgmt_cipher"
+					fi
+					if [ "$auth_type" = "eap192" ]; then
 						append network_data "group_mgmt=BIP-GMAC-256" "$N$T"
-					elif [ -n "$group_mgmt_cipher" ]; then
-						append network_data "group_mgmt=$group_mgmt_cipher" "$N$T"
+					else
+						append network_data "group_mgmt=${ieee80211w_mgmt_cipher:-AES-128-CMAC}" "$N$T"
 					fi
 					[ -n "$beacon_prot" ] && \
 						append network_data "beacon_prot=$beacon_prot" "$N$T"
 					[ -n "$ieee80211w_max_timeout" ] && \
-						append network_data "assoc_sa_query_max_timeout=$ieee80211w_max_timeout" "$N"
+						append network_data "assoc_sa_query_max_timeout=$ieee80211w_max_timeout" "$N$T"
 					[ -n "$ieee80211w_retry_timeout" ] && \
-						append network_data "assoc_sa_query_retry_timeout=$ieee80211w_retry_timeout" "$N"
+						append network_data "assoc_sa_query_retry_timeout=$ieee80211w_retry_timeout" "$N$T"
 				}
 			;;
 		esac
@@ -2026,7 +2009,7 @@ wpa_supplicant_run() {
 
 	ubus wait_for wpa_supplicant
 	local supplicant_res="$(ubus call wpa_supplicant config_add "{ \
-		\"driver\": \"${_w_driver:-nl80211}\", \"ctrl\": \"$_rpath\", \
+		\"driver\": \"${_w_driver:-wext}\", \"ctrl\": \"$_rpath\", \
 		\"iface\": \"$ifname\", \"config\": \"$_config\" \
 		${network_bridge:+, \"bridge\": \"$network_bridge\"} \
 		${hostapd_ctrl:+, \"hostapd_ctrl\": \"$hostapd_ctrl\"} \
