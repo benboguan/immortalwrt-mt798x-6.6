@@ -242,7 +242,7 @@ wireless_vif_parse_encryption_rsno() {
 }
 
 wireless_vif_parse_encryption() {
-	json_get_vars encryption htmode
+	json_get_vars encryption
 	set_default encryption none
 
 	local device="$__netifd_device"
