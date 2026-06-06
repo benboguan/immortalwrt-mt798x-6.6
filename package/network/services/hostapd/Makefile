@@ -37,8 +37,6 @@ PKG_CONFIG_DEPENDS:= \
 
 PKG_BUILD_FLAGS:=gc-sections lto
 
-EAPOL_TEST_PROVIDERS:=eapol-test eapol-test-openssl eapol-test-wolfssl
-
 SUPPLICANT_PROVIDERS:=
 HOSTAPD_PROVIDERS:=
 
@@ -560,48 +558,6 @@ define Package/wpa-cli
   VARIANT:=*
 endef
 
-define Package/eapol-test/Default
-  TITLE:=802.1x auth test utility
-  SECTION:=net
-  SUBMENU:=WirelessAPD
-  CATEGORY:=Network
-  DEPENDS:=$(DRV_DEPENDS) +libubus
-endef
-
-define Package/eapol-test
-  $(call Package/eapol-test/Default,$(1))
-  TITLE+= (built-in full)
-  VARIANT:=supplicant-full-internal
-  DEFAULT_VARIANT:=1
-endef
-
-define Package/eapol-test-openssl
-  $(call Package/eapol-test/Default,$(1))
-  TITLE+= (OpenSSL full)
-  VARIANT:=supplicant-full-openssl
-  CONFLICTS:=$(filter-out eapol-test-openssl ,$(EAPOL_TEST_PROVIDERS))
-  DEPENDS+=+PACKAGE_eapol-test-openssl:libopenssl
-  PROVIDES:=eapol-test
-endef
-
-define Package/eapol-test-wolfssl
-  $(call Package/eapol-test/Default,$(1))
-  TITLE+= (wolfSSL full)
-  VARIANT:=supplicant-full-wolfssl
-  CONFLICTS:=$(filter-out eapol-test-openssl ,$(filter-out eapol-test-wolfssl ,$(EAPOL_TEST_PROVIDERS)))
-  DEPENDS+=+PACKAGE_eapol-test-wolfssl:libwolfssl
-  PROVIDES:=eapol-test
-endef
-
-define Package/eapol-test-mbedtls
-  $(call Package/eapol-test/Default,$(1))
-  TITLE+= (mbedTLS full)
-  VARIANT:=supplicant-full-mbedtls
-  CONFLICTS:=$(filter-out eapol-test-openssl ,$(filter-out eapol-test-mbedtls ,$(EAPOL_TEST_PROVIDERS)))
-  DEPENDS+=+PACKAGE_eapol-test-mbedtls:libmbedtls
-  PROVIDES:=eapol-test
-endef
-
 
 ifneq ($(wildcard $(PKG_BUILD_DIR)/.config_*),$(subst .configured_,.config_,$(STAMP_CONFIGURED)))
   define Build/Configure/rebuild
@@ -694,27 +650,19 @@ define Build/Compile/supplicant
 endef
 
 define Build/Compile/supplicant-full-internal
-	+$(call Build/RunMake,wpa_supplicant, \
-		eapol_test \
-	)
+	+$(call Build/RunMake,wpa_supplicant)
 endef
 
 define Build/Compile/supplicant-full-openssl
-	+$(call Build/RunMake,wpa_supplicant, \
-		eapol_test \
-	)
+	+$(call Build/RunMake,wpa_supplicant)
 endef
 
 define Build/Compile/supplicant-full-wolfssl
-	+$(call Build/RunMake,wpa_supplicant, \
-		eapol_test \
-	)
+	+$(call Build/RunMake,wpa_supplicant)
 endef
 
 define Build/Compile/supplicant-full-mbedtls
-	+$(call Build/RunMake,wpa_supplicant, \
-		eapol_test \
-	)
+	+$(call Build/RunMake,wpa_supplicant)
 endef
 
 define Build/Compile
@@ -810,34 +758,6 @@ ifneq ($(LOCAL_TYPE),hostapd)
   endef
 endif
 
-ifeq ($(BUILD_VARIANT),supplicant-full-internal)
-  define Package/eapol-test/install
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(CP) $(PKG_BUILD_DIR)/wpa_supplicant/eapol_test $(1)/usr/sbin/
-  endef
-endif
-
-ifeq ($(BUILD_VARIANT),supplicant-full-openssl)
-  define Package/eapol-test-openssl/install
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(CP) $(PKG_BUILD_DIR)/wpa_supplicant/eapol_test $(1)/usr/sbin/
-  endef
-endif
-
-ifeq ($(BUILD_VARIANT),supplicant-full-wolfssl)
-  define Package/eapol-test-wolfssl/install
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(CP) $(PKG_BUILD_DIR)/wpa_supplicant/eapol_test $(1)/usr/sbin/
-  endef
-endif
-
-ifeq ($(BUILD_VARIANT),supplicant-full-mbedtls)
-  define Package/eapol-test-mbedtls/install
-	$(INSTALL_DIR) $(1)/usr/sbin
-	$(CP) $(PKG_BUILD_DIR)/wpa_supplicant/eapol_test $(1)/usr/sbin/
-  endef
-endif
-
 # Build hostapd-common before its dependents, to avoid
 # spurious rebuilds when building multiple variants.
 $(eval $(call BuildPackage,hostapd-common))
@@ -874,7 +794,3 @@ $(eval $(call BuildPackage,wpa-supplicant-wolfssl))
 $(eval $(call BuildPackage,wpa-supplicant-mbedtls))
 $(eval $(call BuildPackage,wpa-cli))
 $(eval $(call BuildPackage,hostapd-utils))
-$(eval $(call BuildPackage,eapol-test))
-$(eval $(call BuildPackage,eapol-test-openssl))
-$(eval $(call BuildPackage,eapol-test-wolfssl))
-$(eval $(call BuildPackage,eapol-test-mbedtls))
