@@ -403,7 +403,8 @@ int nf_hnat_netdevice_event(struct notifier_block *unused, unsigned long event,
 	case NETDEV_UP:
 		ppd_dev_setting();
 		if (!hnat_priv->guest_en) {
-			if (!strcmp(dev->name, "ra1") || !strcmp(dev->name, "rax1"))
+			if (!strcmp(dev->name, "ra1") || !strcmp(dev->name, "rai1") || !strcmp(dev->name, "rax1") ||
+				!strcmp(dev->name, "phy0-ap1") || !strcmp(dev->name, "phy1-ap1") || !strcmp(dev->name, "phy2-ap1"))
 				break;
 		}
 		
@@ -2586,7 +2587,8 @@ void mtk_ppe_dev_register_hook(struct net_device *dev)
 
 
 	if (!hnat_priv->guest_en ) {
-		if (!strcmp(dev->name, "ra1") || !strcmp(dev->name, "rax1"))
+		if (!strcmp(dev->name, "ra1") || !strcmp(dev->name, "rai1") || !strcmp(dev->name, "rax1") ||
+			!strcmp(dev->name, "phy0-ap1") || !strcmp(dev->name, "phy1-ap1") || !strcmp(dev->name, "phy2-ap1"))
 			return;
 	}
 	for (i = 1; i < MAX_IF_NUM; i++) {
@@ -3286,7 +3288,7 @@ mtk_hnat_br_nf_local_out(void *priv, struct sk_buff *skb,
 	if (!skb)
 		goto drop;
 	
-	if ((!strncmp(state->out->name, "ra",2)) && !is_from_extge(skb) && !( FROM_GE_PPD(skb) || FROM_GE_LAN(skb) ||
+	if ((!strncmp(state->out->name, "ra",2) || !strncmp(state->out->name, "phy",3)) && !is_from_extge(skb) && !( FROM_GE_PPD(skb) || FROM_GE_LAN(skb) ||
 		FROM_GE_WAN(skb) || FROM_WED(skb) || FROM_EXT(skb) ||FROM_GE_VIRTUAL(skb))){
 		if (!do_hnat_cpu_to_ge(skb))
 			return NF_STOLEN; 

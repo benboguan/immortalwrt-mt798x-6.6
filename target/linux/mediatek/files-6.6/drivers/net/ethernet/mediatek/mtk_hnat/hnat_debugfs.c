@@ -720,7 +720,7 @@ int cr_set_usage(int level)
 	pr_info("              6     0~255      Set UDP keep alive interval\n");
 	pr_info("              7     0~1        Set hnat counter update to nf_conntrack\n");
 	pr_info("              8     0~1        Set hnat disable/enable ipv6\n");
-	pr_info("              9     0~1        Set hnat disable/enable guest (rax1/ra1)\n");
+	pr_info("              9     0~1        Set hnat disable/enable guest (ra1/rai1/rax1/phy0-ap1/phy1-ap1/phy2-ap1)\n");
 	pr_info("             10     0~1        Set hnat disable/enable dscp setting\n");
 	pr_info("             11     1~30       Set hnat band rate\n");
 	pr_info("             12     0~1        Set hnat macvlan support mode\n");
@@ -919,6 +919,8 @@ void mtk_ppe_dev_hook(const char *name, int toggle)
 int set_guest_toggle(int toggle)
 {
 	struct mtk_hnat *h = hnat_priv;
+	const char *guest_ifaces[] = { "ra1", "rai1", "rax1", "phy0-ap1", "phy1-ap1", "phy2-ap1" };
+	int i;
 
 	if (toggle == 1)
 		pr_info("Enable hnat guest interface\n");
@@ -929,8 +931,8 @@ int set_guest_toggle(int toggle)
 		return 0;
 	}
 	h->guest_en = toggle;
-	mtk_ppe_dev_hook("ra1", toggle);
-	mtk_ppe_dev_hook("rax1", toggle);
+	for (i = 0; i < ARRAY_SIZE(guest_ifaces); i++)
+		mtk_ppe_dev_hook(guest_ifaces[i], toggle);
 	return 0;
 }
 
