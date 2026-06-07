@@ -32,7 +32,7 @@
  		os_free(bss->dump_msk_file);
 --- a/src/ap/hostapd.c
 +++ b/src/ap/hostapd.c
-@@ -1424,6 +1424,7 @@ static int hostapd_setup_bss(struct host
+@@ -1424,6 +1424,7 @@ int hostapd_setup_bss(struct host
  		wpa_printf(MSG_ERROR, "GAS server initialization failed");
  		return -1;
  	}

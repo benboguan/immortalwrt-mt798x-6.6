@@ -156,10 +156,10 @@
  	struct hostapd_config * (*config_read_cb)(const char *config_fname);
  	int (*ctrl_iface_init)(struct hostapd_data *hapd);
  	void (*ctrl_iface_deinit)(struct hostapd_data *hapd);
-@@ -185,6 +185,7 @@ struct hostapd_data {
- 	struct hostapd_config *iconf;
+@@ -191,6 +191,7 @@ struct hostapd_data {
  	struct hostapd_bss_config *conf;
  	struct hostapd_ubus_bss ubus;
+ 	struct hostapd_ucode_bss ucode;
 +	char *config_id;
  	int interface_added; /* virtual interface added for this BSS */
  	unsigned int started:1;

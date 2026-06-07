@@ -6984,10 +6984,10 @@ Index: hostapd-2022-07-29-b704dc72/wpa_supplicant/wpa_supplicant_i.h
 ===================================================================
 --- hostapd-2022-07-29-b704dc72.orig/wpa_supplicant/wpa_supplicant_i.h
 +++ hostapd-2022-07-29-b704dc72/wpa_supplicant/wpa_supplicant_i.h
-@@ -21,6 +21,9 @@
- #include "config_ssid.h"
+@@ -22,6 +22,9 @@
  #include "wmm_ac.h"
  #include "ubus.h"
+ #include "ucode.h"
 +#ifdef CONFIG_MTK_IEEE80211BE
 +#include "ap/hostapd.h"
 +#endif

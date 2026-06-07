@@ -94,9 +94,9 @@ MT7990_whnat()
 		wifi2_irq=238
 		wifi3_irq=
 	else
-        	wifi1_irq=237
-        	wifi2_irq=238
-        	wifi3_irq=
+		wifi1_irq=237
+		wifi2_irq=238
+		wifi3_irq=
 	fi
 
 	# Please update the CPU binding in each cases.
@@ -163,9 +163,9 @@ MT7986_whnat()
 		wifi2_irq=237
 		wifi3_irq=
 	else
-        	wifi1_irq=245
-        	wifi2_irq=245
-        	wifi3_irq=
+		wifi1_irq=245
+		wifi2_irq=245
+		wifi3_irq=
 	fi
 
 	# Please update the CPU binding in each cases.

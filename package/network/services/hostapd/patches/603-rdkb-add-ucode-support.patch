@@ -1,0 +1,21 @@
+--- a/hostapd/Makefile	2023-08-14 14:07:55.808647300 +0800
++++ b/hostapd/Makefile	2023-08-14 14:09:14.222019605 +0800
+@@ -182,6 +182,7 @@
+ OBJS += ../src/utils/ucode.o
+ OBJS += ../src/ap/ucode.o
+ NEED_ULOOP:=y
++LIBS += -lblobmsg_json -lucode -ludebug
+ endif
+ 
+ ifdef NEED_ULOOP
+
+--- a/wpa_supplicant/Makefile	2023-08-14 17:51:44.351944100 +0800
++++ b/wpa_supplicant/Makefile	2023-08-14 17:54:54.232111091 +0800
+@@ -206,6 +206,7 @@
+ OBJS += ../src/utils/ucode.o
+ OBJS += ucode.o
+ NEED_ULOOP:=y
++LIBS += -lblobmsg_json -lucode -ludebug
+ endif
+ 
+ ifdef NEED_ULOOP
