@@ -274,6 +274,9 @@ mac80211_hostapd_setup_base() {
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
 
+	[ "$auto_channel" = 0 ] && [ -z "$channel_list" ] && \
+		channel_list="$channel"
+
 	[ "$min_tx_power" -gt 0 ] && append base_cfg "min_tx_power=$min_tx_power" "$N"
 
 	set_default noscan 0

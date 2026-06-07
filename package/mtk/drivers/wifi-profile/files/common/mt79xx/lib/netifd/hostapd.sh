@@ -186,10 +186,10 @@ hostapd_prepare_device_config() {
 
 	local base_cfg=
 
-	json_get_vars country country3 country_ie beacon_int:100 doth require_mode legacy_rates \
+	json_get_vars country country3 country_ie beacon_int:100 dtim_period:2 doth require_mode legacy_rates \
 		acs_chan_bias local_pwr_constraint spectrum_mgmt_required airtime_mode cell_density \
 		rts_threshold beacon_rate rssi_reject_assoc_rssi rssi_reject_assoc_timeout rssi_ignore_probe_request \
-		maxassoc mbssid:0 band reg_power_type stationary_ap vendor_vht
+		maxassoc mbssid:1 band reg_power_type stationary_ap vendor_vht
 
 	hostapd_set_log_options base_cfg
 
@@ -225,6 +225,8 @@ hostapd_prepare_device_config() {
 		case "$require_mode" in
 			n) append base_cfg "require_ht=1" "$N";;
 			ac) append base_cfg "require_vht=1" "$N";;
+			ax) append base_cfg "require_he=1" "$N";;
+			be) append base_cfg "require_eht=1" "$N";;
 		esac
 	fi
 	case "$hwmode" in
@@ -291,6 +293,7 @@ hostapd_prepare_device_config() {
 	[ -n "$brlist" ] && append base_cfg "basic_rates=$brlist" "$N"
 	append base_cfg "beacon_int=$beacon_int" "$N"
 	[ -n "$rts_threshold" ] && append base_cfg "rts_threshold=$rts_threshold" "$N"
+	append base_cfg "dtim_period=$dtim_period" "$N"
 	[ "$airtime_mode" -gt 0 ] && append base_cfg "airtime_mode=$airtime_mode" "$N"
 	[ -n "$maxassoc" ] && append base_cfg "iface_max_num_sta=$maxassoc" "$N"
 	[ "$mbssid" -gt 0 ] && [ "$mbssid" -le 2 ] && append base_cfg "mbssid=$mbssid" "$N"
@@ -463,7 +466,6 @@ hostapd_common_add_bss_config() {
 	config_add_int unsol_bcast_probe_resp_interval
 	config_add_int fils_discovery_min_interval
 	config_add_int fils_discovery_max_interval
-	config_add_boolean rnr
 
 	config_add_array sae_groups
 	config_add_array owe_groups
@@ -694,7 +696,7 @@ hostapd_set_bss_options() {
 		multicast_to_unicast_all proxy_arp per_sta_vif \
 		eap_server eap_user_file ca_cert server_cert private_key private_key_passwd server_id radius_server_clients radius_server_auth_port \
 		vendor_elements fils ocv beacon_prot apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
-		fils_discovery_max_interval rnr group_cipher group_mgmt_cipher \
+		fils_discovery_max_interval group_cipher group_mgmt_cipher \
 		mld_id mld_link_id mld_primary mld_addr mld_allowed_links mld_radio_mask eml_disable eml_resp \
 		assocresp_elements dpp
 
@@ -1029,9 +1031,8 @@ hostapd_set_bss_options() {
 	[ "$bss_transition" -eq "1" ] && append bss_conf "bss_transition=1" "$N"
 	[ "$mbo" -eq 1 ] && append bss_conf "mbo=1" "$N"
 
-	json_get_vars ieee80211k rrm_neighbor_report rrm_beacon_report rnr
+	json_get_vars ieee80211k rrm_neighbor_report rrm_beacon_report
 	set_default ieee80211k 0
-	set_default rnr 0
 	if [ "$ieee80211k" -eq "1" ]; then
 		set_default rrm_neighbor_report 1
 		set_default rrm_beacon_report 1
@@ -1042,7 +1043,6 @@ hostapd_set_bss_options() {
 
 	[ "$rrm_neighbor_report" -eq "1" ] && append bss_conf "rrm_neighbor_report=1" "$N"
 	[ "$rrm_beacon_report" -eq "1" ] && append bss_conf "rrm_beacon_report=1" "$N"
-	[ "$rnr" -eq "1" ] && append bss_conf "rnr=1" "$N"
 
 	json_get_vars ftm_responder stationary_ap lci civic
 	set_default ftm_responder 0
@@ -1422,10 +1422,6 @@ hostapd_set_bss_options() {
 
 	if [ -n "$fils_discovery_max_interval" ]; then
 		append bss_conf "fils_discovery_max_interval=$fils_discovery_max_interval" "$N"
-	fi
-
-	if [ -n "$rnr" ]; then
-		append bss_conf "rnr=$rnr" "$N"
 	fi
 
 	if [ -n "$mld_id" ]; then
