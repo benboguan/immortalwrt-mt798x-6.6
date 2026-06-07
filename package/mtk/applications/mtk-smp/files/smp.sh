@@ -1,8 +1,9 @@
 #!/bin/sh
 
 OPTIMIZED_FOR="$1"
-CPU_LIST=`cat /proc/interrupts | sed -n '1p'`
-NUM_OF_CPU=0; for i in $CPU_LIST; do NUM_OF_CPU=`expr $NUM_OF_CPU + 1`; done;
+# ========== 修复1：精准统计CPU数量，原版会把标题多余字段算入 ==========
+CPU_LIST=$(cat /proc/interrupts | sed -n '1p' | awk '{for(i=1;$i~/^CPU/;i++)print $i}' | wc -w)
+NUM_OF_CPU=${CPU_LIST:-0}
 DEFAULT_RPS=0
 
 . /lib/functions.sh
@@ -22,6 +23,54 @@ CPU_RPS_ADD()
 	eval oval=\$CPU${1}_RPS
 	eval CPU${1}_RPS=\"\$CPU${1}_RPS $2\"
 	dbg2 "CPU${1}_RPS=\"\$CPU${1}_RPS $2\""
+}
+
+AN7563_MT7992()
+{
+	num_of_wifi=$1
+	storage=$2
+	DEFAULT_RPS=0
+
+	#Physical IRQ# setting
+	PCIe0=
+	eth_lan=69
+	eth_wan=70
+	if [ -d "/proc/warp_ctrl/warp0" ]; then
+		wifi1_irq=71
+		wifi2_irq=72
+		wifi3_irq=
+	else
+		wifi1_irq=71
+		wifi2_irq=72
+		wifi3_irq=
+	fi
+
+	# Please update the CPU binding in each cases.
+	# CPU#_AFFINITY="add binding irq number here"
+	# CPU#_RPS="add binding interface name here"
+	dbg "[AN7563_MT7992]"
+	if [ "$num_of_wifi" = "0" ]; then
+		CPU0_AFFINITY="$eth_lan"
+		CPU1_AFFINITY="$eth_wan"
+
+		CPU0_RPS=""
+		CPU1_RPS="$ethif1 $ethif2"
+	elif [ "$num_of_wifi" = "1" ]; then
+		CPU0_AFFINITY="$eth_lan $eth_wan"
+		CPU1_AFFINITY="$wifi1_irq"
+
+		CPU0_RPS="$ethif1 $ethif2 $wifi1 $wifi1_apcli0"
+		CPU1_RPS=""
+	elif [ "$num_of_wifi" = "2" ]; then
+		CPU0_AFFINITY="$wifi1_irq $wifi2_irq"
+		CPU1_AFFINITY="$eth_lan $eth_wan "
+
+		CPU0_RPS="$ethif1 $ethif2 $ethif3 $ethif4 $ethif5 $ethif6"
+		CPU1_RPS="$ethif1 $ethif2 $ethif3 $ethif4 $ethif5 $ethif6 $wifi1 $wifi2 $wifi1_apcli0 $wifi2_apcli0"
+
+	else
+		dbg "MT7992_whnat with $NUM_OF_WIFI Wi-Fi bands is not support"
+	fi
 }
 
 MT7990_whnat()
@@ -646,9 +695,60 @@ get_eth_if_name()
 	RPS_IF_LIST="$RPS_IF_LIST $ethif1 $ethif2 $ethif3"
 }
 
-# Try to get Wi-Fi interface name from l1profile
+# Try to get Wi-Fi interface name from OpenWrt standard naming (phyX-apY)
 get_wifi_if_name()
 {
+	wifi1=""; wifi2=""; wifi3=""
+	wifi1_prefix=""; wifi2_prefix=""; wifi3_prefix=""
+	wifi1_apcli=""; wifi2_apcli=""; wifi3_apcli=""
+	wifi1_wds=""; wifi2_wds=""; wifi3_wds=""
+	wifi1_mesh=""; wifi2_mesh=""; wifi3_mesh=""
+
+	ap_ifaces=$(ls /sys/class/net/ 2>/dev/null | grep -E '^phy[0-9]+-ap0$' | sort -V)
+	if [ -n "$ap_ifaces" ]; then
+		all_data_ifaces=$(ls /sys/class/net/ 2>/dev/null | grep -E '^phy[0-9]+-(ap|sta|wds|mesh)[0-9]+$')
+		# Also add any interface that might be named phyX-* without number (though unlikely)
+		all_data_ifaces="$all_data_ifaces $(ls /sys/class/net/ 2>/dev/null | grep -E '^phy[0-9]+-(ap|sta|wds|mesh)$')"
+		# Remove duplicates
+		all_data_ifaces=$(echo "$all_data_ifaces" | sort -u)
+
+		idx=1
+		for iface in $ap_ifaces; do
+			phy_num=$(echo "$iface" | sed -n 's/^phy\([0-9]\+\)-ap0$/\1/p')
+			[ -z "$phy_num" ] && continue
+			eval wifi${idx}=$iface
+			eval wifi${idx}_prefix="phy"
+
+			# Try to find corresponding sta/wds/mesh interfaces (first instance)
+			sta_iface="phy${phy_num}-sta0"
+			[ -d "/sys/class/net/$sta_iface" ] && eval wifi${idx}_apcli=$sta_iface
+			wds_iface="phy${phy_num}-wds0"
+			[ -d "/sys/class/net/$wds_iface" ] && eval wifi${idx}_wds=$wds_iface
+			mesh_iface="phy${phy_num}-mesh0"
+			[ -d "/sys/class/net/$mesh_iface" ] && eval wifi${idx}_mesh=$mesh_iface
+
+			idx=$((idx + 1))
+			[ $idx -gt 3 ] && break
+		done
+
+		# Build a global variable containing all wireless data interfaces (for later appending to RPS lists)
+		ALL_WIFI_IFS="$all_data_ifaces"
+		dbg2 "OpenWrt style: ALL_WIFI_IFS = $ALL_WIFI_IFS"
+
+		# Add all wireless data interfaces to RPS_IF_LIST (for completeness, though will be appended later)
+		for iface in $all_data_ifaces; do
+			RPS_IF_LIST="$RPS_IF_LIST $iface"
+			dbg2 "Adding OpenWrt wireless interface: $iface"
+		done
+
+		# Count physical radios
+		phys=$(echo "$all_data_ifaces" | grep -o 'phy[0-9]\+' | sort -u)
+		NUM_OF_WIFI=$(echo "$phys" | wc -l)
+		dbg "# NUM_OF_WIFI=$NUM_OF_WIFI band(s)"
+		return
+	fi
+
+	# ========== Legacy MTK naming (using l1dat or hardcoded) ==========
 	l1dat_exist=`l1dat 2>/dev/null`
 	if [ -z "$l1dat_exist" ]; then
 		dbg "Layer 1 profile does not exist."
@@ -664,19 +764,18 @@ get_wifi_if_name()
 		wifi2_apcli="apclii"
 		wifi2_wds="wdsi"
 		wifi2_mesh="meshi"
-		wifi3="rae0"
-		wifi3_prefix="rae"
-		wifi3_apcli="apclie"
-		wifi3_wds="wdse"
-		wifi3_mesh="meshe"
-
+		wifi3="rax0"
+		wifi3_prefix="rax"
+		wifi3_apcli="apclix"
+		wifi3_wds="wdsx"
+		wifi3_mesh="meshx"
 	else
 		#wifi_if1s=`l1dat idx2if 1`
 		#wifi_if2s=`l1dat idx2if 2`
 		#wifi_if3s=`l1dat idx2if 3`
 		board=$(board_name)
 		case $board in
-		*7988*)
+		*7988*|*7523*)
 			wifi_if1s=`l1dat zone2if dev00`
 			wifi_if2s=`l1dat zone2if dev01`
 			wifi_if3s=`l1dat zone2if dev02`
@@ -715,7 +814,7 @@ get_wifi_if_name()
 		wifi3_dbdc_idx=`l1dat if2dbdcidx $wifi3`
 	fi
 
-	dbg2 "# Wi-Fi interface list"
+	dbg2 "# Wi-Fi interface list (legacy)"
 	dbg2 "\$wifi1=$wifi1"
 	dbg2 "\$wifi2=$wifi2"
 	dbg2 "\$wifi3=$wifi3"
@@ -790,12 +889,13 @@ module_exist()
 
 setup_model()
 {
-	board=$(board_name)
+	board=$(board_name 2>/dev/null || echo "unknown")
 	num_of_wifi=$(get_wifi_num)
 	mt_whnat_en=$(module_exist "mt_whnat")
 
 	case $board in
-	*7988*)
+	hiveton,h5000m|\
+	*7987*|*7988*)
 		MT7990_whnat $num_of_wifi
 		;;
 	*7986*)
@@ -803,6 +903,9 @@ setup_model()
 		;;
 	*7981*)
 		MT7981_whnat $num_of_wifi
+		;;
+	*7523*)
+		AN7563_MT7992 $num_of_wifi
 		;;
 	*)
 		if [ "$NUM_OF_CPU" = "4" ]; then
@@ -819,24 +922,24 @@ setup_model()
 				fi
 			fi
 		fi
-		MT7990_whnat $num_of_wifi
 		;;
 	esac
 }
 
+# ========== 修复2：重写get_virtual_irq，废弃硬编码列偏移 ==========
 get_virtual_irq()
 {
-	PHY_POS=`expr $NUM_OF_CPU + 3` #physical irq # position in /proc/interrups may vary with the number of CPU up
 	target_phy_irq=$1
-	cat /proc/interrupts | sed 's/:/ /g'| awk '$1 ~ /^[0-9]+$/' | while read line 
-	do
-		set -- $line
-		phy_irq=$(eval "echo \$$PHY_POS")
-		if [ $phy_irq == $target_phy_irq ]; then 
-			echo $1
-			return
-		fi
-	done
+	[ -z "$target_phy_irq" ] && return
+
+	awk -v phy="$target_phy_irq" '
+	/^[0-9]+:/ {
+		if ($NF == phy) {
+			print $1
+			exit
+		}
+	}
+	' /proc/interrupts
 }
 
 # Improve SW path peak throughput by disabling the GRO fraglist feature.
@@ -844,7 +947,7 @@ disable_gro_fraglist()
 {
 	for iface in /sys/class/net/*; do
 		iface=$(basename "$iface")
-		if ethtool -k "$iface" | grep -q "rx-gro-list"; then
+		if ethtool -k "$iface" 2>/dev/null | grep -q "rx-gro-list"; then
 			ethtool -K "$iface" rx-gro-list off
 		fi
 	done
@@ -861,6 +964,7 @@ set_rps_cpu_bitmap()
 		dbg2 "# CPU$num: rps_list=$rps_list"
 		for i in $rps_list; do
 			var=${VAR_PREFIX}_${i//-/_}
+			var=${var//./_}
 			eval ifval=\$$var
 			dbg2 "[var val before] \$$var=$ifval"
 			if [ -z "$ifval" ]; then
@@ -881,16 +985,21 @@ set_rps_cpus()
 	dbg2 "# Setup rps of the interfaces, $RPS_IF_LIST."
 	for i in $RPS_IF_LIST; do
 		var=${VAR_PREFIX}_${i//-/_}
+		var=${var//./_}
 		eval cpu_map=\$$var
-		if [ -d /sys/class/net/$i ]; then
-			if [ ! -z $cpu_map ]; then
-				cpu_map=`printf '%x' $cpu_map`
-				dbg "echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus"
-				echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus
-			elif [ ! -z $1 ]; then
-				dbg "echo $1 > /sys/class/net/$i/queues/rx-0/rps_cpus"
-				echo $1 > /sys/class/net/$i/queues/rx-0/rps_cpus
-			fi
+		# 增加接口存在性判断
+		if [ ! -d /sys/class/net/$i ]; then
+			continue
+		fi
+		if [ ! -z $cpu_map ]; then
+			# 保留原版逻辑，仅转十六进制（修复3：十进制→十六进制）
+			cpu_map=`printf '%x' $cpu_map`
+			dbg "echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus"
+			echo $cpu_map > /sys/class/net/$i/queues/rx-0/rps_cpus 2>/dev/null
+		elif [ ! -z $1 ]; then
+			def_map=`printf '%x' $1`
+			dbg "echo $def_map > /sys/class/net/$i/queues/rx-0/rps_cpus"
+			echo $def_map > /sys/class/net/$i/queues/rx-0/rps_cpus 2>/dev/null
 		fi
 	done
 }
@@ -900,15 +1009,19 @@ set_smp_affinity()
 	dbg2 "# Setup affinity of each physical irq."
 	num=0
 	while [ "$num" -lt "$NUM_OF_CPU" ];do
+		# 修复3：统一转为十六进制写入smp_affinity
+		cpu_bit=$((2 ** $num))
+		hex_mask=$(printf "%x" $cpu_bit)
 		eval smp_list=\$CPU${num}_AFFINITY
 		for i in $smp_list; do
-			cpu_bit=$((2 ** $num))
 			virq=$(get_virtual_irq $i)
 			dbg2 "irq p2v $i --> $virq"
-			if [ ! -z $virq ]; then
-				dbg "echo $cpu_bit > /proc/irq/$virq/smp_affinity"
-				echo $cpu_bit > /proc/irq/$virq/smp_affinity
+			# 增加IRQ有效性判断
+			if [ -z "$virq" ] || [ ! -d "/proc/irq/$virq" ]; then
+				continue
 			fi
+			dbg "echo $hex_mask > /proc/irq/$virq/smp_affinity"
+			echo $hex_mask > /proc/irq/$virq/smp_affinity 2>/dev/null
 		done
 		num=`expr $num + 1`
 	done
@@ -925,17 +1038,13 @@ fi
 # Usage: dbg "the output string"
 dbg()
 {
-	if [ "$DBG" -ge "1" ]; then
-		echo -e $1
-	fi
+	[ "$DBG" -ge 1 ] && echo -e "$1"
 }
 
 # Usage: dbg2 "the output string"
 dbg2()
 {
-	if [ "$DBG" -ge "2" ]; then
-		echo -e $1
-	fi
+	[ "$DBG" -ge 2 ] && echo -e "$1"
 }
 
 #NUM_OF_CPU=2	#7622
@@ -949,6 +1058,23 @@ get_eth_if_name
 get_wifi_if_name	# It will add all wifi interfaces into $RPS_IF_LIST
 dbg2 "# default RPS_IF_LIST=$RPS_IF_LIST"
 setup_model
+
+# ========== 修复4：RPS追加接口 严谨去重 ==========
+if [ -n "$ALL_WIFI_IFS" ]; then
+	dbg "Appending all OpenWrt wireless interfaces ($ALL_WIFI_IFS) to CPU RPS lists"
+	for cpu in $(seq 0 $((NUM_OF_CPU - 1))); do
+		eval current_rps=\$CPU${cpu}_RPS
+		for iface in $ALL_WIFI_IFS; do
+			case " $current_rps " in
+				*" $iface "*) ;;
+				*) current_rps="$current_rps $iface" ;;
+			esac
+		done
+		eval CPU${cpu}_RPS=\"$current_rps\"
+		dbg2 "CPU${cpu}_RPS now = $current_rps"
+	done
+fi
+
 set_rps_cpu_bitmap
 set_rps_cpus $DEFAULT_RPS
 set_smp_affinity
