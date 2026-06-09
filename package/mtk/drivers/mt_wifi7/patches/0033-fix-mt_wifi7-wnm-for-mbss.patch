@@ -1,0 +1,175 @@
+--- a/mt_wifi/feature/hs_r2/hotspot.c‎
++++ b/mt_wifi/feature/hs_r2/hotspot.c‎
+@@ -815,6 +815,7 @@ static VOID HSCtrlOff
+ 	pHSCtrl->L2Filter = 0;
+ 	pHSCtrl->ICMPv4Deny = 0;
+ #ifdef CONFIG_DOT11V_WNM
++	pWNMCtrl->WNMBTMEnable = 0;
+ 	pWNMCtrl->ProxyARPEnable = 0;
+ #ifdef CONFIG_HOTSPOT_R2
+ 	pWNMCtrl->WNMNotifyEnable = 0;
+--- a/mt_wifi/feature/hs_r2/wnm.c‎
++++ b/mt_wifi/feature/hs_r2/wnm.c‎
+@@ -2415,15 +3415,14 @@ VOID WNMCtrlInit(IN
+ VOID WNMCtrlInit(IN PRTMP_ADAPTER pAd)
+ {
+ 	PWNM_CTRL pWNMCtrl;
+-	BOOLEAN WNMBTMEnable = TRUE;
+ 	UCHAR Index;
+ #ifdef CONFIG_AP_SUPPORT
+ 	for (Index = 0; Index < MAX_MBSSID_NUM(pAd); Index++) {
+ 		pWNMCtrl = &pAd->ApCfg.MBSSID[Index].WNMCtrl;
+-#ifndef CONFIG_HOTSPOT_R2
+-		if(pWNMCtrl->WNMBTMEnable)
+-			WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
+-#endif
++		BOOLEAN WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
++		BOOLEAN ProxyARPEnable = pWNMCtrl->ProxyARPEnable;
++		BOOLEAN WNMNotifyEnable = pWNMCtrl->WNMNotifyEnable;
++
+ 		NdisZeroMemory(pWNMCtrl, sizeof(*pWNMCtrl));
+ 		RTMP_SEM_EVENT_INIT(&pWNMCtrl->BTMPeerListLock, &pAd->RscSemMemList);
+ 		NdisAllocateSpinLock(pAd, &pWNMCtrl->ProxyARPListLock);
+@@ -3437,6 +3436,8 @@ VOID WNMCtrlInit(IN
+ 		DlListInit(&pWNMCtrl->WNMNotifyPeerList);
+ #endif
+ 		pWNMCtrl->WNMBTMEnable = WNMBTMEnable;
++		pWNMCtrl->ProxyARPEnable = ProxyARPEnable;
++		pWNMCtrl->WNMNotifyEnable = WNMNotifyEnable;
+ 	}
+ 
+ #endif
+@@ -3443,11 +3444,17 @@ VOID WNMCtrlInit(IN
+ #ifdef CONFIG_STA_SUPPORT
+ 	for (Index = 0; Index < MAX_MULTI_STA; Index++) {
+ 		pWNMCtrl = &pAd->StaCfg[Index].WNMCtrl;
++		BOOLEAN WNMBTMEnable = pWNMCtrl->WNMBTMEnable;
++		BOOLEAN ProxyARPEnable = pWNMCtrl->ProxyARPEnable;
++		BOOLEAN WNMNotifyEnable = pWNMCtrl->WNMNotifyEnable;
++
+ 		NdisZeroMemory(pWNMCtrl, sizeof(*pWNMCtrl));
+ 		RTMP_SEM_EVENT_INIT(&pWNMCtrl->BTMPeerListLock, &pAd->RscSemMemList);
+ 		DlListInit(&pWNMCtrl->BTMPeerList);
+ 
+ 		pWNMCtrl->WNMBTMEnable = WNMBTMEnable;
++		pWNMCtrl->ProxyARPEnable = ProxyARPEnable;
++		pWNMCtrl->WNMNotifyEnable = WNMNotifyEnable;
+ 		NdisAllocateSpinLock(pAd, &pWNMCtrl->IeLock);
+ 	}
+ #endif /* CONFIG_STA_SUPPORT */
+--- a/mt_wifi/profiles/ap_profile.c
++++ b/mt_wifi/profiles/ap_profile.c
+@@ -2618,6 +2618,113 @@
+ 		for (loop = 0; loop < MAX_MBSSID_NUM(pAd); loop++)
+ 			pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMBTMEnable = FALSE;
+ 	}
++#ifdef CONFIG_STA_SUPPORT
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++			"pAd->MSTANum=%d\n", pAd->MSTANum);
++	if (RTMPGetKeyParameter("WNMEnable", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++				(macptr && loop < pAd->MSTANum);
++					macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++
++			Enable = simple_strtol(macptr, 0, 10);
++			pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++				"%s::(STA-bDot11vWNMEnable[%d]=%d)\n",
++				__FUNCTION__, loop,
++				pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable);
++		}
++	} else {
++		for (loop = 0; loop < pAd->MSTANum; loop++)
++			pAd->StaCfg[loop].WNMCtrl.WNMBTMEnable = FALSE;
++	}
++#endif /* CONFIG_STA_SUPPORT */
++
++	/* ProxyARPEnable */
++#ifdef CONFIG_AP_SUPPORT
++	if (RTMPGetKeyParameter("ProxyARPEnable", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++				(macptr && loop < MAX_MBSSID_NUM(pAd));
++					macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++			Enable = simple_strtol(macptr, 0, 10);
++			pAd->ApCfg.MBSSID[loop].WNMCtrl.ProxyARPEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++				"%s::(ProxyARPEnable[%d]=%d)\n",
++				__FUNCTION__, loop,
++				pAd->ApCfg.MBSSID[loop].WNMCtrl.ProxyARPEnable);
++		}
++	} else {
++		for (loop = 0; loop < MAX_MBSSID_NUM(pAd); loop++)
++			pAd->ApCfg.MBSSID[loop].WNMCtrl.ProxyARPEnable = FALSE;
++	}
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++			"pAd->MSTANum=%d\n", pAd->MSTANum);
++	if (RTMPGetKeyParameter("ProxyARPEnable", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++			(macptr && loop < pAd->MSTANum);
++			macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++
++			Enable = os_str_tol(macptr, 0, 10);
++			pAd->StaCfg[loop].WNMCtrl.ProxyARPEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++				"(STA-ProxyARPEnable[%d]=%d)\n", loop,
++				pAd->StaCfg[loop].WNMCtrl.ProxyARPEnable);
++		}
++	} else {
++		for (loop = 0; loop < pAd->MSTANum; loop++)
++			pAd->StaCfg[loop].WNMCtrl.ProxyARPEnable = FALSE;
++	}
++#endif /* CONFIG_STA_SUPPORT */
++
++	/* WNMNotifyEnable */
++#ifdef CONFIG_AP_SUPPORT
++	if (RTMPGetKeyParameter("WNMNotifyEnable", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++				(macptr && loop < MAX_MBSSID_NUM(pAd));
++					macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++			Enable = simple_strtol(macptr, 0, 10);
++			pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMNotifyEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++				"%s::(WNMNotifyEnable[%d]=%d)\n",
++				__FUNCTION__, loop,
++				pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMNotifyEnable);
++		}
++	} else {
++		for (loop = 0; loop < MAX_MBSSID_NUM(pAd); loop++)
++			pAd->ApCfg.MBSSID[loop].WNMCtrl.WNMNotifyEnable = FALSE;
++	}
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++			"pAd->MSTANum=%d\n", pAd->MSTANum);
++	if (RTMPGetKeyParameter("WNMNotifyEnable", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++				(macptr && loop < pAd->MSTANum);
++					macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++
++			Enable = simple_strtol(macptr, 0, 10);
++			pAd->StaCfg[loop].WNMCtrl.WNMNotifyEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_WNM, DBG_LVL_INFO,
++				"%s::(STA-WNMNotifyEnable[%d]=%d)\n",
++				__FUNCTION__, loop,
++				pAd->StaCfg[loop].WNMCtrl.WNMNotifyEnable);
++		}
++	} else {
++		for (loop = 0; loop < pAd->MSTANum; loop++)
++			pAd->StaCfg[loop].WNMCtrl.WNMNotifyEnable = FALSE;
++	}
++#endif /* CONFIG_STA_SUPPORT */
+ 	return;
+ }
+ #endif /* CONFIG_DOT11V_WNM */
