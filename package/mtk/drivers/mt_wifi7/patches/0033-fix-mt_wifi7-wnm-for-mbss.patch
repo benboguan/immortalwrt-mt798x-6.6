@@ -1,5 +1,5 @@
---- a/mt_wifi/feature/hs_r2/hotspot.c‎
-+++ b/mt_wifi/feature/hs_r2/hotspot.c‎
+--- a/mt_wifi/feature/hs_r2/hotspot.c
++++ b/mt_wifi/feature/hs_r2/hotspot.c
 @@ -815,6 +815,7 @@ static VOID HSCtrlOff
  	pHSCtrl->L2Filter = 0;
  	pHSCtrl->ICMPv4Deny = 0;
@@ -8,9 +8,9 @@
  	pWNMCtrl->ProxyARPEnable = 0;
  #ifdef CONFIG_HOTSPOT_R2
  	pWNMCtrl->WNMNotifyEnable = 0;
---- a/mt_wifi/feature/hs_r2/wnm.c‎
-+++ b/mt_wifi/feature/hs_r2/wnm.c‎
-@@ -2415,15 +3415,14 @@ VOID WNMCtrlInit(IN
+--- a/mt_wifi/feature/hs_r2/wnm.c
++++ b/mt_wifi/feature/hs_r2/wnm.c
+@@ -3415,15 +3415,14 @@ VOID WNMCtrlInit(IN
  VOID WNMCtrlInit(IN PRTMP_ADAPTER pAd)
  {
  	PWNM_CTRL pWNMCtrl;
