@@ -1042,7 +1042,6 @@ generate_dat_from_uci() {
             echo "HT_BADecline=" >> "$dat_file"
             echo "HT_BAWinSize=" >> "$dat_file"
             echo "HT_BSSCoexistence=1" >> "$dat_file"
-            echo "HT_BW=" >> "$dat_file"
             echo "HT_DisallowTKIP=1" >> "$dat_file"
             echo "HT_EXTCHA=" >> "$dat_file"
             echo "HT_GI=" >> "$dat_file"
@@ -1208,7 +1207,6 @@ generate_dat_from_uci() {
             done
             
             # 初始化无线模式和其他参数
-            echo "WirelessMode=" >> "$dat_file"
             echo "WmmCapable=" >> "$dat_file"
             echo "ApEnable=" >> "$dat_file"
             
@@ -1216,7 +1214,6 @@ generate_dat_from_uci() {
             echo "CCKTxStream=4" >> "$dat_file"
             
             # VHT 参数 (per-BSSID tokens via token_set in mtkdat.lua)
-            echo "VHT_BW=" >> "$dat_file"
             echo "VHT_BW_SIGNAL=" >> "$dat_file"
             echo "VHT_LDPC=" >> "$dat_file"
             echo "VHT_Sec80_Channel=0" >> "$dat_file"
@@ -1235,7 +1232,6 @@ generate_dat_from_uci() {
             echo "MuMimoUlEnable=" >> "$dat_file"
             
             # EHT 参数 (per-BSSID tokens via token_set in mtkdat.lua)
-            echo "EHT_ApBw=" >> "$dat_file"
             echo "EHT_ApNsepPriAccess=" >> "$dat_file"
             echo "EHT_ApOmCtrl=1" >> "$dat_file"
             echo "EHT_ApTxopSharing=" >> "$dat_file"
@@ -2970,6 +2966,7 @@ generate_hostapd_from_uci() {
                     echo "wpa=2" >> "$conf_file"
                     echo "wpa_key_mgmt=WPA-PSK" >> "$conf_file"
                     echo "rsn_pairwise=CCMP" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP" >> "$conf_file"
                     [ -n "$key" ] && echo "wpa_passphrase=$key" >> "$conf_file"
                     ;;
                 "psk"|"wpa")
@@ -2984,6 +2981,7 @@ generate_hostapd_from_uci() {
                     echo "wpa=2" >> "$conf_file"
                     echo "wpa_key_mgmt=SAE" >> "$conf_file"
                     echo "rsn_pairwise=CCMP" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP" >> "$conf_file"
                     [ -n "$key" ] && echo "sae_password=$key" >> "$conf_file"
                     echo "sae_pwe=2" >> "$conf_file"
                     ;;
@@ -2992,6 +2990,7 @@ generate_hostapd_from_uci() {
                     echo "wpa=2" >> "$conf_file"
                     echo "wpa_key_mgmt=WPA-PSK SAE" >> "$conf_file"
                     echo "rsn_pairwise=CCMP TKIP" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP TKIP" >> "$conf_file"
                     [ -n "$key" ] && echo "wpa_passphrase=$key" >> "$conf_file"
                     [ -n "$key" ] && echo "sae_password=$key" >> "$conf_file"
                     echo "sae_pwe=2" >> "$conf_file"
@@ -3054,12 +3053,14 @@ auth2hostapd_encryption() {
             echo "wpa=2"
             echo "wpa_key_mgmt=WPA-EAP"
             echo "rsn_pairwise=TKIP"
+            echo "wpa_pairwise=TKIP"
             ;;
         "wpa2+ccmp")
             echo "auth_algs=1"
             echo "wpa=2"
             echo "wpa_key_mgmt=WPA-EAP"
             echo "rsn_pairwise=CCMP"
+            echo "wpa_pairwise=CCMP"
             ;;
         "psk")
             echo "auth_algs=1"
@@ -3073,6 +3074,7 @@ auth2hostapd_encryption() {
             echo "wpa=2"
             echo "wpa_key_mgmt=WPA-PSK"
             echo "rsn_pairwise=CCMP"
+            echo "wpa_pairwise=CCMP"
             [ -n "$key" ] && echo "wpa_passphrase=$key"
             ;;
         "psk-mixed")
@@ -3087,6 +3089,7 @@ auth2hostapd_encryption() {
             echo "wpa=2"
             echo "wpa_key_mgmt=SAE"
             echo "rsn_pairwise=CCMP"
+            echo "wpa_pairwise=CCMP"
             echo "ieee80211w=2"
             [ -n "$key" ] && echo "sae_password=$key"
             ;;
@@ -3095,6 +3098,7 @@ auth2hostapd_encryption() {
             echo "wpa=2"
             echo "wpa_key_mgmt=WPA-PSK SAE"
             echo "rsn_pairwise=CCMP"
+            echo "wpa_pairwise=CCMP"
             echo "ieee80211w=1"
             [ -n "$key" ] && echo "wpa_passphrase=$key"
             [ -n "$key" ] && echo "sae_password=$key"
@@ -3104,6 +3108,7 @@ auth2hostapd_encryption() {
             echo "wpa=2"
             echo "wpa_key_mgmt=OWE"
             echo "rsn_pairwise=CCMP"
+            echo "wpa_pairwise=CCMP"
             ;;
         *)
             echo "auth_algs=1"
@@ -3287,6 +3292,12 @@ generate_hostapd_from_uci_improved() {
                 echo "bridge=br-lan" >> "$conf_file"
             fi
 
+            echo "ieee80211n=1" >> "$conf_file"
+            echo "ieee80211ac=1" >> "$conf_file"
+            echo "ieee80211ax=1" >> "$conf_file"
+            echo "ieee80211be=1" >> "$conf_file"
+            echo "noscan=1" >> "$conf_file"
+
             # Beacon 间隔（参考 hostapd.lua 行 1327-1335）
             if [ -n "$beacon_int" ]; then
                 if [ "$beacon_int" -ge 15 ] && [ "$beacon_int" -le 65535 ] 2>/dev/null; then
@@ -3352,6 +3363,7 @@ generate_hostapd_from_uci_improved() {
                         echo "wpa_key_mgmt=SAE SAE-EXT-KEY WPA-PSK" >> "$conf_file"
                     fi
                     echo "rsn_pairwise=CCMP GCMP-256" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP GCMP-256" >> "$conf_file"
                     echo "ieee80211w=1" >> "$conf_file"
                     echo "wps_cred_add_sae=1" >> "$conf_file"
                     echo "sae_require_mfp=1" >> "$conf_file"
@@ -3367,6 +3379,7 @@ generate_hostapd_from_uci_improved() {
                     echo "wpa=2" >> "$conf_file"
                     echo "wpa_key_mgmt=SAE SAE-EXT-KEY" >> "$conf_file"
                     echo "rsn_pairwise=CCMP GCMP-256" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP GCMP-256" >> "$conf_file"
                     echo "ieee80211w=2" >> "$conf_file"
                     if [ -n "$key" ]; then
                         echo "sae_password=$key" >> "$conf_file"
@@ -3387,6 +3400,7 @@ generate_hostapd_from_uci_improved() {
                         echo "wpa_key_mgmt=WPA-PSK" >> "$conf_file"
                     fi
                     echo "rsn_pairwise=CCMP" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP" >> "$conf_file"
                     if [ -n "$key" ]; then
                         echo "wpa_passphrase=$key" >> "$conf_file"
                         echo "sae_password=$key" >> "$conf_file"
@@ -3397,6 +3411,7 @@ generate_hostapd_from_uci_improved() {
                     echo "wpa=2" >> "$conf_file"
                     echo "wpa_key_mgmt=WPA-PSK" >> "$conf_file"
                     echo "rsn_pairwise=CCMP" >> "$conf_file"
+                    echo "wpa_pairwise=CCMP" >> "$conf_file"
                     if [ -n "$key" ]; then
                         echo "wpa_passphrase=$key" >> "$conf_file"
                         echo "sae_password=$key" >> "$conf_file"

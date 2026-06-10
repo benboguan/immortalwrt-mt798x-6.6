@@ -366,7 +366,7 @@ hostapd_common_add_bss_config() {
 
 	config_add_string 'key1:wepkey' 'key2:wepkey' 'key3:wepkey' 'key4:wepkey' 'password:wpakey'
 
-	config_add_string wpa_psk_file sae_password_file
+	config_add_string wpa_psk_file
 
 	config_add_int multi_ap
 
@@ -815,7 +815,7 @@ hostapd_set_bss_options() {
 			[ -n "$dpp_netaccesskey" ] && append bss_conf "dpp_netaccesskey=$dpp_netaccesskey" "$N"
 		;;
 		psk|sae|psk-sae|psk-sae-ext)
-			json_get_vars key wpa_psk_file sae_password_file
+			json_get_vars key wpa_psk_file
 			if [ "$ppsk" -ne 0 ]; then
 				json_get_vars auth_secret auth_port
 				set_default auth_port 1812
@@ -837,11 +837,6 @@ hostapd_set_bss_options() {
 			[ -n "$wpa_psk_file" ] && [ "$auth_type" = "psk" -o "$auth_type" = "psk-sae" -o "$auth_type" = "psk-sae-ext" ] && {
 				[ -e "$wpa_psk_file" ] || touch "$wpa_psk_file"
 				append bss_conf "wpa_psk_file=$wpa_psk_file" "$N"
-			}
-			[ -z "$sae_password_file" ] && set_default sae_password_file /var/run/hostapd-$ifname.sae
-			[ -n "$sae_password_file" ] && [ "$auth_type" = "sae" -o "$auth_type" = "psk-sae" -o "$auth_type" = "psk-sae-ext" ] && {
-				[ -e "$sae_password_file" ] || touch "$sae_password_file"
-				append bss_conf "sae_password_file=$sae_password_file" "$N"
 			}
 			[ "$eapol_version" -ge "1" -a "$eapol_version" -le "2" ] && append bss_conf "eapol_version=$eapol_version" "$N"
 
@@ -1555,7 +1550,6 @@ ${scan_list:+freq_list=$scan_list}
 $ap_scan
 ctrl_interface=/var/run/wpa_supplicant
 $country_str
-sae_pwe=2
 wps_cred_add_sae=1
 ${disable_rrm:+disable_rrm=$disable_rrm}
 EOF

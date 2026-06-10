@@ -39,9 +39,9 @@ drv_mac80211_init_device_config() {
 	config_add_string tx_burst
 	config_add_string distance
 	config_add_int beacon_int chanbw frag rts
-	config_add_int mbssid mu_onoff rnr obss_interval
+	config_add_int mu_onoff rnr obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
-	config_add_int num_global_macaddr multiple_bssid
+	config_add_int num_global_macaddr
 	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar background_cert_mode
 	config_add_array ht_capab
 	config_add_array channels
@@ -68,7 +68,6 @@ drv_mac80211_init_device_config() {
 		he_twt_required \
 		he_twt_responder \
 		etxbfen \
-		itxbfen \
 		lpi_psd \
 		lpi_bcn_enhance
 	config_add_int \
@@ -84,8 +83,6 @@ drv_mac80211_init_device_config() {
 		he_spr_non_srg_obss_pd_max_offset \
 		pp_bitmap \
 		pp_mode \
-		eml_disable \
-		eml_resp \
 		sku_idx \
 		lpi_sku_idx
 	config_add_boolean \
@@ -232,7 +229,6 @@ set_dat_htmode() {
                 "HE40"    "1" "0" "1" "17" \
                 "HE80"    "1" "1" "2" "17" \
                 "HE160"   "1" "2" "3" "17" \
-                "HE320"   "" "" "" "17"    \
                 "EHT20"   "0" "0" "0" "23" \
                 "EHT40"   "1" "0" "1" "23" \
                 "EHT80"   "1" "1" "2" "23" \
@@ -245,7 +241,6 @@ set_dat_htmode() {
                 "HE40"    "1" "0" "1" "18" \
                 "HE80"    "1" "1" "2" "18" \
                 "HE160"   "1" "2" "3" "18" \
-                "HE320"   "" "" "" "18"    \
                 "EHT20"   "0" "0" "0" "24" \
                 "EHT40"   "1" "0" "1" "24" \
                 "EHT80"   "1" "1" "2" "24" \
@@ -269,8 +264,8 @@ mac80211_hostapd_setup_base() {
 	[ -n "$acs_exclude_dfs" ] && [ "$acs_exclude_dfs" -gt 0 ] &&
 		append base_cfg "acs_exclude_dfs=1" "$N"
 
-	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mbssid:1 mu_onoff rnr obss_interval vendor_vht
-	json_get_vars etxbfen:1 itxbfen:0 eml_disable eml_resp lpi_psd sku_idx lpi_sku_idx lpi_bcn_enhance
+	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mu_onoff rnr obss_interval vendor_vht
+	json_get_vars etxbfen:1 lpi_psd sku_idx lpi_sku_idx lpi_bcn_enhance
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
 
@@ -339,6 +334,7 @@ mac80211_hostapd_setup_base() {
 						esac
 						;;
 				esac
+				[ "$auto_channel" -gt 0 ] && ht_capab="[HT40+]"
 				;;
 			*) ieee80211n= ;;
 		esac
@@ -519,6 +515,7 @@ mac80211_hostapd_setup_base() {
 			vht_link_adapt:3 \
 			vht160:2
 
+		set_default tx_burst 2.0
 		append base_cfg "ieee80211ac=1" "$N"
 		vht_cap=0
 		for cap in $(iw phy "$phy" info | awk -F "[()]" '/VHT Capabilities/ { print $2 }'); do
@@ -533,6 +530,7 @@ mac80211_hostapd_setup_base() {
 		vht_cap="$(( ($vht_cap & ~(0x700)) | ($cap_rx_stbc << 8) ))"
 
 		[ "$vht_oper_chwidth" -lt 2 ] && {
+			vht160=0
 			short_gi_160=0
 		}
 
@@ -712,8 +710,6 @@ mac80211_hostapd_setup_base() {
 		append base_cfg "he_mu_edca_ac_vo_timer=3" "$N"
 	fi
 
-	set_default tx_burst 2
-
 	# 802.11be
 	enable_be=0
 	case "$htmode" in
@@ -761,13 +757,8 @@ ${channel:+channel=$channel}
 ${channel_list:+chanlist=$channel_list}
 ${hostapd_noscan:+noscan=1}
 ${tx_burst:+tx_queue_data2_burst=$tx_burst}
-${mbssid:+mbssid=$mbssid}
 ${mu_onoff:+mu_onoff=$mu_onoff}
-${itxbfen:+ibf_enable=$itxbfen}
 ${rnr:+rnr=$rnr}
-${multiple_bssid:+mbssid=$multiple_bssid}
-${eml_disable:+eml_disable=$eml_disable}
-${eml_resp:+eml_resp=$eml_resp}
 ${lpi_psd:+lpi_psd=$lpi_psd}
 ${lpi_bcn_enhance:+lpi_bcn_enhance=$lpi_bcn_enhance}
 ${sku_idx:+sku_idx=$sku_idx}
@@ -822,7 +813,7 @@ mac80211_generate_mac() {
 	local phy="$1"
 	local id="${macidx:-0}"
 
-	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr mbssid=${multiple_bssid:-0}
+	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr
 }
 
 get_board_phy_name() (
@@ -1033,7 +1024,7 @@ mac80211_prepare_vif() {
 		fi
 	fi
 
-	json_get_vars ifname mode ssid wds powersave macaddr enable wpa_psk_file sae_password_file vlan_file mld_primary
+	json_get_vars ifname mode ssid wds powersave macaddr enable wpa_psk_file vlan_file mld_primary
 
 	[ -n "$ifname" ] || {
 		local prefix;
@@ -1072,7 +1063,6 @@ mac80211_prepare_vif() {
 		json_select ..
 
 		[ -z "$wpa_psk_file" ] && hostapd_set_psk "$ifname"
-		[ -z "$sae_password_file" ] && hostapd_set_sae "$ifname"
 		[ -z "$vlan_file" ] && hostapd_set_vlan "$ifname"
 	}
 
@@ -1797,7 +1787,7 @@ drv_mac80211_setup() {
 		txpower \
 		rxantenna txantenna \
 		frag rts beacon_int:100 htmode \
-		num_global_macaddr:1 multiple_bssid
+		num_global_macaddr:1
 	json_get_values basic_rate_list basic_rate
 	json_get_values scan_list scan_list
 	json_select ..
@@ -1906,12 +1896,6 @@ drv_mac80211_setup() {
 	iw phy "$phy" set antenna $txantenna $rxantenna >/dev/null 2>&1
 	iw phy "$phy" set distance "$distance" >/dev/null 2>&1
 
-	if [ -n "$txpower" ]; then
-		iw phy "$phy" set txpower fixed "${txpower%%.*}00"
-	else
-		iw phy "$phy" set txpower auto
-	fi
-
 	[ -n "$frag" ] && iw phy "$phy" set frag "${frag%%.*}"
 	[ -n "$rts" ] && iw phy "$phy" set rts "${rts%%.*}"
 
@@ -1960,7 +1944,7 @@ drv_mac80211_setup() {
 		generate_dat_from_uci "$phy" || logger -t mac80211.sh "ERROR: generate_dat_from_uci failed with code $?"
 		[ -n "$has_ap" ] && {
 			logger -t mac80211.sh "Generating hostapd configs..."
-			generate_hostapd_from_uci_improved "$phy" || logger -t mac80211.sh "ERROR: generate_hostapd_from_uci_improved failed with code $?"
+			#generate_hostapd_from_uci_improved "$phy" || logger -t mac80211.sh "ERROR: generate_hostapd_from_uci_improved failed with code $?"
 		}
 		logger -t mac80211.sh "DAT/hostapd configs generation completed"
 	} || {

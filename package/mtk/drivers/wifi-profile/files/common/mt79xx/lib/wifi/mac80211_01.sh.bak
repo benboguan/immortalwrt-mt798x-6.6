@@ -40,13 +40,25 @@ __get_band_defaults() {
 	( iw phy "$phy" info; echo ) | awk '
 BEGIN { bands="" }
 $1=="Band"||$1==""&&band {
-	if(channel){mode="NOHT";if(ht)mode="HT20";if(vht&&band!="1:")mode="VHT80";if(he)mode="HE80";if(he&&band=="1:")mode="HE20";sub("\\[","",channel);sub("\\]","",channel);bands=bands band channel":"mode" "}
+	if (channel) {
+		mode="NOHT"
+		if (ht) mode="HT20"
+		if (vht && band != "1:") mode="VHT80"
+		if (he) mode="HE80"
+		if (he && band == "1:") mode="HE20"
+		if (eht) mode="EHT80"
+		if (eht && band == "1:") mode="EHT20"
+		sub("\\[", "", channel)
+		sub("\\]", "", channel)
+		bands = bands band channel ":" mode " "
+	}
 	band=""
 }
-$1=="Band"{band=$2;channel="";vht="";ht="";he=""}
+$1=="Band"{band=$2;channel="";vht="";ht="";he="";eht=""}
 $0~"Capabilities:"{ht=1}
 $0~"VHT Capabilities"{vht=1}
 $0~"HE Iftypes"{he=1}
+$0~"EHT Iftypes"{eht=1}
 $1=="*"&&$3=="MHz"&&$0!~/disabled/&&band&&!channel{channel=$4}
 END{print bands}'
 }
