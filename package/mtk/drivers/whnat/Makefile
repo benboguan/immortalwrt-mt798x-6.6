@@ -32,7 +32,14 @@ EXTRA_KCONFIG:= \
 	CONFIG_MTK_WIFI7_WHNAT_SUPPORT=m \
 	CONFIG_MTK_WIFI7_FAST_NAT_SUPPORT=y
 
-EXTRA_CFLAGS += -DWHNAT_SUPPORT -DCONFIG_FAST_NAT_SUPPORT
+EXTRA_CFLAGS += \
+	-DWHNAT_SUPPORT \
+	-DCONFIG_FAST_NAT_SUPPORT \
+	-Wno-incompatible-pointer-types \
+	-Wno-error=implicit-function-declaration \
+	-Wno-error=int-conversion \
+	-Wno-error=int-to-pointer-cast \
+	-Wno-error=format
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
