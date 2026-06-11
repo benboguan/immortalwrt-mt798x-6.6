@@ -15,3 +15,13 @@
  					break;
  
  				case 11: /* 802.1x Suite-B */
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -1930,6 +1930,7 @@ static const struct
+ 	{ "PSK",             0, IWINFO_KMGMT_PSK },
+ 	{ "EAP",             0, IWINFO_KMGMT_8021x },
+ 	{ "SAE",             4, IWINFO_KMGMT_SAE },
++	{ "SAE-EXT-KEY",     4, IWINFO_KMGMT_SAE },
+ 	{ "OWE",             4, IWINFO_KMGMT_OWE }
+ };
+ 

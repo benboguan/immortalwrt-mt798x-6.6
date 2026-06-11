@@ -1,0 +1,31 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -1924,7 +1924,7 @@ static const struct
+ 	{ "EAP-SUITE-B-192", 4, IWINFO_KMGMT_8021x },
+ 	{ "EAP-SUITE-B",     4, IWINFO_KMGMT_8021x },
+ 	{ "EAP-SHA384",      4, IWINFO_KMGMT_8021x },
+-	{ "EAP-SHA256",      0, IWINFO_KMGMT_8021x },
++	{ "EAP-SHA256",      4, IWINFO_KMGMT_8021x },
+ 	{ "PSK-SHA256",      0, IWINFO_KMGMT_PSK },
+ 	{ "NONE",            0, IWINFO_KMGMT_NONE },
+ 	{ "None",            0, IWINFO_KMGMT_NONE },
+@@ -3598,9 +3598,16 @@ static int nl80211_get_htmode(const
+ 
+ 	if (nl80211_hostapd_query(res ? res : ifname, "ieee80211ax", b, sizeof(b)))
+ 		he = b[0] == '1';
+-	else if (nl80211_wpactl_query(res ? res : ifname, "wifi_generation", b, sizeof(b))) {
+-		he = b[0] == '6';
+-		eht = b[0] == '7';
++
++	if (!he && !eht) {
++		if (nl80211_wpactl_query(res ? res : ifname, "wifi_generation", b, sizeof(b))) {
++			he  = (b[0] == '6');
++			eht = (b[0] == '7');
++		}
++		if (!eht && nl80211_wpactl_query(res ? res : ifname, "ieee80211be", b, sizeof(b)))
++			eht = (b[0] == '1');
++		if (!he && nl80211_wpactl_query(res ? res : ifname, "ieee80211ax", b, sizeof(b)))
++			he = (b[0] == '1');
+ 	}
+ 
+ 	switch (chn.width) {
