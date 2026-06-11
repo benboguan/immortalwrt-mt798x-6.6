@@ -244,3 +244,35 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  
  int wpa_set_wep_keys(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid);
  int wpa_supplicant_set_wpa_none_key(struct wpa_supplicant *wpa_s,
+--- a/wpa_supplicant/ctrl_iface.c
++++ b/wpa_supplicant/ctrl_iface.c
+@@ -2334,7 +2334,7 @@ static int wpa_supplicant_ctrl_iface_status(struct
+ 			pos += ret;
+ 		}
+ 
+-		if (wpa_s->connection_set &&
++		if (wpa_s->connection_set ||
+ 		    (wpa_s->connection_ht || wpa_s->connection_vht ||
+ 		     wpa_s->connection_he || wpa_s->connection_eht)) {
+ 			ret = os_snprintf(pos, end - pos,
+@@ -2547,6 +2547,20 @@ static int wpa_supplicant_ctrl_iface_status(struct
+ 		pos += ret;
+ 	}
+ 
++	if (wpa_s->current_ssid->he) {
++		ret = os_snprintf(pos, end - pos, "ieee80211ax=1\n");
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++	}
++
++	if (wpa_s->current_ssid->eht) {
++		ret = os_snprintf(pos, end - pos, "ieee80211be=1\n");
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++	}
++
+ #ifdef ANDROID
+ 	/*
+ 	 * Allow using the STATUS command with default behavior, say for debug,
