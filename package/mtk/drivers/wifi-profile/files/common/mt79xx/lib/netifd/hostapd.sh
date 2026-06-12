@@ -1996,7 +1996,7 @@ wpa_supplicant_run() {
 	_wpa_supplicant_common "$ifname"
 
 	ubus wait_for wpa_supplicant
-	local supplicant_res="$(ubus call wpa_supplicant config_add "{ \
+	local supplicant_res="$(ubus_call wpa_supplicant config_add "{ \
 		\"driver\": \"${_w_driver:-wext}\", \"ctrl\": \"$_rpath\", \
 		\"iface\": \"$ifname\", \"config\": \"$_config\" \
 		${network_bridge:+, \"bridge\": \"$network_bridge\"} \
