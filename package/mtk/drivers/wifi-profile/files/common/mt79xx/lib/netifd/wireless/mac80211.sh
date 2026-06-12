@@ -1373,7 +1373,9 @@ hostapd_set_config() {
 		/usr/sbin/hostapd -B -P "$pidfile" -f "$logfile" "$conf"
 		if [ $? -eq 0 ] && [ -f "$pidfile" ] && kill -0 "$(cat "$pidfile")" 2>/dev/null; then
 			started=$((started + 1))
-			wireless_add_process "$(cat "$pidfile")" "/usr/sbin/hostapd" 1 1
+			local hostapd_bin="/usr/sbin/hostapd"
+			[ -x /usr/sbin/wpad ] && hostapd_bin="/usr/sbin/wpad"
+			wireless_add_process "$(cat "$pidfile")" "$hostapd_bin" 1 1
 			logger -t mac80211.sh "hostapd started for $ifname (pid: $(cat "$pidfile"))"
 		fi
 	done
@@ -1537,10 +1539,18 @@ drv_mac80211_cleanup() {
 
 mac80211_reset_config() {
 	local phy="$1"
+	local hostapd_conf_file="/var/run/hostapd-$phy.conf"
+	local hostapd_pid_file="/var/run/hostapd-$phy.pid"
 
-	hostapd_conf_file="/var/run/hostapd-$phy.conf"
-	ubus_call hostapd config_set '{ "phy": "'"$phy"'", "config": "", "prev_config": "'"$hostapd_conf_file"'" }' > /dev/null
-	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null
+	# 1. 禁用无效的 hostapd ubus 调用（联发科驱动无此接口，删除即解决 Method not found）
+	# ubus_call hostapd config_set ... 【彻底删除】
+
+	# 2. 安全清理 wpa_supplicant（抑制错误输出，避免报错）
+	ubus_call wpa_supplicant config_set '{ "phy": "'"$phy"'", "config": [] }' > /dev/null 2>&1
+
+	# 3. 强制清理残留进程 + 配置文件（解决配置缓存导致的启动失败）
+	[ -f "$hostapd_pid_file" ] && kill -9 $(cat $hostapd_pid_file 2>/dev/null) 2>/dev/null
+	rm -f $hostapd_pid_file $hostapd_conf_file
 }
 
 mac80211_device_needs_restart() {
@@ -1631,7 +1641,9 @@ drv_mac80211_setup() {
 		json_select ..
 	}
 
-	json_select data && {
+	json_get_type data_type data
+	if [ "$data_type" = "object" ]; then
+		json_select data
 		json_get_var prev_phy phy
 		json_get_var prev_channel channel
 		json_get_var prev_band band
@@ -1642,7 +1654,7 @@ drv_mac80211_setup() {
 		json_get_var prev_txantenna txantenna
 		json_get_var prev_macaddr macaddr
 		json_select ..
-	}
+	fi
 
 	find_phy || {
 		echo "Could not find PHY for device '$1'"
@@ -1690,8 +1702,8 @@ drv_mac80211_setup() {
 		done
 	}
 
-	set_default rxantenna 0x07
-	set_default txantenna 0x07
+	set_default rxantenna 0x03
+	set_default txantenna 0x03
 	set_default distance 0
 
 	[ "$txantenna" = "all" ] && txantenna=0xffffffff
@@ -1701,7 +1713,7 @@ drv_mac80211_setup() {
 		mac80211_force_phy_reload "$phy"
 	fi
 
-	[ "$rxantenna" != "$prev_rxantenna" -o "$txantenna" != "$prev_txantenna" ] && mac80211_reset_config "$phy"
+	[ "$rxantenna" = "$prev_rxantenna" -a "$txantenna" = "$prev_txantenna" ] || mac80211_reset_config "$phy"
 	wireless_set_data \
 		phy="$phy" \
 		channel="${channel:-}" \
@@ -1762,12 +1774,16 @@ drv_mac80211_setup() {
 	}
 
 	# 下发wdev配置
-	json_set_namespace wdev_uc prev
-	wdev_tool "$phy" set_config "$(json_dump)" $active_ifnames
-	json_set_namespace "$prev"
+	if [ -n "$active_ifnames" ]; then
+		json_set_namespace wdev_uc prev
+		wdev_tool "$phy" set_config "$(json_dump)" $active_ifnames > /dev/null 2>&1
+		json_set_namespace "$prev"
+	fi
 
 	# 启动wpa_supplicant
-	[ -x /usr/sbin/wpa_supplicant ] && wpa_supplicant_set_config "$phy"
+	if [ -x /usr/sbin/wpa_supplicant ] && [ -n "$wpa_supp_init" ]; then
+		wpa_supplicant_set_config "$phy"
+	fi
 
 	# 启动hostapd
 	if [ -n "$has_ap" -a -x /usr/sbin/hostapd ]; then
