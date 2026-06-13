@@ -278,7 +278,7 @@ mac80211_hostapd_setup_base() {
 
 	[ "$min_tx_power" -gt 0 ] && append base_cfg "min_tx_power=$min_tx_power" "$N"
 
-	set_default noscan 0
+	set_default noscan 1
 
 	[ "$noscan" -gt 0 ] && hostapd_noscan=1
 	[ "$tx_burst" = 0 ] && tx_burst=
