@@ -1,0 +1,53 @@
+--- a/wed.c
++++ b/wed.c
+@@ -1305,12 +1305,19 @@ wed_get_entry_num(void)
+ 	u32 num = 0;
+ 
+ 	node = of_find_compatible_node(NULL, NULL, WED_DEV_NODE);
++	if (!node) {
++		warp_dbg(WARP_DBG_ERR, "%s(): can't find compatible node [%s]\n",
++			 __func__, WED_DEV_NODE);
++		return 0;
++	}
+ 
+ 	if (of_property_read_u32_index(node, "wed_num", 0, &num)) {
+ 		warp_dbg(WARP_DBG_ERR, "%s(): get WED number from DTS fail!!\n", __func__);
++		of_node_put(node);
+ 		return 0;
+ 	}
+ 
++	of_node_put(node);
+ 	return num;
+ }
+ 
+@@ -1324,16 +1331,28 @@ wed_get_slot_map(unsigned int idx)
+ 	u32 num = 0;
+ 
+ 	node = of_find_compatible_node(NULL, NULL, TO_NODE(idx));
++	if (!node) {
++		warp_dbg(WARP_DBG_ERR, "%s(): node [%s] not found, use default\n",
++			 __func__, TO_NODE(idx));
++		goto set_default;
++	}
+ 
+ 	if (of_property_read_u32_index(node, "pci_slot_map", TO_RES_IDX(idx), &num)) {
+-		warp_dbg(WARP_DBG_OFF, "%s(): get wed slot from DTS fail!!\n", __func__);
++		warp_dbg(WARP_DBG_ERR, "%s(): get wed slot from DTS fail!!\n", __func__);
+ 		warp_dbg(WARP_DBG_OFF, "%s(): assign default value: (0->1), (1->2)!!\n",
+ 			 __func__);
+-		num = (idx == 0) ? 1 : 2;
++		goto set_default;
+ 	}
+ 	warp_dbg(WARP_DBG_OFF,
+ 		 "%s(): assign slot_id:%d for entry: %d!\n", __func__, num, idx);
++
++	of_node_put(node);
+ 	return (u8)num;
++set_default:
++	num = (idx == 0) ? 1 : 2;
++	if (node)
++		of_node_put(node);
++	return (u8)num;
+ }
+ 
+ /*
