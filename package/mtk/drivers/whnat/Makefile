@@ -2,6 +2,9 @@
 #
 # This is free software, licensed under the GNU General Public License v2.
 # See /LICENSE for more information.
+#
+# keep only rxtx_hook.
+#
 
 include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
