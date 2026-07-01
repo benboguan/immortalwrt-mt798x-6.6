@@ -43,7 +43,6 @@ _wdev_prepare_channel() {
 
 	auto_channel=0
 	enable_ht=0
-	htmode=
 	hwmode="${hwmode##11}"
 
 	case "$channel" in
@@ -360,12 +359,6 @@ wireless_vif_parse_encryption() {
 	esac
 
 	case "$encryption" in
-		*nosha256*)
-			nosha256=1
-		;;
-	esac
-
-	case "$encryption" in
 		*osen*)
 			auth_osen=1
 		;;
@@ -462,7 +455,8 @@ _wdev_common_vlan_config() {
 }
 
 _wdev_common_station_config() {
-	config_add_string mac key vid iface
+	config_add_string key vid iface
+	config_add_array mac
 }
 
 init_wireless_driver() {
