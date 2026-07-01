@@ -43,10 +43,10 @@ drv_mac80211_init_device_config() {
 	config_add_string tx_burst
 	config_add_string distance
 	config_add_int beacon_int chanbw frag rts
-	config_add_int mu_onoff rnr obss_interval
+	config_add_int rnr obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
-	config_add_int num_global_macaddr
-	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar background_cert_mode
+	config_add_int num_global_macaddr multiple_bssid
+	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar
 	config_add_array ht_capab
 	config_add_array channels
 	config_add_array scan_list
@@ -70,10 +70,7 @@ drv_mac80211_init_device_config() {
 		he_spr_psr_enabled \
 		he_bss_color_enabled \
 		he_twt_required \
-		he_twt_responder \
-		etxbfen \
-		lpi_psd \
-		lpi_bcn_enhance
+		he_twt_responder
 	config_add_int \
 		beamformer_antennas \
 		beamformee_antennas \
@@ -84,11 +81,7 @@ drv_mac80211_init_device_config() {
 		rx_stbc \
 		tx_stbc \
 		he_bss_color \
-		he_spr_non_srg_obss_pd_max_offset \
-		pp_bitmap \
-		pp_mode \
-		sku_idx \
-		lpi_sku_idx
+		he_spr_non_srg_obss_pd_max_offset
 	config_add_boolean \
 		ldpc \
 		greenfield \
@@ -268,8 +261,7 @@ mac80211_hostapd_setup_base() {
 	[ -n "$acs_exclude_dfs" ] && [ "$acs_exclude_dfs" -gt 0 ] &&
 		append base_cfg "acs_exclude_dfs=1" "$N"
 
-	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mu_onoff rnr obss_interval vendor_vht
-	json_get_vars etxbfen:1 lpi_psd sku_idx lpi_sku_idx lpi_bcn_enhance
+	json_get_vars noscan ht_coex min_tx_power:0 tx_burst rnr obss_interval vendor_vht
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
 
@@ -439,12 +431,9 @@ mac80211_hostapd_setup_base() {
 		;;
 	esac
 	[ "$band" = "5g" ] && {
-		json_get_vars \
-			background_radar:0 \
-			background_cert_mode:0
+		json_get_vars background_radar:0
 
 		[ "$background_radar" -eq 1 ] && append base_cfg "enable_background_radar=1" "$N"
-		[ "$background_cert_mode" -eq 1 ] && append base_cfg "background_radar_mode=1" "$N"
 	}
 
 	[ "$band" = "6g" ] && {
@@ -536,12 +525,6 @@ mac80211_hostapd_setup_base() {
 		[ "$vht_oper_chwidth" -lt 2 ] && {
 			vht160=0
 			short_gi_160=0
-		}
-
-		[ "$etxbfen" -eq 0 ] && {
-			su_beamformer=0
-			su_beamformee=0
-			mu_beamformer=0
 		}
 
 		mac80211_add_capabilities vht_capab $vht_cap \
@@ -654,11 +637,6 @@ mac80211_hostapd_setup_base() {
 			append base_cfg "he_oper_centr_freq_seg0_idx=$vht_center_seg0" "$N"
 		}
 
-		[ "$etxbfen" -eq 0 ] && {
-			he_su_beamformer=0
-			he_mu_beamformer=0
-		}
-
 		mac80211_add_he_capabilities \
 			he_su_beamformer:${he_phy_cap:6:2}:0x80:$he_su_beamformer \
 			he_su_beamformee:${he_phy_cap:8:2}:0x1:$he_su_beamformee \
@@ -721,19 +699,10 @@ mac80211_hostapd_setup_base() {
 	esac
 
 	if [ "$enable_be" != "0" ]; then
-
-		json_get_vars \
-			pp_bitmap \
-			pp_mode
-
 		append base_cfg "ieee80211be=1" "$N"
-		if [ "$etxbfen" -eq 0 ]; then
-			append base_cfg "eht_su_beamformee=1" "$N"
-		else
-			append base_cfg "eht_su_beamformer=1" "$N"
-			append base_cfg "eht_su_beamformee=1" "$N"
-			append base_cfg "eht_mu_beamformer=1" "$N"
-		fi
+		append base_cfg "eht_su_beamformer=1" "$N"
+		append base_cfg "eht_su_beamformee=1" "$N"
+		append base_cfg "eht_mu_beamformer=1" "$N"
 		[ "$hwmode" = "a" ] && {
 			case $htmode in
 				EHT320*)
@@ -747,10 +716,6 @@ mac80211_hostapd_setup_base() {
 				;;
 			esac
 		}
-
-		[ -n "$pp_bitmap" ] && append base_cfg "punct_bitmap=$pp_bitmap" "$N"
-
-		[ -n "$pp_mode" ] && append base_cfg "pp_mode=$pp_mode" "$N"
 	fi
 
 	set_dat_htmode "$band" "$htmode"
@@ -761,12 +726,8 @@ ${channel:+channel=$channel}
 ${channel_list:+chanlist=$channel_list}
 ${hostapd_noscan:+noscan=1}
 ${tx_burst:+tx_queue_data2_burst=$tx_burst}
-${mu_onoff:+mu_onoff=$mu_onoff}
 ${rnr:+rnr=$rnr}
-${lpi_psd:+lpi_psd=$lpi_psd}
-${lpi_bcn_enhance:+lpi_bcn_enhance=$lpi_bcn_enhance}
-${sku_idx:+sku_idx=$sku_idx}
-${lpi_sku_idx:+lpi_sku_idx=$lpi_sku_idx}
+${multiple_bssid:+dot11vmbssid=$multiple_bssid}
 #num_global_macaddr=$num_global_macaddr
 #used_radio_mask=$used_radio_mask
 $base_cfg
@@ -817,7 +778,7 @@ mac80211_generate_mac() {
 	local phy="$1"
 	local id="${macidx:-0}"
 
-	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr
+	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr dot11vmbssid=${multiple_bssid:-0}
 }
 
 get_board_phy_name() (
@@ -1028,7 +989,7 @@ mac80211_prepare_vif() {
 		fi
 	fi
 
-	json_get_vars ifname mode ssid wds powersave macaddr enable wpa_psk_file vlan_file mld_primary
+	json_get_vars ifname mode ssid wds powersave macaddr enable wpa_psk_file sae_password_file vlan_file mld_primary
 
 	[ -n "$ifname" ] || {
 		local prefix;
@@ -1062,12 +1023,13 @@ mac80211_prepare_vif() {
 	json_add_string _default_macaddr "$default_macaddr"
 	json_select ..
 
-	[ "$mode" == "ap" ] && [ "$mld_primary" != "0" ] && {
+	[ "$mode" == "ap" ] && {
 		json_select config
 		wireless_vif_parse_encryption
 		json_select ..
 
 		[ -z "$wpa_psk_file" ] && hostapd_set_psk "$ifname"
+		[ -z "$sae_password_file" ] && hostapd_set_sae "$ifname"
 		[ -z "$vlan_file" ] && hostapd_set_vlan "$ifname"
 	}
 
@@ -1617,7 +1579,7 @@ drv_mac80211_setup() {
 		txpower \
 		rxantenna txantenna \
 		frag rts beacon_int:100 htmode \
-		num_global_macaddr:3
+		num_global_macaddr:3 multiple_bssid
 	json_get_values basic_rate_list basic_rate
 	json_get_values scan_list scan_list
 	json_select ..
