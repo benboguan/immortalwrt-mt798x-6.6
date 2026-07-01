@@ -467,6 +467,7 @@ hostapd_common_add_bss_config() {
 	config_add_int unsol_bcast_probe_resp_interval
 	config_add_int fils_discovery_min_interval
 	config_add_int fils_discovery_max_interval
+	config_add_boolean rnr
 
 	config_add_array sae_groups
 	config_add_array owe_groups
@@ -701,7 +702,7 @@ hostapd_set_bss_options() {
 		multicast_to_unicast_all proxy_arp per_sta_vif na_mcast_to_ucast \
 		eap_server eap_user_file ca_cert server_cert private_key private_key_passwd server_id radius_server_clients radius_server_auth_port \
 		vendor_elements fils ocv beacon_prot apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
-		fils_discovery_max_interval group_cipher group_mgmt_cipher \
+		fils_discovery_max_interval rnr group_cipher group_mgmt_cipher \
 		mld_id mld_link_id mld_primary mld_addr mld_allowed_links mld_radio_mask eml_disable eml_resp \
 		assocresp_elements dpp
 
@@ -847,7 +848,7 @@ hostapd_set_bss_options() {
 				append bss_conf "wpa_psk_file=$wpa_psk_file" "$N"
 			}
 			[ -z "$sae_password_file" ] && set_default sae_password_file /var/run/hostapd-$ifname.sae
-			[ -n "$sae_password_file" ] && [ "$auth_type" = "sae" -o "$auth_type" = "psk-sae" ] && {
+			[ -n "$sae_password_file" ] && [ "$auth_type" = "sae" -o "$auth_type" = "psk-sae" -o "$auth_type" = "psk-sae-ext" ] && {
 				[ -e "$sae_password_file" ] || touch "$sae_password_file"
 				append bss_conf "sae_password_file=$sae_password_file" "$N"
 			}
@@ -1434,6 +1435,10 @@ hostapd_set_bss_options() {
 
 	if [ -n "$fils_discovery_max_interval" ]; then
 		append bss_conf "fils_discovery_max_interval=$fils_discovery_max_interval" "$N"
+	fi
+
+	if [ -n "$rnr" ]; then
+		append bss_conf "rnr=$rnr" "$N"
 	fi
 
 	if [ -n "$mld_id" ]; then
