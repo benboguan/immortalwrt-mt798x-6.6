@@ -1,0 +1,134 @@
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -3781,6 +3781,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 	} else if (os_strcmp(buf, "ieee80211ax") == 0) {
+ 		conf->ieee80211ax = atoi(pos);
+ 		conf->conf_changed = 1;
++	} else if (os_strcmp(buf, "require_he") == 0) {
++		conf->require_he = atoi(pos);
++		conf->conf_changed = 1;
+ 	} else if (os_strcmp(buf, "he_su_beamformer") == 0) {
+ 		conf->he_phy_capab.he_su_beamformer = atoi(pos);
+ 		conf->conf_changed = 1;
+@@ -5110,6 +5113,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ #ifdef CONFIG_IEEE80211BE
+ 	} else if (os_strcmp(buf, "ieee80211be") == 0) {
+ 		conf->ieee80211be = atoi(pos);
++	} else if (os_strcmp(buf, "require_eht") == 0) {
++		conf->require_eht = atoi(pos);
+ 	} else if (os_strcmp(buf, "eht_oper_chwidth") == 0) {
+ 		conf->eht_oper_chwidth = atoi(pos);
+ 	} else if (os_strcmp(buf, "eht_oper_centr_freq_seg0_idx") == 0) {
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -817,6 +817,9 @@
+ # 1 = enabled
+ #ieee80211ax=1
+ 
++# Require stations to support HE PHY (reject association if they do not)
++#require_he=1
++
+ # disable_11ax: Boolean (0/1) to disable HE for a specific BSS
+ #disable_11ax=0
+ 
+@@ -1007,6 +1010,9 @@ wmm_ac_vo_acm=0
+ # 1 = enabled
+ #ieee80211be=1
+ 
++# Require stations to support EHT PHY (reject association if they do not)
++#require_eht=1
++
+ #disable_11be: Boolean (0/1) to disable EHT for a specific BSS
+ #disable_11be=0
+ 
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -1161,6 +1161,7 @@ struct hostapd_config {
+ 	u8 he_6ghz_rx_ant_pat;
+ 	u8 he_6ghz_tx_ant_pat;
+ 	u8 he_6ghz_reg_pwr_type;
++	bool require_he;
+ #endif /* CONFIG_IEEE80211AX */
+ 
+ 	/* VHT enable/disable config from CHAN_SWITCH */
+@@ -1195,6 +1196,7 @@ struct hostapd_config {
+ 	u8 eht_oper_centr_freq_seg0_idx;
+ 	struct eht_phy_capabilities_info eht_phy_capab;
+ 	u16 punct_bitmap; /* a bitmap of disabled 20 MHz channels */
++	bool require_eht;
+ #endif /* CONFIG_IEEE80211BE */
+ 
+ 	/* EHT enable/disable config from CHAN_SWITCH */
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -158,6 +158,18 @@ u8 * hostapd_eid_supp_rates(struct hostapd_data
+ 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_VHT_PHY;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211AX
++	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he && count < 8)
++		count++;
++		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_HE_PHY;
++#endif /* CONFIG_IEEE80211AX */
++
++#ifdef CONFIG_IEEE80211BE
++	if (hapd->iconf->ieee80211be && hapd->iconf->require_eht && count < 8)
++		count++;
++		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_EHT_PHY;
++#endif /* CONFIG_IEEE80211BE */
++
+ 	if (h2e_required && count < 8) {
+ 		count++;
+ 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY;
+@@ -4779,6 +4791,15 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
+ 					 elems.he_capabilities_len);
+ 		if (resp != WLAN_STATUS_SUCCESS)
+ 			return resp;
++
++		if (hapd->iconf->require_he && !(sta->flags & WLAN_STA_HE)) {
++			hostapd_logger(hapd, sta->addr,
++				       HOSTAPD_MODULE_IEEE80211,
++				       HOSTAPD_LEVEL_INFO,
++				       "Station does not support mandatory HE PHY - reject association");
++			return WLAN_STATUS_DENIED_HE_NOT_SUPPORTED;
++		}
++
+ 		if (is_6ghz_op_class(hapd->iconf->op_class)) {
+ 			if (!(sta->flags & WLAN_STA_HE)) {
+ 				hostapd_logger(hapd, sta->addr,
+@@ -4803,6 +4824,14 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
+ 					  elems.eht_capabilities_len);
+ 		if (resp != WLAN_STATUS_SUCCESS)
+ 			return resp;
++		if (hapd->iconf->require_eht && !(sta->flags & WLAN_STA_EHT)) {
++			hostapd_logger(hapd, sta->addr,
++				       HOSTAPD_MODULE_IEEE80211,
++				       HOSTAPD_LEVEL_INFO,
++				       "Station does not support mandatory EHT PHY - reject association");
++			return WLAN_STATUS_DENIED_EHT_NOT_SUPPORTED;
++		}
++
+ 	}
+ #endif /* CONFIG_IEEE80211BE */
+ 
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -212,6 +212,9 @@
+ #ifdef CONFIG_MTK_IEEE80211BE
+ #define WLAN_STATUS_INVALID_MLIE 128
+ #endif
++#ifdef CONFIG_IEEE80211BE
++#define WLAN_STATUS_DENIED_EHT_NOT_SUPPORTED 129
++#endif
+ 
+ /* Reason codes (IEEE Std 802.11-2016, 9.4.1.7, Table 9-45) */
+ #define WLAN_REASON_UNSPECIFIED 1
+@@ -1287,6 +1290,8 @@ struct ieee80211_ampe_ie {
+ 
+ #define BSS_MEMBERSHIP_SELECTOR_VHT_PHY 126
+ #define BSS_MEMBERSHIP_SELECTOR_HT_PHY 127
++#define BSS_MEMBERSHIP_SELECTOR_EHT_PHY 121
++#define BSS_MEMBERSHIP_SELECTOR_HE_PHY 122
+ #define BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY 123
+ 
+ /* VHT Defines */
