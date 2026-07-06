@@ -40,10 +40,10 @@ drv_mac80211_init_device_config() {
 	hostapd_common_add_device_config
 
 	config_add_string path phy 'macaddr:macaddr'
-	config_add_string tx_burst
+	config_add_string tx_burst twt
 	config_add_string distance
 	config_add_int beacon_int chanbw frag rts
-	config_add_int rnr obss_interval
+	config_add_int mbssid rnr obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
 	config_add_int num_global_macaddr multiple_bssid
 	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar
@@ -69,8 +69,7 @@ drv_mac80211_init_device_config() {
 		he_spr_sr_control \
 		he_spr_psr_enabled \
 		he_bss_color_enabled \
-		he_twt_required \
-		he_twt_responder
+		he_twt_required
 	config_add_int \
 		beamformer_antennas \
 		beamformee_antennas \
@@ -99,7 +98,6 @@ drv_mac80211_init_iface_config() {
 	config_add_boolean wds powersave enable
 	config_add_string wds_bridge
 	config_add_int maxassoc
-	config_add_int max_listen_int
 	config_add_int dtim_period
 	config_add_int start_disabled
 
@@ -173,10 +171,10 @@ set_dat_params() {
 set_dat_base() {
     local dat_file="$1" ht_bw="$2" vht_bw="$3" eht_apbw="$4" wireless_mode="$5"
 
-    set_dat_params "HT_BW" "$ht_bw" "$dat_file"       || return 1
-    set_dat_params "VHT_BW" "$vht_bw" "$dat_file"     || return 1
-    set_dat_params "EHT_ApBw" "$eht_apbw" "$dat_file" || return 1
-    set_dat_params "WirelessMode" "$wireless_mode" "$dat_file" || return 1
+    set_dat_params "HT_BW" "$ht_bw" "$dat_file"
+    set_dat_params "VHT_BW" "$vht_bw" "$dat_file"
+    set_dat_params "EHT_ApBw" "$eht_apbw" "$dat_file"
+    set_dat_params "WirelessMode" "$wireless_mode" "$dat_file"
 }
 
 # 将频段与对应的“带宽-参数”映射表关联
@@ -250,6 +248,35 @@ set_dat_htmode() {
     esac
 }
 
+get_basic_rate() {
+	local band="$1" cell_density="${2:-0}" legacy_rates="${3:-0}" w_mode="${4:-0}"
+	if [ "$band" = "2g" ]; then
+		if [ "$legacy_rates" = "0" ] && [ "$cell_density" = "0" ]; then
+			case "$w_mode" in
+				1) echo "3" ;;   # B only
+				4) echo "351" ;; # G only
+				*) echo "15" ;;  # N only / B/G/N mixed
+			esac
+			return
+		elif [ "$legacy_rates" = "1" ] && [ "$cell_density" -le 2 ]; then
+			case "$cell_density" in
+				0) echo "15" ;;
+				1) echo "12" ;;
+				2) echo "8" ;;
+				*) echo "15" ;;
+			esac
+			return
+		fi
+		echo "15"
+		return
+	fi
+	# 5G/6G
+	local rate_map="336 336 320 256"
+	local idx=$(( cell_density > 3 ? 3 : cell_density ))
+	eval "local rate_val=\$(echo \$rate_map | cut -d' ' -f$((idx+1)))"
+	echo "${rate_val:-336}"
+}
+
 mac80211_hostapd_setup_base() {
 	local phy="$1"
 
@@ -261,7 +288,7 @@ mac80211_hostapd_setup_base() {
 	[ -n "$acs_exclude_dfs" ] && [ "$acs_exclude_dfs" -gt 0 ] &&
 		append base_cfg "acs_exclude_dfs=1" "$N"
 
-	json_get_vars noscan ht_coex min_tx_power:0 tx_burst rnr obss_interval vendor_vht
+	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mbssid rnr obss_interval vendor_vht vht_1024
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
 
@@ -270,9 +297,12 @@ mac80211_hostapd_setup_base() {
 
 	[ "$min_tx_power" -gt 0 ] && append base_cfg "min_tx_power=$min_tx_power" "$N"
 
-	set_default noscan 1
+	set_default noscan 0
 
-	[ "$noscan" -gt 0 ] && hostapd_noscan=1
+	[ "$noscan" -gt 0 ] && {
+		hostapd_noscan=1
+		disable_40mhz_scan=1
+	}
 	[ "$tx_burst" = 0 ] && tx_burst=
 
 	chan_ofs=0
@@ -286,6 +316,7 @@ mac80211_hostapd_setup_base() {
 		ieee80211n=1
 		ht_capab=
 		case "$htmode" in
+			HT*) append base_cfg "require_ht=1" "$N" ;;
 			VHT20|HT20|HE20|EHT20) ;;
 			HT40*|VHT40|VHT80|VHT160|HE40*|HE80|HE160|EHT40*|EHT80|EHT160)
 				case "$hwmode" in
@@ -361,6 +392,7 @@ mac80211_hostapd_setup_base() {
 
 			cap_rx_stbc=$((($ht_cap_mask >> 8) & 3))
 			[ "$rx_stbc" -lt "$cap_rx_stbc" ] && cap_rx_stbc="$rx_stbc"
+			[ "$cap_rx_stbc" -lt 1 ] && cap_rx_stbc=1
 			ht_cap_mask="$(( ($ht_cap_mask & ~(0x300)) | ($cap_rx_stbc << 8) ))"
 
 			mac80211_add_capabilities ht_capab_flags $ht_cap_mask \
@@ -387,6 +419,7 @@ mac80211_hostapd_setup_base() {
 
 	idx="$channel"
 	case "$htmode" in
+		VHT*) append base_cfg "require_vht=1" "$N" ;;
 		VHT20|HE20|EHT20) enable_ac=1;;
 		VHT40|HE40|EHT40)
 			case "$(( (($channel / 4) + $chan_ofs) % 2 ))" in
@@ -605,21 +638,29 @@ mac80211_hostapd_setup_base() {
 		[ -n "$vht_capab" ] && append base_cfg "vht_capab=$vht_capab" "$N"
 	fi
 
-	# 802.11ax
+	# 802.11ax/802.11be
 	enable_ax=0
 	enable_be=0
 	case "$htmode" in
-		HE*) enable_ax=1 ;;
-		EHT*) enable_ax=1; enable_be=1 ;;
+		HE*)
+			enable_ax=1
+			append base_cfg "require_he=1" "$N"
+		;;
+		EHT*)
+			enable_ax=1; enable_be=1
+			append base_cfg "require_he=1" "$N"
+			append base_cfg "require_eht=1" "$N"
+		;;
 	esac
 
-	if [ "$enable_ax" != "0" ]; then
+	if [ "$enable_ax" != "0" -o "$vht_1024" = "1" ]; then
 		json_get_vars \
+			ldpc:1 \
+			twt:0 \
 			he_su_beamformer:1 \
 			he_su_beamformee:1 \
 			he_mu_beamformer:1 \
 			he_twt_required:0 \
-			he_twt_responder \
 			he_spr_sr_control:3 \
 			he_spr_psr_enabled:0 \
 			he_spr_non_srg_obss_pd_max_offset:0 \
@@ -632,6 +673,7 @@ mac80211_hostapd_setup_base() {
 		he_mac_cap=${he_mac_cap:2}
 
 		append base_cfg "ieee80211ax=1" "$N"
+		append base_cfg "he_ldpc=$ldpc" "$N"
 		[ "$hwmode" = "a" ] && {
 			append base_cfg "he_oper_chwidth=$vht_oper_chwidth" "$N"
 			append base_cfg "he_oper_centr_freq_seg0_idx=$vht_center_seg0" "$N"
@@ -644,8 +686,8 @@ mac80211_hostapd_setup_base() {
 			he_spr_psr_enabled:${he_phy_cap:14:2}:0x1:$he_spr_psr_enabled \
 			he_twt_required:${he_mac_cap:0:2}:0x6:$he_twt_required
 
-		if [ -n "$he_twt_responder" ]; then
-			append base_cfg "he_twt_responder=$he_twt_responder" "$N"
+		if [ "$twt" -gt 0 ]; then
+			append base_cfg "he_twt_responder=1" "$N"
 		fi
 		if [ "$he_bss_color_enabled" -gt 0 ]; then
 			if !([ -n "$he_bss_color" ] && [ "$he_bss_color" -gt 0 ] && [ "$he_bss_color" -le 64 ]); then
@@ -670,33 +712,27 @@ mac80211_hostapd_setup_base() {
 		append base_cfg "he_mu_edca_qos_info_q_ack=0" "$N"
 		append base_cfg "he_mu_edca_qos_info_queue_request=0" "$N"
 		append base_cfg "he_mu_edca_qos_info_txop_request=0" "$N"
-		append base_cfg "he_mu_edca_ac_be_aifsn=0" "$N"
+		append base_cfg "he_mu_edca_ac_be_aifsn=8" "$N"
 		append base_cfg "he_mu_edca_ac_be_aci=0" "$N"
 		append base_cfg "he_mu_edca_ac_be_ecwmin=9" "$N"
 		append base_cfg "he_mu_edca_ac_be_ecwmax=10" "$N"
-		append base_cfg "he_mu_edca_ac_be_timer=3" "$N"
-		append base_cfg "he_mu_edca_ac_bk_aifsn=0" "$N"
+		append base_cfg "he_mu_edca_ac_be_timer=255" "$N"
+		append base_cfg "he_mu_edca_ac_bk_aifsn=15" "$N"
 		append base_cfg "he_mu_edca_ac_bk_aci=1" "$N"
 		append base_cfg "he_mu_edca_ac_bk_ecwmin=9" "$N"
 		append base_cfg "he_mu_edca_ac_bk_ecwmax=10" "$N"
-		append base_cfg "he_mu_edca_ac_bk_timer=3" "$N"
+		append base_cfg "he_mu_edca_ac_bk_timer=255" "$N"
 		append base_cfg "he_mu_edca_ac_vi_ecwmin=5" "$N"
 		append base_cfg "he_mu_edca_ac_vi_ecwmax=7" "$N"
-		append base_cfg "he_mu_edca_ac_vi_aifsn=0" "$N"
+		append base_cfg "he_mu_edca_ac_vi_aifsn=5" "$N"
 		append base_cfg "he_mu_edca_ac_vi_aci=2" "$N"
-		append base_cfg "he_mu_edca_ac_vi_timer=3" "$N"
-		append base_cfg "he_mu_edca_ac_vo_aifsn=0" "$N"
+		append base_cfg "he_mu_edca_ac_vi_timer=255" "$N"
+		append base_cfg "he_mu_edca_ac_vo_aifsn=5" "$N"
 		append base_cfg "he_mu_edca_ac_vo_aci=3" "$N"
 		append base_cfg "he_mu_edca_ac_vo_ecwmin=5" "$N"
 		append base_cfg "he_mu_edca_ac_vo_ecwmax=7" "$N"
-		append base_cfg "he_mu_edca_ac_vo_timer=3" "$N"
+		append base_cfg "he_mu_edca_ac_vo_timer=255" "$N"
 	fi
-
-	# 802.11be
-	enable_be=0
-	case "$htmode" in
-		EHT*) enable_be=1 ;;
-	esac
 
 	if [ "$enable_be" != "0" ]; then
 		append base_cfg "ieee80211be=1" "$N"
@@ -725,9 +761,11 @@ mac80211_hostapd_setup_base() {
 ${channel:+channel=$channel}
 ${channel_list:+chanlist=$channel_list}
 ${hostapd_noscan:+noscan=1}
+${disable_40mhz_scan:+disable_40mhz_scan=1}
 ${tx_burst:+tx_queue_data2_burst=$tx_burst}
+${mbssid:+mbssid=$mbssid}
 ${rnr:+rnr=$rnr}
-${multiple_bssid:+dot11vmbssid=$multiple_bssid}
+${multiple_bssid:+mbssid=$multiple_bssid}
 #num_global_macaddr=$num_global_macaddr
 #used_radio_mask=$used_radio_mask
 $base_cfg
@@ -745,8 +783,12 @@ mac80211_hostapd_setup_bss() {
 	hostapd_cfg=
 	append hostapd_cfg "$type=$ifname" "$N"
 
+	[ -z "$macaddr" -o "${macaddr:0:5}" != "00:0c" ] && {
+		macaddr=$(cat /sys/class/ieee80211/${phy}/macaddress)
+	}
+
 	hostapd_set_bss_options hostapd_cfg "$phy" "$vif" || return 1
-	json_get_vars wds wds_bridge dtim_period max_listen_int start_disabled
+	json_get_vars wds wds_bridge dtim_period start_disabled
 
 	set_default wds 0
 	set_default start_disabled 0
@@ -759,11 +801,10 @@ mac80211_hostapd_setup_bss() {
 
 	cat >> /var/run/hostapd-$phy.conf <<EOF
 $hostapd_cfg
-#bssid=$macaddr
+bssid=$macaddr
 ${default_macaddr:+#default_macaddr}
 ${random_macaddr:+#random_macaddr}
 ${dtim_period:+dtim_period=$dtim_period}
-${max_listen_int:+max_listen_interval=$max_listen_int}
 EOF
 }
 
@@ -1267,7 +1308,7 @@ wpa_supplicant_set_config() {
 	json_set_namespace wpa_supp prev
 	json_close_array
 	json_add_string phy "$phy"
-	json_add_int num_global_macaddr "${num_global_macaddr:-3}"
+	json_add_int num_global_macaddr "$num_global_macaddr"
 	json_add_boolean defer 1
 	local data="$(json_dump)"
 
@@ -1579,7 +1620,7 @@ drv_mac80211_setup() {
 		txpower \
 		rxantenna txantenna \
 		frag rts beacon_int:100 htmode \
-		num_global_macaddr:3 multiple_bssid
+		num_global_macaddr:1 multiple_bssid
 	json_get_values basic_rate_list basic_rate
 	json_get_values scan_list scan_list
 	json_select ..

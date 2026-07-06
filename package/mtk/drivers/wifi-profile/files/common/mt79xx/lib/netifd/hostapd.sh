@@ -175,7 +175,7 @@ hostapd_common_add_device_config() {
 	config_add_array hostapd_options
 
 	config_add_int airtime_mode
-	config_add_int dot11vmbssid
+	config_add_int mbssid
 
 	hostapd_add_log_config
 }
@@ -189,7 +189,7 @@ hostapd_prepare_device_config() {
 	json_get_vars country country3 country_ie beacon_int:100 dtim_period:1 doth require_mode legacy_rates \
 		acs_chan_bias local_pwr_constraint spectrum_mgmt_required airtime_mode cell_density \
 		rts_threshold beacon_rate rssi_reject_assoc_rssi rssi_reject_assoc_timeout rssi_ignore_probe_request \
-		maxassoc dot11vmbssid:0 band reg_power_type stationary_ap vendor_vht
+		maxassoc mbssid:0 band reg_power_type stationary_ap vendor_vht
 
 	hostapd_set_log_options base_cfg
 
@@ -222,12 +222,12 @@ hostapd_prepare_device_config() {
 	[ -n "$hwmode" ] && append base_cfg "hw_mode=$hwmode" "$N"
 	if [ "$hwmode" = "g" ] || [ "$hwmode" = "a" ]; then
 		[ -n "$require_mode" ] && legacy_rates=0
-		case "$require_mode" in
-			n) append base_cfg "require_ht=1" "$N";;
-			ac) append base_cfg "require_vht=1" "$N";;
-			ax) append base_cfg "require_he=1" "$N";;
-			be) append base_cfg "require_eht=1" "$N";;
-		esac
+		#case "$require_mode" in
+		#	n) append base_cfg "require_ht=1" "$N";;
+		#	ac) append base_cfg "require_vht=1" "$N";;
+		#	ax) append base_cfg "require_he=1" "$N";;
+		#	be) append base_cfg "require_eht=1" "$N";;
+		#esac
 	fi
 	case "$hwmode" in
 		b)
@@ -296,7 +296,7 @@ hostapd_prepare_device_config() {
 	append base_cfg "dtim_period=$dtim_period" "$N"
 	[ "$airtime_mode" -gt 0 ] && append base_cfg "airtime_mode=$airtime_mode" "$N"
 	[ -n "$maxassoc" ] && append base_cfg "iface_max_num_sta=$maxassoc" "$N"
-	[ "$dot11vmbssid" -gt 0 ] && [ "$dot11vmbssid" -le 2 ] && append base_cfg "dot11vmbssid=$dot11vmbssid" "$N"
+	[ "$mbssid" -gt 0 ] && [ "$mbssid" -le 2 ] && append base_cfg "mbssid=$mbssid" "$N"
 
 	[ "$band" = "6g" ] && {
 		set_default reg_power_type 0
@@ -321,7 +321,7 @@ hostapd_common_add_bss_config() {
 	config_add_string 'bssid:macaddr' 'ssid:string'
 	config_add_boolean wds wmm uapsd hidden utf8_ssid ppsk
 
-	config_add_int maxassoc max_inactivity
+	config_add_int maxassoc max_inactivity max_listen_interval
 	config_add_boolean disassoc_low_ack isolate short_preamble skip_inactivity_poll
 
 	config_add_int \
@@ -452,7 +452,7 @@ hostapd_common_add_bss_config() {
 	config_add_string dpp_connector dpp_csign dpp_netaccesskey
 
 	config_add_int ocv
-	config_add_boolean beacon_prot
+	config_add_boolean spp_amsdu
 
 	config_add_boolean apup
 	config_add_string apup_peer_ifname_prefix
@@ -475,12 +475,9 @@ hostapd_common_add_bss_config() {
 	config_add_string group_cipher
 	config_add_string group_mgmt_cipher
 
-	config_add_int assoc_phy
-	config_add_int mld_id mld_link_id mld_assoc_phy mld_allowed_links mld_radio_mask
-	config_add_boolean mld_primary mld_single_link
+	config_add_int mld_id mld_link_id mld_allowed_links mld_radio_mask
+	config_add_boolean mld_primary
 	config_add_string mld_addr
-	config_add_int eml_disable
-	config_add_int eml_resp
 }
 
 hostapd_set_vlan_file() {
@@ -690,7 +687,7 @@ hostapd_set_bss_options() {
 	json_get_vars \
 		wep_rekey wpa_group_rekey wpa_pair_rekey wpa_master_rekey wpa_strict_rekey \
 		wpa_disable_eapol_key_retries tdls_prohibit \
-		maxassoc max_inactivity disassoc_low_ack isolate auth_cache \
+		maxassoc max_inactivity max_listen_interval disassoc_low_ack isolate auth_cache \
 		wps_pushbutton wps_label ext_registrar wps_pbc_in_m1 wps_ap_setup_locked \
 		wps_independent wps_device_type wps_device_name wps_manufacturer wps_pin uuid \
 		macfilter ssid utf8_ssid wmm uapsd hidden short_preamble rsn_preauth \
@@ -701,16 +698,17 @@ hostapd_set_bss_options() {
 		ppsk airtime_bss_weight airtime_bss_limit airtime_sta_weight \
 		multicast_to_unicast_all proxy_arp per_sta_vif na_mcast_to_ucast \
 		eap_server eap_user_file ca_cert server_cert private_key private_key_passwd server_id radius_server_clients radius_server_auth_port \
-		vendor_elements fils ocv beacon_prot apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
+		vendor_elements fils ocv beacon_prot spp_amsdu apup unsol_bcast_probe_resp_interval fils_discovery_min_interval \
 		fils_discovery_max_interval rnr group_cipher group_mgmt_cipher \
-		mld_id mld_link_id mld_primary mld_addr mld_allowed_links mld_radio_mask eml_disable eml_resp \
+		mld_id mld_link_id mld_primary mld_addr mld_allowed_links mld_radio_mask \
 		assocresp_elements dpp
 
 	set_default dpp 0
 	set_default fils 0
 	set_default isolate 0
-	set_default maxassoc 0
+	set_default maxassoc 256
 	set_default max_inactivity 0
+	set_default max_listen_interval 0
 	set_default short_preamble 1
 	set_default disassoc_low_ack 1
 	set_default skip_inactivity_poll 0
@@ -743,6 +741,9 @@ hostapd_set_bss_options() {
 	fi
 	if [ "$max_inactivity" -gt 0 ]; then
 		append bss_conf "ap_max_inactivity=$max_inactivity" "$N"
+	fi
+	if [ "$max_listen_interval" -gt 0 ]; then
+		append bss_conf "max_listen_interval=$max_listen_interval" "$N"
 	fi
 
 	[ "$airtime_bss_weight" -gt 0 ] && append bss_conf "airtime_bss_weight=$airtime_bss_weight" "$N"
@@ -779,7 +780,7 @@ hostapd_set_bss_options() {
 	json_for_each_item append_radius_acct_req_attr radius_acct_req_attr
 
 	[ -n "$ocv" ] && append bss_conf "ocv=$ocv" "$N"
-	[ -n "$beacon_prot" ] && append bss_conf "beacon_prot=$beacon_prot" "$N"
+	[ -n "$spp_amsdu" ] && append bss_conf "spp_amsdu=$spp_amsdu" "$N"
 
 	case "$auth_type" in
 		sae|owe|eap2|eap192|dpp)
@@ -1092,8 +1093,6 @@ hostapd_set_bss_options() {
 		fi
 	fi
 
-	[ -n "$sae_pwe" ] && append bss_conf "sae_pwe=$sae_pwe" "$N"
-
 	if [ "$wpa" -ge "2" ]; then
 		json_get_values sae_groups sae_groups
 		json_get_values owe_groups owe_groups
@@ -1201,7 +1200,7 @@ hostapd_set_bss_options() {
 		# RSN -> allow management frame protection
 		case "$ieee80211w" in
 			[012])
-				json_get_vars ieee80211w_mgmt_cipher ieee80211w_max_timeout ieee80211w_retry_timeout
+				json_get_vars ieee80211w_mgmt_cipher ieee80211w_max_timeout ieee80211w_retry_timeout beacon_prot
 				append bss_conf "ieee80211w=$ieee80211w" "$N"
 				[ "$ieee80211w" -gt "0" ] && {
 					if [ -z "$group_mgmt_cipher" ]; then
@@ -1227,6 +1226,8 @@ hostapd_set_bss_options() {
 					else
 						append bss_conf "group_mgmt_cipher=${ieee80211w_mgmt_cipher:-AES-128-CMAC}" "$N"
 					fi
+					[ -n "$beacon_prot" ] && \
+						append bss_conf "beacon_prot=$beacon_prot" "$N"
 					[ -n "$ieee80211w_max_timeout" ] && \
 						append bss_conf "assoc_sa_query_max_timeout=$ieee80211w_max_timeout" "$N"
 					[ -n "$ieee80211w_retry_timeout" ] && \
@@ -1466,14 +1467,6 @@ hostapd_set_bss_options() {
 		append bss_conf "#mld_radio_mask=${mld_radio_mask}" "$N"
 	fi
 
-	if [ -n "$eml_disable" ]; then
-		append bss_conf "eml_disable=$eml_disable" "$N"
-	fi
-
-	if [ -n "$eml_resp" ]; then
-		append bss_conf "eml_resp=$eml_resp" "$N"
-	fi
-
 	append "$var" "$bss_conf" "$N"
 	return 0
 }
@@ -1529,8 +1522,7 @@ wpa_supplicant_prepare_interface() {
 
 	_wpa_supplicant_common "$1"
 
-	json_get_vars mode wds multi_ap assoc_phy mld_single_link mld_assoc_phy
-	json_get_vars sae_pwe
+	json_get_vars mode wds multi_ap
 
 	[ -n "$network_bridge" ] && {
 		fail=
@@ -1574,7 +1566,6 @@ ${scan_list:+freq_list=$scan_list}
 $ap_scan
 ctrl_interface=/var/run/wpa_supplicant
 $country_str
-wps_cred_add_sae=1
 EOF
 	return 0
 }
@@ -1623,7 +1614,7 @@ wpa_supplicant_add_network() {
 		sae|owe|eap2|eap192|dpp)
 			set_default ieee80211w 2
 		;;
-		psk-sae|psk-sae-ext)
+		psk-sae|psk-sae-ext|eap-eap2)
 			set_default ieee80211w 1
 		;;
 	esac
@@ -1709,7 +1700,7 @@ wpa_supplicant_add_network() {
 			fi
 			append network_data "$passphrase" "$N$T"
 		;;
-		eap|eap2|eap192)
+		eap|eap2|eap-eap2|eap192)
 			hostapd_append_wpa_key_mgmt
 			key_mgmt="$wpa_key_mgmt"
 
@@ -1895,7 +1886,6 @@ wpa_supplicant_add_network() {
 		# RSN -> allow management frame protection
 		case "$ieee80211w" in
 			[012])
-				json_get_vars ieee80211w_max_timeout ieee80211w_retry_timeout
 				append network_data "ieee80211w=$ieee80211w" "$N$T"
 				[ "$ieee80211w" -gt "0" ] && {
 					if [ -z "$group_mgmt_cipher" ]; then
@@ -1921,10 +1911,6 @@ wpa_supplicant_add_network() {
 					else
 						append network_data "group_mgmt=${ieee80211w_mgmt_cipher:-AES-128-CMAC}" "$N$T"
 					fi
-					[ -n "$ieee80211w_max_timeout" ] && \
-						append network_data "assoc_sa_query_max_timeout=$ieee80211w_max_timeout" "$N$T"
-					[ -n "$ieee80211w_retry_timeout" ] && \
-						append network_data "assoc_sa_query_retry_timeout=$ieee80211w_retry_timeout" "$N$T"
 				}
 			;;
 		esac
@@ -1981,10 +1967,10 @@ wpa_supplicant_add_network() {
 		append network_data "mcast_rate=$mc_rate" "$N$T"
 	}
 
-	if [ "$auth_type" = "sae" ]; then
-		json_get_vars sae_pwe sae_pwe
-		[ -n "$sae_pwe" ] && echo "sae_pwe=$sae_pwe" >> "$_config"
-	fi
+	#if [ "$auth_type" = "sae" ]; then
+	#	json_get_vars sae_pwe sae_pwe
+	#	[ -n "$sae_pwe" ] && echo "sae_pwe=$sae_pwe" >> "$_config"
+	#fi
 
 	[ "$auth_type" = "dpp" ] && {
 		json_get_vars dpp_connector dpp_csign dpp_netaccesskey
@@ -2002,6 +1988,7 @@ network={
 	$scan_ssid
 	ssid="$ssid"
 	key_mgmt=$key_mgmt
+	sae_pwe=$sae_pwe
 	$network_data
 }
 EOF
