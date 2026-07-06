@@ -1162,14 +1162,6 @@ return view.extend({
 					o.default = o.enabled;
 					o.rmempty = false;
 
-					o = ss.taboption('advanced', form.Flag, 'mlr', _('Wireless MLR'));
-					add_dep_eht_feature(o);
-					add_dep_he_feature(o);
-					o.default = o.enabled;
-
-					o = ss.taboption('advanced', form.Flag, 'short_preamble', _('Short Preamble'));
-					o.default = o.enabled;
-
 					o = ss.taboption('advanced', form.Value, 'beacon_int', _('Beacon Interval'));
 					o.optional = true;
 					o.datatype = 'range(20,999)';
@@ -1194,7 +1186,8 @@ return view.extend({
 				ss.tab('advanced', _('Advanced Settings'));
 				ss.tab('roaming', _('WLAN roaming'), _('Settings for assisting wireless clients in roaming between multiple APs: 802.11r, 802.11k and 802.11v'));
 
-				o = ss.taboption('general', form.ListValue, 'mode', _('Mode'));
+				o = ss.taboption('general', form.ListValue, 'mode', _('Mode') , !have_mesh ? '<a id="installmesh" href="%s" target="_blank" rel="noreferrer">%s</a>'
+						.format(L.url('admin/system/package-manager') + '?query=wpad-mesh', _('802.11s? Install mesh wpad') ) : '');
 				o.value('ap', _('Access Point'));
 				o.value('sta', _('Client'));
 				o.value('adhoc', _('Ad-Hoc'));
@@ -1348,8 +1341,6 @@ return view.extend({
 
 					o = ss.taboption('general', form.Flag, 'mlo', _('MLO Group'), _('Multi-Link Operation (MLO), enables simultaneous use of multiple radio links for improved performance and reliability.'));
 					add_dep_eht_feature(o);
-					o.depends('mode', 'ap');
-					o.depends('mode', 'sta');
 					o.default = o.disabled;
 
 					o = ss.taboption('general', form.Flag, 'mwds', _('Enable MWDS'), _('MWDS feature, used to process those 4-addr of connected APClient or STA.'));
@@ -1395,6 +1386,8 @@ return view.extend({
 					o.depends('mode', 'ap-wds');
 					o.default = o.disabled;
 
+					o = ss.taboption('advanced', form.Flag, 'bridge_isolate', _('Isolate Bridge Port'), _('Prevents communication only with targets on isolated bridge ports (while allowing it with targets on non-isolated ones). This also prevents client-to-client communication on the same interface when the WiFi device is in AP mode.'));
+
 					o = ss.taboption('advanced', form.Value, 'ifname', _('Interface name'), _('Override default interface name'));
 					o.optional = true;
 					o.datatype = 'netdevname';
@@ -1410,9 +1403,6 @@ return view.extend({
 						o.value('random', _('randomly generated'));
 					}
 					o.datatype = (!is_mlo) ? "or('random',macaddr)" : "macaddr";
-					o.depends('mode', 'ap');
-					o.depends('mode', 'sta');
-					o.depends('mode', 'wds');
 
 					o = ss.taboption('advanced', form.Value, 'wpa_group_rekey', _('Time interval for rekeying GTK'), _('sec'));
 					o.optional    = true;
@@ -1435,6 +1425,9 @@ return view.extend({
 					o.placeholder = 1;
 					o.datatype = 'range(1,255)';
 					o.depends('mode', 'ap');
+
+					o = ss.taboption('advanced', form.Flag, 'short_preamble', _('Short Preamble'));
+					o.default = o.enabled;
 
 					o = ss.taboption('advanced', form.Flag, 'mumimo_dl', _('MU-MIMO DL'));
 					o.depends('mode', 'ap');
@@ -1484,7 +1477,7 @@ return view.extend({
 					o.datatype    = 'uinteger';
 
 					o = ss.taboption('advanced', form.Flag, 'disassoc_low_ack', _('Disassociate On Low Acknowledgement'), _('Allow AP mode to disconnect STAs based on low ACK condition'));
-					o.default = o.disabled;
+					o.default = o.enabled;
 					o.depends('mode', 'ap');
 
 					o = ss.taboption('advanced', form.Value, 'kicklow', _('Kick low RSSI station threshold'), _('dBm'));
@@ -1928,37 +1921,37 @@ return view.extend({
 				o.datatype = 'host(0)';
 
 				o = ss.taboption('encryption', form.Value, 'auth_server', _('RADIUS Authentication Server'));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
 				o.rmempty = true;
 				o.datatype = 'host(0)';
 
 				o = ss.taboption('encryption', form.Value, 'auth_port', _('RADIUS Authentication Port'), _('Default %d').format(1812));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
 				o.rmempty = true;
 				o.datatype = 'port';
 				o.placeholder = '1812';
 
 				o = ss.taboption('encryption', form.Value, 'auth_secret', _('RADIUS Authentication Secret'));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['psk', 'psk2', 'psk+psk2', 'psk-mixed'], ppsk: ['1'] });
 				o.rmempty = true;
 				o.password = true;
 
 				o = ss.taboption('encryption', form.Value, 'acct_server', _('RADIUS Accounting Server'));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
 				o.rmempty = true;
 				o.datatype = 'host(0)';
 
 				o = ss.taboption('encryption', form.Value, 'acct_port', _('RADIUS Accounting Port'), _('Default %d').format(1813));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
 				o.rmempty = true;
 				o.datatype = 'port';
 				o.placeholder = '1813';
 
 				o = ss.taboption('encryption', form.Value, 'acct_secret', _('RADIUS Accounting Secret'));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa', 'wpa-mixed', 'wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
 				o.rmempty = true;
 				o.password = true;
 
@@ -2048,7 +2041,7 @@ return view.extend({
 
 				//WPA(1) has only WPA IE. Only >= WPA2 has RSN IE Preauth frames.
 				o = ss.taboption('encryption', form.Flag, 'rsn_preauth', _('RSN Preauth'), _('Robust Security Network (RSN): Allow roaming preauth for WPA2-EAP networks (and advertise it in WLAN beacons). Only works if the specified network interface is a bridge. Shortens the time-critical reassociation process.'));
-				add_dependency_permutations(o, { mode: ['ap'], encryption: ['wpa2', 'wpa-mixed', 'wpa3', 'wpa3-mixed'] });
+				add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa2', 'wpa-mixed', 'wpa3', 'wpa3-mixed'] });
 
 
 				o = ss.taboption('encryption', form.Value, '_wpa_key', _('Key'));
@@ -2113,7 +2106,7 @@ return view.extend({
 					const has_80211r = L.hasSystemFeature('hostapd', '11r') || L.hasSystemFeature('hostapd', 'eap');
 
 					o = ss.taboption('roaming', form.Flag, 'ieee80211r', _('802.11r Fast Transition'), _('Enables fast roaming among access points that belong to the same Mobility Domain'));
-					add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa2', 'wpa3', 'wpa3-mixed', , 'wpa3-192'] });
+					add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['wpa2', 'wpa3', 'wpa3-mixed', 'wpa3-192'] });
 					if (has_80211r)
 						add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['psk2', 'psk-mixed', 'sae', 'sae-mixed'] });
 					o.rmempty = true;
@@ -2395,17 +2388,19 @@ return view.extend({
 						o = ss.taboption('encryption', form.Flag, 'wpa_disable_eapol_key_retries', _('Enable key reinstallation (KRACK) countermeasures'), _('Complicates key reinstallation attacks on the client side by disabling retransmission of EAPOL-Key frames that are used to install keys. This workaround might cause interoperability issues and reduced robustness of key negotiation especially in environments with heavy traffic load.'));
 						add_dependency_permutations(o, { mode: ['ap', 'ap-wds'], encryption: ['psk2', 'psk-mixed', 'sae', 'sae-mixed', 'wpa2', 'wpa3', 'wpa3-mixed'] });
 
-						o = ss.taboption('encryption', form.ListValue, 'wps_pushbutton', _('Enable WPS pushbutton, requires WPA(2)-PSK/WPA3-SAE'));
-						o.value('0', _('Disabled'));
-						o.value('1', _('PIN'));
-						o.value('2', _('PBC'));
-						add_dependency_permutations(o, { mode: ['ap'], encryption: ['psk', 'psk2', 'psk-mixed', 'sae', 'sae-mixed', 'sae-ext', 'sae_sae-ext', 'sae-ext-mixed'] });
+						if (L.hasSystemFeature('hostapd', 'wps') && L.hasSystemFeature('wpasupplicant')) {
+							o = ss.taboption('encryption', form.ListValue, 'wps_pushbutton', _('Enable WPS pushbutton, requires WPA(2)-PSK/WPA3-SAE'));
+							o.value('0', _('Disabled'));
+							o.value('1', _('PIN'));
+							o.value('2', _('PBC'));
+							add_dependency_permutations(o, { mode: ['ap'], encryption: ['psk', 'psk2', 'psk-mixed', 'sae', 'sae-mixed'] });
 
-						o = ss.taboption('encryption', form.Value, 'pin', _('WPS PIN'));
-						o.depends('wps_pushbutton', '1');
-						o.datatype = 'uinteger';
-						o.placeholder = '1234 or 12345678';
-						o.rmempty = true;
+							o = ss.taboption('encryption', form.Value, 'pin', _('WPS PIN'));
+							o.depends('wps_pushbutton', '1');
+							o.datatype = 'uinteger';
+							o.placeholder = '1234 or 12345678';
+							o.rmempty = true;
+						}
 					}
 				}
 			});
