@@ -1,0 +1,278 @@
+From 10749c3c48cafce7587ed2a43ad40ed164fcebf4 Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:41 -0800
+Subject: [PATCH] mbssid: Process Known BSSID element
+
+Process the Known BSSID elements if included by non-AP stations. The
+format is described in IEEE Std 802.11ax-2021, 9.4.2.261.
+
+Non-AP stations may include this element in directed Probe Request
+frames to indicate which of the multiple BSSIDs they have already
+discovered. AP should exclude these profiles from the Probe Response
+frame.
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+---
+ src/ap/beacon.c                | 26 +++++++++++++++----------
+ src/ap/ieee802_11.c            | 35 ++++++++++++++++++++++++++--------
+ src/ap/ieee802_11.h            |  6 ++++--
+ src/common/ieee802_11_common.c |  4 ++++
+ src/common/ieee802_11_common.h |  2 ++
+ src/common/ieee802_11_defs.h   |  1 +
+ 6 files changed, 54 insertions(+), 20 deletions(-)
+
+diff --git a/src/ap/beacon.c b/src/ap/beacon.c
+index 97c126923..dbc6b062b 100644
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
+@@ -478,7 +478,8 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
+ 		goto fail;
+ 
+ 	tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+-	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count);
++	len = hostapd_eid_mbssid_len(tx_bss, WLAN_FC_STYPE_BEACON, &elem_count,
++				     NULL, 0);
+ 	if (!len || (iface->conf->mbssid == ENHANCED_MBSSID_ENABLED &&
+ 		     elem_count > iface->ema_max_periodicity))
+ 		goto fail;
+@@ -492,7 +493,7 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
+ 		goto fail;
+ 
+ 	end = hostapd_eid_mbssid(tx_bss, elem, elem + len, WLAN_FC_STYPE_BEACON,
+-				 elem_count, elem_offset);
++				 elem_count, elem_offset, NULL, 0);
+ 
+ 	params->mbssid_tx_iface = tx_bss->conf->iface;
+ 	params->mbssid_index = hostapd_mbssid_get_bss_index(hapd);
+@@ -532,7 +533,8 @@ static u8 * hostapd_eid_mbssid_config(struct hostapd_data *hapd, u8 *eid,
+ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 				   const struct ieee80211_mgmt *req,
+ 				   int is_p2p, size_t *resp_len,
+-				   bool bcast_probe_resp)
++				   bool bcast_probe_resp, const u8 *known_bss,
++				   u8 known_bss_len)
+ {
+ 	struct ieee80211_mgmt *resp;
+ 	u8 *pos, *epos, *csa_pos;
+@@ -586,7 +588,8 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 	}
+ #endif /* CONFIG_IEEE80211BE */
+ 
+-	buflen += hostapd_eid_mbssid_len(hapd, WLAN_FC_STYPE_PROBE_RESP, NULL);
++	buflen += hostapd_eid_mbssid_len(hapd, WLAN_FC_STYPE_PROBE_RESP, NULL,
++					 known_bss, known_bss_len);
+ 	buflen += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_PROBE_RESP);
+ 	buflen += hostapd_mbo_ie_len(hapd);
+ 	buflen += hostapd_eid_owe_trans_len(hapd);
+@@ -647,7 +650,7 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 	pos = hostapd_get_rsne(hapd, pos, epos - pos);
+ 	pos = hostapd_eid_bss_load(hapd, pos, epos - pos);
+ 	pos = hostapd_eid_mbssid(hapd, pos, epos, WLAN_FC_STYPE_PROBE_RESP, 0,
+-				 NULL);
++				 NULL, known_bss, known_bss_len);
+ 	pos = hostapd_eid_rm_enabled_capab(hapd, pos, epos - pos);
+ 	pos = hostapd_get_mde(hapd, pos, epos - pos);
+ 
+@@ -661,9 +664,11 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 	pos = hostapd_eid_ht_capabilities(hapd, pos);
+ 	pos = hostapd_eid_ht_operation(hapd, pos);
+ 
+-	/* Probe Response frames always include all non-TX profiles */
++	/* Probe Response frames always include all non-TX profiles except
++	 * when a list of known BSSes is included in the Probe Request frame. */
+ 	pos = hostapd_eid_ext_capab(hapd, pos,
+-				    hapd->iconf->mbssid >= MBSSID_ENABLED);
++				    hapd->iconf->mbssid >= MBSSID_ENABLED &&
++				    !known_bss_len);
+ 
+ 	pos = hostapd_eid_time_adv(hapd, pos);
+ 	pos = hostapd_eid_time_zone(hapd, pos);
+@@ -1225,7 +1230,8 @@ void handle_probe_req(struct hostapd_data *hapd,
+ 		     " signal=%d", MAC2STR(mgmt->sa), ssi_signal);
+ 
+ 	resp = hostapd_gen_probe_resp(hapd, mgmt, elems.p2p != NULL,
+-				      &resp_len, false);
++				      &resp_len, false, elems.mbssid_known_bss,
++				      elems.mbssid_known_bss_len);
+ 	if (resp == NULL)
+ 		return;
+ 
+@@ -1295,7 +1301,7 @@ static u8 * hostapd_probe_resp_offloads(struct hostapd_data *hapd,
+ 			   "this");
+ 
+ 	/* Generate a Probe Response template for the non-P2P case */
+-	return hostapd_gen_probe_resp(hapd, NULL, 0, resp_len, false);
++	return hostapd_gen_probe_resp(hapd, NULL, 0, resp_len, false, NULL, 0);
+ }
+ 
+ #endif /* NEED_AP_MLME */
+@@ -1314,7 +1320,7 @@ static u8 * hostapd_unsol_bcast_probe_resp(struct hostapd_data *hapd,
+ 
+ 	return hostapd_gen_probe_resp(hapd, NULL, 0,
+ 				      &params->unsol_bcast_probe_resp_tmpl_len,
+-				      true);
++				      true, NULL, 0);
+ }
+ #endif /* CONFIG_IEEE80211AX */
+ 
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index d8424238b..1a1ccf7fc 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -6725,8 +6725,20 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type)
+ }
+ 
+ 
++static bool mbssid_known_bss(unsigned int i, const u8 *known_bss,
++			     size_t known_bss_len)
++{
++	if (!known_bss || known_bss_len <= i / 8)
++		return false;
++	known_bss = &known_bss[i / 8];
++	return *known_bss & (u8) (BIT(i % 8));
++}
++
++
+ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
+-					  u32 frame_type, size_t *bss_index)
++					  u32 frame_type, size_t *bss_index,
++					  const u8 *known_bss,
++					  size_t known_bss_len)
+ {
+ 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+ 	size_t len = 3, i;
+@@ -6737,7 +6749,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
+ 		size_t nontx_profile_len, auth_len;
+ 		u8 ie_count = 0;
+ 
+-		if (!bss || !bss->conf || !bss->started)
++		if (!bss || !bss->conf || !bss->started ||
++		    mbssid_known_bss(i, known_bss, known_bss_len))
+ 			continue;
+ 
+ 		/*
+@@ -6786,7 +6799,8 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
+ 
+ 
+ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
+-			      u8 *elem_count)
++			      u8 *elem_count, const u8 *known_bss,
++			      size_t known_bss_len)
+ {
+ 	size_t len = 0, bss_index = 1;
+ 
+@@ -6806,7 +6820,8 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
+ 
+ 	while (bss_index < hapd->iface->num_bss) {
+ 		len += hostapd_eid_mbssid_elem_len(hapd, frame_type,
+-						   &bss_index);
++						   &bss_index, known_bss,
++						   known_bss_len);
+ 
+ 		if (frame_type == WLAN_FC_STYPE_BEACON)
+ 			*elem_count += 1;
+@@ -6817,7 +6832,8 @@ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
+ 
+ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 				    u32 frame_type, u8 max_bssid_indicator,
+-				    size_t *bss_index, u8 elem_count)
++				    size_t *bss_index, u8 elem_count,
++				    const u8 *known_bss, size_t known_bss_len)
+ {
+ 	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+ 	size_t i;
+@@ -6836,7 +6852,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 		size_t auth_len = 0;
+ 		u16 capab_info;
+ 
+-		if (!bss || !bss->conf || !bss->started)
++		if (!bss || !bss->conf || !bss->started ||
++		    mbssid_known_bss(i, known_bss, known_bss_len))
+ 			continue;
+ 		conf = bss->conf;
+ 
+@@ -6919,7 +6936,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 
+ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			unsigned int frame_stype, u8 elem_count,
+-			u8 **elem_offset)
++			u8 **elem_offset,
++			const u8 *known_bss, size_t known_bss_len)
+ {
+ 	size_t bss_index = 1;
+ 	u8 elem_index = 0;
+@@ -6948,7 +6966,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 		}
+ 		eid = hostapd_eid_mbssid_elem(hapd, eid, end, frame_stype,
+ 					      hostapd_max_bssid_indicator(hapd),
+-					      &bss_index, elem_count);
++					      &bss_index, elem_count,
++					      known_bss, known_bss_len);
+ 	}
+ 
+ 	return eid;
+diff --git a/src/ap/ieee802_11.h b/src/ap/ieee802_11.h
+index 1b46440d0..5f443fcb8 100644
+--- a/src/ap/ieee802_11.h
++++ b/src/ap/ieee802_11.h
+@@ -216,9 +216,11 @@ u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
+ 		       const u8 *he_capab, size_t he_capab_len,
+ 		       const u8 *eht_capab, size_t eht_capab_len);
+ size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
+-			      u8 *elem_count);
++			      u8 *elem_count, const u8 *known_bss,
++			      size_t known_bss_len);
+ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			unsigned int frame_stype, u8 elem_count,
+-			u8 **elem_offset);
++			u8 **elem_offset,
++			const u8 *known_bss, size_t known_bss_len);
+ 
+ #endif /* IEEE802_11_H */
+diff --git a/src/common/ieee802_11_common.c b/src/common/ieee802_11_common.c
+index 924fe24f0..7080412bc 100644
+--- a/src/common/ieee802_11_common.c
++++ b/src/common/ieee802_11_common.c
+@@ -347,6 +347,10 @@ static int ieee802_11_parse_extension(const u8 *pos, size_t elen,
+ 		elems->ml_len = elen;
+ 		break;
+ #endif
++	case WLAN_EID_EXT_KNOWN_BSSID:
++		elems->mbssid_known_bss = pos;
++		elems->mbssid_known_bss_len = elen;
++		break;
+ 
+ 	default:
+ 		if (show_errors) {
+diff --git a/src/common/ieee802_11_common.h b/src/common/ieee802_11_common.h
+index 0d258dfb8..9a1dbdda8 100644
+--- a/src/common/ieee802_11_common.h
++++ b/src/common/ieee802_11_common.h
+@@ -126,6 +126,7 @@ struct ieee802_11_elems {
+ 	const u8 *rsne_override;
+ 	const u8 *rsne_override_2;
+ 	const u8 *rsn_selection;
++	const u8 *mbssid_known_bss;
+ 
+ 	u8 ssid_len;
+ 	u8 supp_rates_len;
+@@ -187,6 +188,7 @@ struct ieee802_11_elems {
+ 	size_t rsne_override_len;
+ 	size_t rsne_override_2_len;
+ 	size_t rsn_selection_len;
++	u8 mbssid_known_bss_len;
+ 
+ 	struct mb_ies_info mb_ies;
+ 	struct frag_ies_info frag_ies;
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index 59c3b6a83..7ed5f5606 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -483,6 +483,7 @@
+ #define WLAN_EID_EXT_OCV_OCI 54
+ #define WLAN_EID_EXT_MULTIPLE_BSSID_CONFIGURATION 55
+ #define WLAN_EID_EXT_NON_INHERITANCE 56
++#define WLAN_EID_EXT_KNOWN_BSSID 57
+ #define WLAN_EID_EXT_SHORT_SSID_LIST 58
+ #define WLAN_EID_EXT_HE_6GHZ_BAND_CAP 59
+ #define WLAN_EID_EXT_EDMG_CAPABILITIES 61

@@ -1,0 +1,286 @@
+From 7fa99b3246d14594542f7cc8aa67158a6d9a51b9 Mon Sep 17 00:00:00 2001
+From: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+Date: Mon, 22 May 2023 22:33:36 +0300
+Subject: [PATCH] AP: Allow starting multiple interfaces within single MLD
+
+Add support for including multiple hostapd interfaces in the same AP
+MLD, i.e., all using the same underlying driver network interface.
+
+To do so, when a new hostapd interface is added, if there is already
+another interface using the same underlying network interface, associate
+the new interface with the same private data object, instead of creating
+a new one.
+
+As some of the BSSs are non-first BSSs, meaning that they reuse the
+drv_priv of the initial BSS, make sure not to double free it.
+
+Currently multiple BSS entries are not supported so always use bss[0]
+for MLD.
+
+Signed-off-by: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+Signed-off-by: Ilan Peer <ilan.peer@intel.com>
+---
+ hostapd/main.c      | 88 +++++++++++++++++++++++++++++++++++++++++++++
+ src/ap/ap_drv_ops.h | 12 +++++++
+ src/ap/hostapd.c    | 39 ++++++++++++++++----
+ src/ap/hostapd.h    |  6 ++++
+ 4 files changed, 139 insertions(+), 6 deletions(-)
+
+diff --git a/hostapd/main.c b/hostapd/main.c
+index fc5b51a17..aebdffd1f 100644
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -177,6 +177,59 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 		return -1;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211BE
++	for (i = 0; conf->mld_ap && i < iface->interfaces->count; i++) {
++		struct hostapd_iface *h = iface->interfaces->iface[i];
++		struct hostapd_data *h_hapd = h->bss[0];
++		struct hostapd_bss_config *hconf = h_hapd->conf;
++
++		if (h == iface) {
++			wpa_printf(MSG_DEBUG, "MLD: Skip own interface");
++			continue;
++		}
++
++		if (!hconf->mld_ap || hconf->mld_id != conf->mld_id) {
++			wpa_printf(MSG_DEBUG,
++				   "MLD: Skip non matching mld_id");
++			continue;
++		}
++
++		wpa_printf(MSG_DEBUG, "MLD: Found matching MLD interface");
++		if (!h_hapd->drv_priv) {
++			wpa_printf(MSG_DEBUG,
++				   "MLD: Matching MLD BSS not initialized yet");
++			continue;
++		}
++
++		hapd->drv_priv = h_hapd->drv_priv;
++
++		/*
++		 * All interfaces participating in the AP MLD would have
++		 * the same MLD address, which is the interface hardware
++		 * address, while the interface address would be
++		 * derived from the original interface address if BSSID
++		 * is not configured, and otherwise it would be the
++		 * configured BSSID.
++		 */
++		os_memcpy(hapd->mld_addr, h_hapd->mld_addr, ETH_ALEN);
++		if (is_zero_ether_addr(b)) {
++			os_memcpy(hapd->own_addr, h_hapd->mld_addr, ETH_ALEN);
++			random_mac_addr_keep_oui(hapd->own_addr);
++		} else {
++			os_memcpy(hapd->own_addr, b, ETH_ALEN);
++		}
++
++		/*
++		 * Mark the interface as a secondary interface, as this
++		 * is needed for the de-initialization flow
++		 */
++		hapd->mld_first_bss = h_hapd;
++		hapd->mld_link_id = hapd->mld_first_bss->mld_next_link_id++;
++
++		goto setup_mld;
++	}
++#endif /* CONFIG_IEEE80211BE */
++
+ 	hapd->setup_complete_cb = hostapd_setup_complete_cb;
+ 
+ 	/* Initialize the driver interface */
+@@ -227,6 +280,22 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 		return -1;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211BE
++	/*
++	 * This is the first interface added to the AP MLD, so have the
++	 * interface hardware address be the MLD address and set a link address
++	 * to this interface.
++	 */
++	if (hapd->conf->mld_ap) {
++		os_memcpy(hapd->mld_addr, hapd->own_addr, ETH_ALEN);
++		random_mac_addr_keep_oui(hapd->own_addr);
++		hapd->mld_next_link_id = 0;
++		hapd->mld_link_id = hapd->mld_next_link_id++;
++	}
++
++setup_mld:
++#endif /* CONFIG_IEEE80211BE */
++
+ 	if (hapd->driver->get_capa &&
+ 	    hapd->driver->get_capa(hapd->drv_priv, &capa) == 0) {
+ 		struct wowlan_triggers *triggs;
+@@ -259,6 +328,25 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 		iface->ema_max_periodicity = capa.ema_max_periodicity;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211BE
++	if (hapd->conf->mld_ap) {
++		if (!(iface->drv_flags2 & WPA_DRIVER_FLAGS2_MLO)) {
++			wpa_printf(MSG_INFO,
++				   "MLD: Not supported by the driver");
++			return -1;
++		}
++
++		wpa_printf(MSG_DEBUG,
++			   "MLD: Set link_id=%u, mld_addr=" MACSTR
++			   ", own_addr=" MACSTR,
++			   hapd->mld_link_id, MAC2STR(hapd->mld_addr),
++			   MAC2STR(hapd->own_addr));
++
++		hostapd_drv_link_add(hapd, hapd->mld_link_id,
++				     hapd->own_addr);
++	}
++#endif /* CONFIG_IEEE80211BE */
++
+ 	return 0;
+ }
+ 
+diff --git a/src/ap/ap_drv_ops.h b/src/ap/ap_drv_ops.h
+index 866440027..844d2d87a 100644
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
+@@ -454,4 +454,16 @@ hostapd_drv_register_frame(struct hostapd_data *hapd, u16 type,
+ }
+ #endif /* CONFIG_TESTING_OPTIONS */
+ 
++#ifdef CONFIG_IEEE80211BE
++static inline int hostapd_drv_link_add(struct hostapd_data *hapd,
++				       u8 link_id, const u8 *addr)
++{
++	if (!hapd->driver || !hapd->drv_priv || !hapd->driver->link_add)
++		return -1;
++
++	return hapd->driver->link_add(hapd->drv_priv, link_id, addr);
++
++}
++#endif /* CONFIG_IEEE80211BE */
++
+ #endif /* AP_DRV_OPS */
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index febec0ec5..02596dcb7 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -393,6 +393,25 @@ static int hostapd_broadcast_wep_set(struct hostapd_data *hapd)
+ #endif /* CONFIG_WEP */
+ 
+ 
++static void hostapd_clear_drv_priv(struct hostapd_data *hapd)
++{
++	unsigned int i;
++
++	for (i = 0; i < hapd->iface->interfaces->count; i++) {
++		struct hostapd_iface *iface = hapd->iface->interfaces->iface[i];
++
++		if (hapd->iface == iface)
++			continue;
++
++		if (iface->bss && iface->bss[0] &&
++		    iface->bss[0]->mld_first_bss == hapd)
++			iface->bss[0]->drv_priv = NULL;
++	}
++
++	hapd->drv_priv = NULL;
++}
++
++
+ void hostapd_free_hapd_data(struct hostapd_data *hapd)
+ {
+ 	os_free(hapd->probereq_cb);
+@@ -449,7 +468,7 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
+ 			 * driver wrapper may have removed its internal instance
+ 			 * and hapd->drv_priv is not valid anymore.
+ 			 */
+-			hapd->drv_priv = NULL;
++			hostapd_clear_drv_priv(hapd);
+ 		}
+ 	}
+ 
+@@ -2950,8 +2969,9 @@ void hostapd_interface_deinit_free(struct hostapd_iface *iface)
+ 	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
+ 		   __func__, driver, drv_priv);
+ 	if (driver && driver->hapd_deinit && drv_priv) {
+-		driver->hapd_deinit(drv_priv);
+-		iface->bss[0]->drv_priv = NULL;
++		if (!iface->bss[0]->mld_first_bss)
++			driver->hapd_deinit(drv_priv);
++		hostapd_clear_drv_priv(iface->bss[0]);
+ 	}
+ 	hostapd_interface_free(iface);
+ }
+@@ -2966,13 +2986,14 @@ static void hostapd_deinit_driver(const struct wpa_driver_ops *driver,
+ 	wpa_printf(MSG_DEBUG, "%s: driver=%p drv_priv=%p -> hapd_deinit",
+ 		   __func__, driver, drv_priv);
+ 	if (driver && driver->hapd_deinit && drv_priv) {
+-		driver->hapd_deinit(drv_priv);
++		if (!hapd_iface->bss[0]->mld_first_bss)
++			driver->hapd_deinit(drv_priv);
+ 		for (j = 0; j < hapd_iface->num_bss; j++) {
+ 			wpa_printf(MSG_DEBUG, "%s:bss[%d]->drv_priv=%p",
+ 				   __func__, (int) j,
+ 				   hapd_iface->bss[j]->drv_priv);
+ 			if (hapd_iface->bss[j]->drv_priv == drv_priv) {
+-				hapd_iface->bss[j]->drv_priv = NULL;
++				hostapd_clear_drv_priv(hapd_iface->bss[j]);
+ 				hapd_iface->extended_capa = NULL;
+ 				hapd_iface->extended_capa_mask = NULL;
+ 				hapd_iface->extended_capa_len = 0;
+@@ -3313,8 +3334,14 @@ int hostapd_add_iface(struct hapd_interfaces *interfaces, char *buf)
+ 		conf_file = ptr + 7;
+ 
+ 	for (i = 0; i < interfaces->count; i++) {
++		bool mld_ap = false;
++
++#ifdef CONFIG_IEEE80211BE
++		mld_ap = interfaces->iface[i]->conf->bss[0]->mld_ap;
++#endif /* CONFIG_IEEE80211BE */
++
+ 		if (!os_strcmp(interfaces->iface[i]->conf->bss[0]->iface,
+-			       buf)) {
++			       buf) && !mld_ap) {
+ 			wpa_printf(MSG_INFO, "Cannot add interface - it "
+ 				   "already exists");
+ 			return -1;
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index bcb78aff3..d0de971bb 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -175,6 +175,12 @@ struct hostapd_data {
+ 	unsigned int reenable_beacon:1;
+ 
+ 	u8 own_addr[ETH_ALEN];
++	u8 mld_addr[ETH_ALEN];
++	u8 mld_link_id;
++	/* Used for mld_link_id assignment - valid on the first MLD BSS only */
++	u8 mld_next_link_id;
++
++	struct hostapd_data *mld_first_bss;
+ 	u8 sta_link_addr[ETH_ALEN];
+ 	u8 update_sta_link_mac;
+ 	/* OpenWrt specific statistics */
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2150,6 +2150,8 @@ struct wpa_driver_capa {
+ #define WPA_DRIVER_5MHZ_SHIFT		0x0000000000000800ULL
+ /** Driver supports Beacon frame TX rate configuration (EHT rates) */
+ #define WPA_DRIVER_FLAGS2_BEACON_RATE_EHT       0x0000000000004000ULL
++/** Driver supports MLO connection */
++#define WPA_DRIVER_FLAGS2_MLO			0x0000000000008000ULL
+ 	u64 flags2;
+ 
+ #define FULL_AP_CLIENT_STATE_SUPP(drv_flags) \
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -1161,6 +1161,9 @@ static int wiphy_info_handler(struct nl_
+ 		}
+ 	}
+ 
++	if (tb[NL80211_ATTR_MLO_SUPPORT])
++		capa->flags2 |= WPA_DRIVER_FLAGS2_MLO;
++
+ 	return NL_SKIP;
+ }
+ 

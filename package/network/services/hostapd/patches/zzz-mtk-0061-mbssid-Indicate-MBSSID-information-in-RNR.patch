@@ -1,0 +1,32 @@
+From 090f0f8c70415255c8800a28e24c1d23f595a32e Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <quic_jouni@quicinc.com>
+Date: Fri, 2 Dec 2022 21:06:00 +0200
+Subject: [PATCH] mbssid: Indicate MBSSID information in RNR
+
+Indicate whether the collocated BSS in the RNR is a part of a multiple
+BSSID set and whether it is a transmited BSSID.
+
+Signed-off-by: Jouni Malinen <quic_jouni@quicinc.com>
+---
+ src/ap/ieee802_11.c | 8 ++++++++
+ 1 file changed, 8 insertions(+)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 8f5c2c237..41a0d66a6 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -7790,6 +7790,14 @@ static u8 * hostapd_eid_rnr_iface(struct hostapd_data *hapd,
+ 			    reporting_hapd->conf->ssid.short_ssid)
+ 				bss_param |= RNR_BSS_PARAM_SAME_SSID;
+ 
++			if (iface->conf->mbssid != MBSSID_DISABLED &&
++			    iface->num_bss > 1) {
++				bss_param |= RNR_BSS_PARAM_MULTIPLE_BSSID;
++				if (i == 0)
++					bss_param |=
++						RNR_BSS_PARAM_TRANSMITTED_BSSID;
++			}
++
+ 			if (is_6ghz_op_class(hapd->iconf->op_class) &&
+ 			    bss->conf->unsol_bcast_probe_resp_interval)
+ 				bss_param |=

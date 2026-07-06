@@ -1,0 +1,60 @@
+From dd1587c915413afad7094b7de6c78a87fecd6153 Mon Sep 17 00:00:00 2001
+From: Purushottam Kushwaha <quic_pkushwah@quicinc.com>
+Date: Tue, 15 Apr 2025 17:50:18 +0530
+Subject: [PATCH] hostapd: Allow reuse of existing interface for AP MLD
+
+Commit 00c2c20d74ee ("hostapd: Maintain single wpa_driver_nl80211_data
+(drv) object across interfaces") adds 2nd AP MLD interface as a new
+interface. However, in cases where the interface is already created and
+are supposed to be reused, due to the new interface request, addition of
+a new AP MLD fails.
+
+Leverage the reuse parameter and handle the additional error code during
+interface add for such cases and update the interface mode to
+NL80211_IFTYPE_AP.
+
+Fixes: 00c2c20d74ee ("hostapd: Maintain single wpa_driver_nl80211_data (drv) object across interfaces")
+Signed-off-by: Purushottam Kushwaha <quic_pkushwah@quicinc.com>
+Signed-off-by: Chenming Huang <quic_chenhuan@quicinc.com>
+---
+ hostapd/main.c               | 2 +-
+ src/drivers/driver_nl80211.c | 6 +++++-
+ 2 files changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/hostapd/main.c b/hostapd/main.c
+index a8bb9d4d6..f8d417fa2 100644
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -278,7 +278,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 				   &hapd->drv_priv, force_ifname, if_addr,
+ 				   params.num_bridge && params.bridge[0] ?
+ 				   params.bridge[0] : NULL,
+-				   0)) {
++				   1)) {
+ 			wpa_printf(MSG_ERROR, "Failed to add BSS (BSSID="
+ 				   MACSTR ")", MAC2STR(hapd->own_addr));
+ 			os_free(params.bridge);
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 326a010e0..0c958f9a6 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -6251,7 +6251,7 @@ int nl80211_create_iface(struct wpa_driver_nl80211_data *drv,
+ 					arg);
+ 
+ 	/* if error occurred and interface exists already */
+-	if (ret == -ENFILE && if_nametoindex(ifname)) {
++	if (ret < 0 && if_nametoindex(ifname)) {
+ 		if (use_existing) {
+ 			wpa_printf(MSG_DEBUG, "nl80211: Continue using existing interface %s",
+ 				   ifname);
+@@ -9097,6 +9097,10 @@ static int wpa_driver_nl80211_if_add(void *priv, enum wpa_driver_if_type type,
+ 			*drv_priv = new_bss;
+ 		nl80211_init_bss(new_bss);
+ 
++		/* Set interface mode to NL80211_IFTYPE_AP */
++		if (nl80211_set_mode(drv, ifidx, nlmode))
++			return -1;
++
+ 		/* Subscribe management frames for this WPA_IF_AP_BSS */
+ 		if (nl80211_setup_ap(new_bss))
+ 			return -1;

@@ -1,0 +1,289 @@
+From 920b56322da984e5ecb344b571e3262d333c902e Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:36 -0800
+Subject: [PATCH] mbssid: Functions for building Multiple BSSID elements
+
+Add Multiple BSSID element data per IEEE Std 802.11ax-2021, 9.4.2.45.
+Split the BSSes into multiple elements if the data does not fit in
+the 255 bytes allowed for a single element.
+
+Store the total count of elements created and the offset to the start
+of each element in the provided buffer.
+
+Set the DTIM periods of non-transmitted profiles equal to the EMA
+profile periodicity if those are not a multiple of the latter already as
+recommended in IEEE Std 802.11ax-2021, Annex AA (Multiple BSSID
+configuration examples).
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+Co-developed-by: John Crispin <john@phrozen.org>
+Signed-off-by: John Crispin <john@phrozen.org>
+---
+ src/ap/ieee802_11.c          | 218 +++++++++++++++++++++++++++++++++++
+ src/ap/ieee802_11.h          |   5 +
+ src/common/ieee802_11_defs.h |   3 +
+ 3 files changed, 226 insertions(+)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index ba3c6009e..5ed91b4f3 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -4207,6 +4207,23 @@ static void handle_auth(struct hostapd_data *hapd,
+ }
+ 
+ 
++static u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
++{
++	size_t num_bss_nontx;
++	u8 max_bssid_ind = 0;
++
++	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1)
++		return 0;
++
++	num_bss_nontx = hapd->iface->num_bss - 1;
++	while (num_bss_nontx > 0) {
++		max_bssid_ind++;
++		num_bss_nontx >>= 1;
++	}
++	return max_bssid_ind;
++}
++
++
+ int hostapd_get_aid(struct hostapd_data *hapd, struct sta_info *sta)
+ {
+ 	int i, j = 32, aid;
+@@ -7832,4 +7849,205 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type)
+ 	return eid;
+ }
+ 
++
++static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
++					  u32 frame_type, size_t *bss_index)
++{
++	size_t len = 3, i;
++
++	for (i = *bss_index; i < hapd->iface->num_bss; i++) {
++		struct hostapd_data *bss = hapd->iface->bss[i];
++		const u8 *auth, *rsn, *rsnx;
++		size_t nontx_profile_len, auth_len;
++
++		if (!bss || !bss->conf || !bss->started)
++			continue;
++
++		/*
++		 * Sublement ID: 1 octet
++		 * Length: 1 octet
++		 * Nontransmitted capabilities: 4 octets
++		 * SSID element: 2 + variable
++		 * Multiple BSSID Index Element: 3 octets (+2 octets in beacons)
++		 * Fixed length = 1 + 1 + 4 + 2 + 3 = 11
++		 */
++		nontx_profile_len = 11 + bss->conf->ssid.ssid_len;
++
++		if (frame_type == WLAN_FC_STYPE_BEACON)
++			nontx_profile_len += 2;
++
++		auth = wpa_auth_get_wpa_ie(bss->wpa_auth, &auth_len);
++		if (auth) {
++			rsn = get_ie(auth, auth_len, WLAN_EID_RSN);
++			if (rsn)
++				nontx_profile_len += 2 + rsn[1];
++
++			rsnx = get_ie(auth, auth_len, WLAN_EID_RSNX);
++			if (rsnx)
++				nontx_profile_len += 2 + rsnx[1];
++		}
++
++		if (len + nontx_profile_len > 255)
++			break;
++
++		len += nontx_profile_len;
++	}
++
++	*bss_index = i;
++	return len;
++}
++
++
++size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
++			      u8 *elem_count)
++{
++	size_t len = 0, bss_index = 1;
++
++	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
++	    (frame_type != WLAN_FC_STYPE_BEACON &&
++	     frame_type != WLAN_FC_STYPE_PROBE_RESP))
++		return 0;
++
++	if (frame_type == WLAN_FC_STYPE_BEACON) {
++		if (!elem_count) {
++			wpa_printf(MSG_INFO,
++				   "MBSSID: Insufficient data for Beacon frames");
++			return 0;
++		}
++		*elem_count = 0;
++	}
++
++	while (bss_index < hapd->iface->num_bss) {
++		len += hostapd_eid_mbssid_elem_len(hapd, frame_type,
++						   &bss_index);
++
++		if (frame_type == WLAN_FC_STYPE_BEACON)
++			*elem_count += 1;
++	}
++	return len;
++}
++
++
++static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
++				    u32 frame_type, u8 max_bssid_indicator,
++				    size_t *bss_index, u8 elem_count)
++{
++	size_t i;
++	u8 *eid_len_offset, *max_bssid_indicator_offset;
++
++	*eid++ = WLAN_EID_MULTIPLE_BSSID;
++	eid_len_offset = eid++;
++	max_bssid_indicator_offset = eid++;
++
++	for (i = *bss_index; i < hapd->iface->num_bss; i++) {
++		struct hostapd_data *bss = hapd->iface->bss[i];
++		struct hostapd_bss_config *conf;
++		u8 *eid_len_pos, *nontx_bss_start = eid;
++		const u8 *auth, *rsn, *rsnx;
++		size_t auth_len = 0;
++		u16 capab_info;
++
++		if (!bss || !bss->conf || !bss->started)
++			continue;
++		conf = bss->conf;
++
++		*eid++ = WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE;
++		eid_len_pos = eid++;
++
++		capab_info = hostapd_own_capab_info(bss);
++		*eid++ = WLAN_EID_NONTRANSMITTED_BSSID_CAPA;
++		*eid++ = sizeof(capab_info);
++		WPA_PUT_LE16(eid, capab_info);
++		eid += sizeof(capab_info);
++
++		*eid++ = WLAN_EID_SSID;
++		*eid++ = conf->ssid.ssid_len;
++		os_memcpy(eid, conf->ssid.ssid, conf->ssid.ssid_len);
++		eid += conf->ssid.ssid_len;
++
++		*eid++ = WLAN_EID_MULTIPLE_BSSID_INDEX;
++		if (frame_type == WLAN_FC_STYPE_BEACON) {
++			*eid++ = 3;
++			*eid++ = i; /* BSSID Index */
++			if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
++			    (conf->dtim_period % elem_count))
++				conf->dtim_period = elem_count;
++			*eid++ = conf->dtim_period;
++			*eid++ = 0xFF; /* DTIM Count */
++		} else {
++			/* Probe Request frame does not include DTIM Period and
++			 * DTIM Count fields. */
++			*eid++ = 1;
++			*eid++ = i; /* BSSID Index */
++		}
++
++		auth = wpa_auth_get_wpa_ie(bss->wpa_auth, &auth_len);
++		if (auth) {
++			rsn = get_ie(auth, auth_len, WLAN_EID_RSN);
++			if (rsn) {
++				os_memcpy(eid, rsn, 2 + rsn[1]);
++				eid += 2 + rsn[1];
++			}
++
++			rsnx = get_ie(auth, auth_len, WLAN_EID_RSNX);
++			if (rsnx) {
++				os_memcpy(eid, rsnx, 2 + rsnx[1]);
++				eid += 2 + rsnx[1];
++			}
++		}
++
++		*eid_len_pos = (eid - eid_len_pos) - 1;
++
++		if (((eid - eid_len_offset) - 1) > 255) {
++			eid = nontx_bss_start;
++			break;
++		}
++	}
++
++	*bss_index = i;
++	*max_bssid_indicator_offset = max_bssid_indicator;
++	if (*max_bssid_indicator_offset < 1)
++		*max_bssid_indicator_offset = 1;
++	*eid_len_offset = (eid - eid_len_offset) - 1;
++	return eid;
++}
++
++
++u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
++			unsigned int frame_stype, u8 elem_count,
++			u8 **elem_offset)
++{
++	size_t bss_index = 1;
++	u8 elem_index = 0;
++
++	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1 ||
++	    (frame_stype != WLAN_FC_STYPE_BEACON &&
++	     frame_stype != WLAN_FC_STYPE_PROBE_RESP))
++		return eid;
++
++	if (frame_stype == WLAN_FC_STYPE_BEACON && !elem_offset) {
++		wpa_printf(MSG_INFO,
++			   "MBSSID: Insufficient data for Beacon frames");
++		return eid;
++	}
++
++	while (bss_index < hapd->iface->num_bss) {
++		if (frame_stype == WLAN_FC_STYPE_BEACON) {
++			if (elem_index == elem_count) {
++				wpa_printf(MSG_WARNING,
++					   "MBSSID: Larger number of elements than there is room in the provided array");
++				break;
++			}
++
++			elem_offset[elem_index] = eid;
++			elem_index = elem_index + 1;
++		}
++		eid = hostapd_eid_mbssid_elem(hapd, eid, end, frame_stype,
++					      hostapd_max_bssid_indicator(hapd),
++					      &bss_index, elem_count);
++	}
++
++	return eid;
++}
++
+ #endif /* CONFIG_NATIVE_WINDOWS */
+diff --git a/src/ap/ieee802_11.h b/src/ap/ieee802_11.h
+index fa1f47b95..6fa7cc41d 100644
+--- a/src/ap/ieee802_11.h
++++ b/src/ap/ieee802_11.h
+@@ -214,5 +214,10 @@ u16 copy_sta_eht_capab(struct hostapd_data *hapd, struct sta_info *sta,
+ 		       enum ieee80211_op_mode opmode,
+ 		       const u8 *he_capab, size_t he_capab_len,
+ 		       const u8 *eht_capab, size_t eht_capab_len);
++size_t hostapd_eid_mbssid_len(struct hostapd_data *hapd, u32 frame_type,
++			      u8 *elem_count);
++u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
++			unsigned int frame_stype, u8 elem_count,
++			u8 **elem_offset);
+ 
+ #endif /* IEEE802_11_H */
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index 669f380d2..023bbc332 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -598,6 +598,9 @@
+ #define WLAN_RSNX_CAPAB_PROT_RANGE_NEG 10
+ #define WLAN_RSNX_CAPAB_URNM_MFPR 15
+ 
++/* Multiple BSSID element subelements */
++#define WLAN_MBSSID_SUBELEMENT_NONTRANSMITTED_BSSID_PROFILE 0
++
+ /* Action frame categories (IEEE Std 802.11-2016, 9.4.1.11, Table 9-76) */
+ #define WLAN_ACTION_SPECTRUM_MGMT 0
+ #define WLAN_ACTION_QOS 1

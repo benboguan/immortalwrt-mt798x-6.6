@@ -1,0 +1,145 @@
+From 9c85e1560b7b907bdb06732ed4e43808eec7c37e Mon Sep 17 00:00:00 2001
+From: Michael-CY Lee <michael-cy.lee@mediatek.com>
+Date: Tue, 1 Oct 2024 11:09:04 +0800
+Subject: [PATCH] mtk: hostapd: add 'mld_link_id' configuration
+
+Introduce the 'mld_link_id' configuration option to allow users to
+specify the link ID for the affiliated AP of the AP MLD.
+
+Please note that the 'mld_link_id' is not validated across links in
+hostapd. In other words, users are required to set a unique link ID
+for each individual link.
+
+Signed-off-by: Michael-CY Lee <michael-cy.lee@mediatek.com>
+---
+ hostapd/config_file.c | 2 ++
+ src/ap/ap_config.c    | 9 +++++++++
+ src/ap/ap_config.h    | 3 +++
+ src/ap/hostapd.c      | 6 ++++++
+ src/ap/ieee802_11.h   | 4 ++++
+ 5 files changed, 24 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index affb91015..790468997 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -5215,6 +5215,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		bss->mld_ap = !!atoi(pos);
+ 	} else if (os_strcmp(buf, "mld_id") == 0) {
+ 		bss->mld_id = atoi(pos);
++	} else if (os_strcmp(buf, "mld_link_id") == 0) {
++		bss->mld_link_id = atoi(pos);
+ 	} else if (os_strcmp(buf, "mld_primary") == 0) {
+ 		bss->mld_primary = !!atoi(pos);
+ 	} else if (os_strcmp(buf, "mld_allowed_links") == 0) {
+diff --git a/src/ap/ap_config.c b/src/ap/ap_config.c
+index ddf00e045..0726ff996 100644
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -168,6 +168,7 @@ void hostapd_config_defaults_bss(struct hostapd_bss_config *bss)
+ 
+ #ifdef CONFIG_TESTING_OPTIONS
+ 	bss->sae_commit_status = -1;
++	bss->mld_link_id = -1;
+ #endif /* CONFIG_TESTING_OPTIONS */
+ 
+ #ifdef CONFIG_PASN
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 6c563af4b..7df51eee0 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -1000,6 +1000,9 @@ struct hostapd_bss_config {
+ 	/* The MLD ID to which the AP MLD is affiliated with */
+ 	u8 mld_id;
+ 
++	/* Link ID of this affiliated AP of the AP MLD */
++	int mld_link_id;
++
+ 	/* The AP's MLD MAC address within the AP MLD */
+ 	u8 mld_addr[ETH_ALEN];
+ #endif /* CONFIG_IEEE80211BE */
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 3e7166c25..a0e529cd1 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -2745,6 +2745,27 @@ struct hostapd_iface * hostapd_alloc_iface(void)
+ }
+ 
+ 
++#ifdef CONFIG_IEEE80211BE
++static void hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
++{
++	if (hapd->conf->mld_link_id >= 0) {
++		hapd->mld_link_id = hapd->conf->mld_link_id;
++	} else {
++		int i;
++
++		for (i = 0; i < MAX_NUM_MLD_LINKS; i++) {
++			if ((hapd->mld->valid_links & BIT(i)) == 0) {
++				hapd->mld_link_id = i;
++				break;
++			}
++		}
++	}
++	wpa_printf(MSG_DEBUG, "AP MLD: %s: Link ID %d assigned.",
++		   hapd->mld->name, hapd->mld_link_id);
++}
++#endif /* CONFIG_IEEE80211BE */
++
++
+ static void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
+ 					 struct hapd_interfaces *interfaces)
+ {
+@@ -4345,7 +4366,7 @@ int hostapd_mld_add_link(struct hostapd_data *hapd)
+ {
+ 	struct hostapd_mld *mld = hapd->mld;
+ 
+-	if (!hapd->conf->mld_ap)
++	if (!hapd->conf->mld_ap || (mld->valid_links & BIT(hapd->mld_link_id)))
+ 		return 0;
+ 
+ 	/* Should not happen */
+@@ -4354,6 +4375,7 @@ int hostapd_mld_add_link(struct hostapd_data *hapd)
+ 
+ 	dl_list_add_tail(&mld->links, &hapd->link);
+ 	mld->num_links++;
++	mld->valid_links |= BIT(hapd->mld_link_id);
+ 
+ 	wpa_printf(MSG_DEBUG, "AP MLD %s: Link ID %d added. num_links: %d",
+ 		   mld->name, hapd->mld_link_id, mld->num_links);
+@@ -4380,8 +4402,12 @@ int hostapd_mld_remove_link(struct hostapd_data *hapd)
+ 	if (!mld)
+ 		return -1;
+ 
++	if (!(mld->valid_links & BIT(hapd->mld_link_id)))
++		return 0;
++
+ 	dl_list_del(&hapd->link);
+ 	mld->num_links--;
++	mld->valid_links &= ~BIT(hapd->mld_link_id);
+ 
+ 	wpa_printf(MSG_DEBUG, "AP MLD %s: Link ID %d removed. num_links: %d",
+ 		   mld->name, hapd->mld_link_id, mld->num_links);
+diff --git a/src/ap/ieee802_11.h b/src/ap/ieee802_11.h
+index c2c860b5b..9bcc36f22 100644
+--- a/src/ap/ieee802_11.h
++++ b/src/ap/ieee802_11.h
+@@ -225,5 +225,8 @@ u8 * hostapd_eid_mbssid(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			unsigned int frame_stype, u8 elem_count,
+ 			u8 **elem_offset,
+ 			const u8 *known_bss, size_t known_bss_len);
++
++/* Convenience method to make mtk patches easier to apply. */
++#define hostapd_is_mld_ap(hapd) hostapd_is_multiple_link_mld(hapd)
+ 
+ #endif /* IEEE802_11_H */
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -547,6 +547,7 @@ struct hostapd_mld {
+ 	u8 next_link_id;
+ 	u8 num_links;
+ 	bool started;
++	u16 valid_links;
+ 
+ 	struct hostapd_data *fbss;
+ 	struct dl_list links; /* List head of all affiliated links */

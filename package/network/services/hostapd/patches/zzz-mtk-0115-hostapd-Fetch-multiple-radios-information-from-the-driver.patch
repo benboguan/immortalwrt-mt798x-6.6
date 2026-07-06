@@ -1,0 +1,438 @@
+From 15bf093b5b48eb9e4ebebe5805c5dca5e836a37c Mon Sep 17 00:00:00 2001
+From: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Date: Wed, 24 Jul 2024 12:38:13 +0530
+Subject: [PATCH] hostapd: Fetch multiple radios information from the driver
+
+When a driver consolidates several hardware components under a single
+radio, it provides details about these components via the
+NL80211_CMD_GET_WIPHY command.
+
+Parse this information and store it. A subsequent change will use this
+information for validation in certain scenarios.
+
+Signed-off-by: Aditya Kumar Singh <quic_adisi@quicinc.com>
+---
+ src/ap/ap_drv_ops.c               |  11 +++
+ src/ap/ap_drv_ops.h               |   4 +
+ src/ap/hostapd.c                  |   9 +++
+ src/ap/hostapd.h                  |   4 +
+ src/ap/hw_features.c              |  53 ++++++++++++
+ src/ap/hw_features.h              |  12 +++
+ src/drivers/driver.h              |  33 ++++++++
+ src/drivers/driver_nl80211.c      |  10 +++
+ src/drivers/driver_nl80211.h      |   2 +
+ src/drivers/driver_nl80211_capa.c | 130 ++++++++++++++++++++++++++++++
+ 10 files changed, 268 insertions(+)
+
+diff --git a/src/ap/ap_drv_ops.c b/src/ap/ap_drv_ops.c
+index c47349110..92dbc1653 100644
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
+@@ -1053,3 +1053,14 @@ int hostapd_drv_set_secure_ranging_ctx(struct hostapd_data *hapd,
+ 		return 0;
+ 	return hapd->driver->dpp_listen(hapd->drv_priv, enable);
+ }
++
++
++struct hostapd_multi_hw_info *
++hostapd_get_multi_hw_info(struct hostapd_data *hapd,
++			  unsigned int *num_multi_hws)
++{
++	if (!hapd->driver || !hapd->driver->get_multi_hw_info)
++		return NULL;
++
++	return hapd->driver->get_multi_hw_info(hapd->drv_priv, num_multi_hws);
++}
+diff --git a/src/ap/ap_drv_ops.h b/src/ap/ap_drv_ops.h
+index d7e79c840..6b7f02a1f 100644
+--- a/src/ap/ap_drv_ops.h
++++ b/src/ap/ap_drv_ops.h
+@@ -469,4 +469,8 @@ static inline int hostapd_drv_link_sta_remove(struct hostapd_data *hapd,
+ }
+ #endif /* CONFIG_IEEE80211BE */
+ 
++struct hostapd_multi_hw_info *
++hostapd_get_multi_hw_info(struct hostapd_data *hapd,
++			  unsigned int *num_multi_hws);
++
+ #endif /* AP_DRV_OPS */
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 57ae12d4a..bf40f389d 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -712,6 +712,9 @@ void hostapd_cleanup_iface_partial(struct hostapd_iface *iface)
+ 	ap_list_deinit(iface);
+ 	sta_track_deinit(iface);
+ 	airtime_policy_update_deinit(iface);
++	hostapd_free_multi_hw_info(iface->multi_hw_info);
++	iface->multi_hw_info = NULL;
++	iface->current_hw_info = NULL;
+ }
+ 
+ 
+@@ -2505,6 +2508,12 @@ static int hostapd_setup_interface_complete_sync(struct hostapd_iface *iface,
+ 			   hostapd_hw_mode_txt(iface->conf->hw_mode),
+ 			   iface->conf->channel, iface->freq);
+ 
++		if (hostapd_set_current_hw_info(iface, iface->freq)) {
++			wpa_printf(MSG_ERROR,
++				   "Failed to set current hardware info");
++			goto fail;
++		}
++
+ #ifdef NEED_AP_MLME
+ 		/* Handle DFS only if it is not offloaded to the driver */
+ 		if (!(iface->drv_flags & WPA_DRIVER_FLAGS_DFS_OFFLOAD)) {
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index 278e9c3ca..898dc0d75 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -731,6 +731,10 @@ struct hostapd_iface {
+ 	int (*enable_iface_cb)(struct hostapd_iface *iface);
+ 	int (*disable_iface_cb)(struct hostapd_iface *iface);
+ 	char **bss_config_fname;
++
++	struct hostapd_multi_hw_info *multi_hw_info;
++	unsigned int num_multi_hws;
++	struct hostapd_multi_hw_info *current_hw_info;
+ };
+ 
+ /* hostapd.c */
+diff --git a/src/ap/hw_features.c b/src/ap/hw_features.c
+index c4556603d..02d67593a 100644
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -76,9 +76,12 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
+ {
+ 	struct hostapd_data *hapd = iface->bss[0];
+ 	int i, j;
++	unsigned int k;
+ 	u16 num_modes, flags;
+ 	struct hostapd_hw_modes *modes;
+ 	u8 dfs_domain;
++	struct hostapd_multi_hw_info *multi_hw_info;
++	unsigned int num_multi_hws;
+ 
+ 	if (hostapd_drv_none(hapd))
+ 		return -1;
+@@ -168,6 +171,25 @@ int hostapd_get_hw_features(struct hostapd_iface *iface)
+ 		}
+ 	}
+ 
++	multi_hw_info = hostapd_get_multi_hw_info(hapd, &num_multi_hws);
++	if (!multi_hw_info)
++		return 0;
++
++	hostapd_free_multi_hw_info(iface->multi_hw_info);
++	iface->multi_hw_info = multi_hw_info;
++	iface->num_multi_hws = num_multi_hws;
++
++	wpa_printf(MSG_DEBUG, "Multiple underlying hardwares info:");
++
++	for (k = 0; k < num_multi_hws; k++) {
++		struct hostapd_multi_hw_info *hw_info = &multi_hw_info[k];
++
++		wpa_printf(MSG_DEBUG,
++			   "  %d. hw_idx=%u, frequency range: %d-%d MHz",
++			   k + 1, hw_info->hw_idx, hw_info->start_freq,
++			   hw_info->end_freq);
++	}
++
+ 	return 0;
+ }
+ 
+@@ -1391,3 +1413,34 @@ int hostapd_hw_skip_mode(struct hostapd_iface *iface,
+ 	}
+ 	return 0;
+ }
++
++
++void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info)
++{
++	os_free(multi_hw_info);
++}
++
++
++int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq)
++{
++	struct hostapd_multi_hw_info *hw_info;
++	unsigned int i;
++
++	if (!iface->num_multi_hws)
++		return 0;
++
++	for (i = 0; i < iface->num_multi_hws; i++) {
++		hw_info = &iface->multi_hw_info[i];
++
++		if (hw_info->start_freq <= oper_freq &&
++		    hw_info->end_freq >= oper_freq) {
++			iface->current_hw_info = hw_info;
++			wpa_printf(MSG_DEBUG,
++				   "Mode: Selected underlying hardware: hw_idx=%u",
++				   iface->current_hw_info->hw_idx);
++			return 0;
++		}
++	}
++
++	return -1;
++}
+diff --git a/src/ap/hw_features.h b/src/ap/hw_features.h
+index c682c6d20..73663d0af 100644
+--- a/src/ap/hw_features.h
++++ b/src/ap/hw_features.h
+@@ -30,6 +30,8 @@ void hostapd_stop_setup_timers(struct hostapd_iface *iface);
+ void hostapd_stop_setup_timers(struct hostapd_iface *iface);
+ int hostapd_hw_skip_mode(struct hostapd_iface *iface,
+ 			 struct hostapd_hw_modes *mode);
++void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info);
++int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq);
+ #else /* NEED_AP_MLME */
+ static inline void
+ hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
+@@ -103,6 +105,16 @@ static inline int hostapd_determine_mode(struct hostapd_iface *iface)
+ 	return 0;
+ }
+ 
++static inline
++void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info)
++{
++}
++
++static inline int hostapd_set_current_hw_info(struct hostapd_iface *iface,
++					      u32 oper_freq)
++{
++	return 0;
++}
+ #endif /* NEED_AP_MLME */
+ 
+ #endif /* HW_FEATURES_H */
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index c4cf46c30..e9c6a8325 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -325,6 +325,27 @@ struct hostapd_hw_modes {
+ };
+ 
+ 
++/**
++ * struct hostapd_multi_hw_info: Supported multiple underlying hardware info
++ */
++struct hostapd_multi_hw_info {
++	/**
++	 * hw_idx - Hardware index
++	 */
++	u8 hw_idx;
++
++	/**
++	 * start_freq - Frequency range start in MHz
++	 */
++	int start_freq;
++
++	/**
++	 * end_freq - Frequency range end in MHz
++	 */
++	int end_freq;
++};
++
++
+ #define IEEE80211_CAP_ESS	0x0001
+ #define IEEE80211_CAP_IBSS	0x0002
+ #define IEEE80211_CAP_PRIVACY	0x0010
+@@ -5224,6 +5245,18 @@ struct wpa_driver_ops {
+ 			      bool multicast);
+ #endif /* CONFIG_TESTING_OPTIONS */
+ 
++	/**
++	 * get_multi_hw_info - Get multiple underlying hardware information
++	 *		       (hardware IDx and supported frequency range)
++	 * @priv: Private driver interface data
++	 * @num_multi_hws: Variable for returning the number of returned
++	 *	hardware info data
++	 * Returns: Pointer to allocated multiple hardware data on success
++	 * or %NULL on failure. Caller is responsible for freeing this.
++	 */
++	struct hostapd_multi_hw_info *
++	(*get_multi_hw_info)(void *priv, unsigned int *num_multi_hws);
++
+ #ifdef CONFIG_MTK_IEEE80211BE
+ 	/**
+ 	 * get_bss_mlo_info - Get MLO info for the specified interface
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index b729b3e5b..a71fbf8b1 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -14036,6 +14036,15 @@ static int testing_nl80211_radio_disable(void *priv, int disabled)
+ #endif /* CONFIG_TESTING_OPTIONS */
+ 
+ 
++static struct hostapd_multi_hw_info *
++wpa_driver_get_multi_hw_info(void *priv, unsigned int *num_multi_hws)
++{
++	struct i802_bss *bss = priv;
++
++	return nl80211_get_multi_hw_info(bss, num_multi_hws);
++}
++
++
+ 
+ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
+ 	.name = "nl80211",
+@@ -14194,6 +14203,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
+ 	.register_frame = testing_nl80211_register_frame,
+ 	.radio_disable = testing_nl80211_radio_disable,
+ #endif /* CONFIG_TESTING_OPTIONS */
++	.get_multi_hw_info = wpa_driver_get_multi_hw_info,
+ #ifdef CONFIG_MTK_IEEE80211BE
+ 	.get_bss_mlo_info = wpa_driver_nl80211_get_bss_mlo_info,
+ 	.set_ml_reconf_kde = wpa_driver_nl80211_set_ml_reconf_kde,
+diff --git a/src/drivers/driver_nl80211.h b/src/drivers/driver_nl80211.h
+index d1e0f195e..87bcc880b 100644
+--- a/src/drivers/driver_nl80211.h
++++ b/src/drivers/driver_nl80211.h
+@@ -411,6 +411,8 @@ int wpa_driver_nl80211_abort_scan(void *priv, u64 scan_cookie);
+ int wpa_driver_nl80211_vendor_scan(struct i802_bss *bss,
+ 				   struct wpa_driver_scan_params *params);
+ int nl80211_set_default_scan_ies(void *priv, const u8 *ies, size_t ies_len);
++struct hostapd_multi_hw_info *
++nl80211_get_multi_hw_info(struct i802_bss *bss, unsigned int *num_multi_hws);
+ u32 get_nl80211_protocol_features(struct wpa_driver_nl80211_data *drv);
+ int set_pasn_key(struct wpa_driver_nl80211_data *drv,
+                 const u8 *key, size_t key_len);
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index 26c1f4140..c84a9478c 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -2736,3 +2736,133 @@ nl80211_get_hw_feature_data(void *priv, u16 *num_modes, u16 *flags,
+ 
+ 	return NULL;
+ }
++
++
++static int phy_multi_hw_info_parse(struct hostapd_multi_hw_info *hw_info,
++				   struct nlattr *radio_attr)
++{
++	struct nlattr *tb_freq[NL80211_WIPHY_RADIO_FREQ_ATTR_MAX + 1];
++	int start_freq, end_freq;
++
++	switch (nla_type(radio_attr)) {
++	case NL80211_WIPHY_RADIO_ATTR_INDEX:
++		hw_info->hw_idx = nla_get_u32(radio_attr);
++		return NL_OK;
++	case NL80211_WIPHY_RADIO_ATTR_FREQ_RANGE:
++		nla_parse_nested(tb_freq, NL80211_WIPHY_RADIO_FREQ_ATTR_MAX,
++				 radio_attr, NULL);
++
++		if (!tb_freq[NL80211_WIPHY_RADIO_FREQ_ATTR_START] ||
++		    !tb_freq[NL80211_WIPHY_RADIO_FREQ_ATTR_END])
++			return NL_STOP;
++
++		start_freq = nla_get_u32(
++			tb_freq[NL80211_WIPHY_RADIO_FREQ_ATTR_START]);
++		end_freq = nla_get_u32(
++			tb_freq[NL80211_WIPHY_RADIO_FREQ_ATTR_END]);
++
++		/* Convert to MHz and store */
++		hw_info->start_freq = start_freq / 1000;
++		hw_info->end_freq = end_freq / 1000;
++		return NL_OK;
++	default:
++		return NL_OK;
++	}
++}
++
++
++struct phy_multi_hw_info_arg {
++	bool failed;
++	unsigned int *num_multi_hws;
++	struct hostapd_multi_hw_info *multi_hws;
++};
++
++
++static int phy_multi_hw_info_handler(struct nl_msg *msg, void *arg)
++{
++	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
++	struct phy_multi_hw_info_arg *multi_hw_info = arg;
++	struct hostapd_multi_hw_info *multi_hws, hw_info;
++	struct nlattr *tb_msg[NL80211_ATTR_MAX + 1];
++	struct nlattr *nl_hw, *radio_attr;
++	int rem_hw, rem_radio_prop, res;
++
++	nla_parse(tb_msg, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
++		  genlmsg_attrlen(gnlh, 0), NULL);
++
++	if (!tb_msg[NL80211_ATTR_WIPHY_RADIOS])
++		return NL_SKIP;
++
++	*multi_hw_info->num_multi_hws = 0;
++
++	nla_for_each_nested(nl_hw, tb_msg[NL80211_ATTR_WIPHY_RADIOS], rem_hw) {
++		os_memset(&hw_info, 0, sizeof(hw_info));
++
++		nla_for_each_nested(radio_attr, nl_hw, rem_radio_prop) {
++			res = phy_multi_hw_info_parse(&hw_info, radio_attr);
++			if (res != NL_OK)
++				goto out;
++		}
++
++		if (hw_info.start_freq == 0 || hw_info.end_freq == 0)
++			goto out;
++
++		multi_hws = os_realloc_array(multi_hw_info->multi_hws,
++					     *multi_hw_info->num_multi_hws + 1,
++					     sizeof(*multi_hws));
++		if (!multi_hws)
++			goto out;
++
++		multi_hw_info->multi_hws = multi_hws;
++		os_memcpy(&multi_hws[*(multi_hw_info->num_multi_hws)],
++			  &hw_info, sizeof(struct hostapd_multi_hw_info));
++		*(multi_hw_info->num_multi_hws) += 1;
++	}
++
++	return NL_OK;
++out:
++	multi_hw_info->failed = true;
++	return NL_STOP;
++}
++
++
++struct hostapd_multi_hw_info *
++nl80211_get_multi_hw_info(struct i802_bss *bss, unsigned int *num_multi_hws)
++{
++	u32 feat;
++	struct wpa_driver_nl80211_data *drv = bss->drv;
++	int nl_flags = 0;
++	struct nl_msg *msg;
++	struct phy_multi_hw_info_arg result = {
++		.failed = false,
++		.num_multi_hws = num_multi_hws,
++		.multi_hws = NULL,
++	};
++
++	*num_multi_hws = 0;
++
++	if (!drv->has_capability || !(drv->capa.flags2 & WPA_DRIVER_FLAGS2_MLO))
++		return NULL;
++
++	feat = get_nl80211_protocol_features(drv);
++	if (feat & NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP)
++		nl_flags = NLM_F_DUMP;
++	if (!(msg = nl80211_cmd_msg(bss, nl_flags, NL80211_CMD_GET_WIPHY)) ||
++	    nla_put_flag(msg, NL80211_ATTR_SPLIT_WIPHY_DUMP)) {
++		nlmsg_free(msg);
++		return NULL;
++	}
++
++	if (send_and_recv_msgs(drv, msg, phy_multi_hw_info_handler,
++			       &result, NULL, NULL) == 0) {
++		if (result.failed) {
++			os_free(result.multi_hws);
++			*num_multi_hws = 0;
++			return NULL;
++		}
++
++		return result.multi_hws;
++	}
++
++	return NULL;
++}

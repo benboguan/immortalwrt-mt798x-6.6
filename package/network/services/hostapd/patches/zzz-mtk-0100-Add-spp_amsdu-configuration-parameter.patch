@@ -1,0 +1,82 @@
+From 27aedf34654a65ffec3d726ed4006ad6cf733a20 Mon Sep 17 00:00:00 2001
+From: Daniel Gabay <daniel.gabay@intel.com>
+Date: Tue, 7 Jan 2025 14:51:44 +0200
+Subject: [PATCH] AP: Add spp_amsdu configuration parameter
+
+Add spp_amsdu (Signaling and Payload Protected A-MSDU) configuration
+parameter for hostapd. This functionality depends on the driver
+indicating support for it and CCMP/GCMP cipher suite being used. For the
+time being, this functionality is disabled by default (spp_amsdu=0) to
+avoid introducing known interoperability issues with the RSNXE in the
+default configuration and since there has been quite minimal
+interoperability testing of SPP A-MSDU so far.
+
+Signed-off-by: Daniel Gabay <daniel.gabay@intel.com>
+---
+ hostapd/config_file.c | 2 ++
+ hostapd/hostapd.conf  | 6 ++++++
+ src/ap/ap_config.c    | 7 +++++++
+ src/ap/ap_config.h    | 2 ++
+ 4 files changed, 17 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index a9d13f72a..78a61fb43 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -3737,6 +3737,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		bss->rsn_override_mfp = atoi(pos);
+ 	} else if (os_strcmp(buf, "rsn_override_mfp_2") == 0) {
+ 		bss->rsn_override_mfp_2 = atoi(pos);
++	} else if (os_strcmp(buf, "spp_amsdu") == 0) {
++		bss->spp_amsdu = !!atoi(pos);
+ 	} else if (os_strcmp(buf, "group_mgmt_cipher") == 0) {
+ 		if (os_strcmp(pos, "AES-128-CMAC") == 0) {
+ 			bss->group_mgmt_cipher = WPA_CIPHER_AES_128_CMAC;
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index 0d7310d17..3b53d2b2d 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -2033,6 +2033,12 @@ own_ip_addr=127.0.0.1
+ # 1 = enabled
+ #beacon_prot=0
+ 
++# SPP (Signaling and Payload Protected) A-MSDU.
++# This depends on driver support and CCMP/GCMP cipher suite being used.
++# 0 = disabled (default)
++# 1 = enabled if driver indicates support for this
++#spp_amsdu=1
++
+ # Association SA Query maximum timeout (in TU = 1.024 ms; for MFP)
+ # (maximum time to wait for a SA Query response)
+ # dot11AssociationSAQueryMaximumTimeout, 1...4294967295
+diff --git a/src/ap/ap_config.c b/src/ap/ap_config.c
+index a68454c01..2bae39e67 100644
+--- a/src/ap/ap_config.c
++++ b/src/ap/ap_config.c
+@@ -1526,6 +1526,13 @@ static int hostapd_config_check_bss(struct hostapd_bss_config *bss,
+ 		return -1;
+ 	}
+ 
++	/* Do not advertise SPP A-MSDU support if not using CCMP/GCMP */
++	if (full_config && bss->spp_amsdu &&
++	    !(bss->wpa &&
++	      bss->rsn_pairwise & (WPA_CIPHER_CCMP_256 | WPA_CIPHER_CCMP |
++				   WPA_CIPHER_GCMP_256 | WPA_CIPHER_GCMP)))
++		bss->spp_amsdu = false;
++
+ 	return 0;
+ }
+ 
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 3d039d0e8..d056c60e3 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -967,6 +967,8 @@ struct hostapd_bss_config {
+ 	u8 rnr;
+ 	bool xrates_supported;
+ 	int mbssid_index;
++
++	bool spp_amsdu;
+ #ifdef CONFIG_IEEE80211AX
+ 	u8 dot11vmbssid;
+ #endif /* CONFIG_IEEE80211AX */

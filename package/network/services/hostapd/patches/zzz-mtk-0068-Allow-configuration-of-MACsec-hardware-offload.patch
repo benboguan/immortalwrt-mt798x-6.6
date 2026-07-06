@@ -1,0 +1,432 @@
+From 6d24673ab89d9002990ee51e7c87d308ca07cd01 Mon Sep 17 00:00:00 2001
+From: Emeel Hakim <ehakim@nvidia.com>
+Date: Tue, 14 Feb 2023 10:26:56 +0200
+Subject: [PATCH] mka: Allow configuration of MACsec hardware offload
+
+Add new configuration parameter macsec_offload to allow user to set up
+MACsec hardware offload feature.
+
+Signed-off-by: Emeel Hakim <ehakim@nvidia.com>
+---
+ hostapd/config_file.c              | 10 ++++++++++
+ hostapd/hostapd.conf               |  8 ++++++++
+ src/ap/ap_config.h                 | 13 +++++++++++++
+ src/ap/wpa_auth_kay.c              |  1 +
+ src/drivers/driver.h               | 10 ++++++++++
+ src/pae/ieee802_1x_cp.c            |  7 +++++++
+ src/pae/ieee802_1x_kay.c           |  7 +++++--
+ src/pae/ieee802_1x_kay.h           |  6 ++++--
+ src/pae/ieee802_1x_secy_ops.c      | 20 ++++++++++++++++++++
+ src/pae/ieee802_1x_secy_ops.h      |  1 +
+ wpa_supplicant/config.c            |  1 +
+ wpa_supplicant/config_file.c       |  1 +
+ wpa_supplicant/config_ssid.h       | 12 ++++++++++++
+ wpa_supplicant/driver_i.h          |  8 ++++++++
+ wpa_supplicant/wpa_cli.c           |  1 +
+ wpa_supplicant/wpa_supplicant.conf |  9 +++++++++
+ wpa_supplicant/wpas_kay.c          | 10 +++++++++-
+ 17 files changed, 120 insertions(+), 5 deletions(-)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index 76f9cf8311..472a91df24 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -4636,6 +4636,16 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		bss->macsec_replay_protect = macsec_replay_protect;
+ 	} else if (os_strcmp(buf, "macsec_replay_window") == 0) {
+ 		bss->macsec_replay_window = atoi(pos);
++	} else if (os_strcmp(buf, "macsec_offload") == 0) {
++		int macsec_offload = atoi(pos);
++
++		if (macsec_offload < 0 || macsec_offload > 2) {
++			wpa_printf(MSG_ERROR,
++				   "Line %d: invalid macsec_offload (%d): '%s'.",
++				   line, macsec_offload, pos);
++			return 1;
++		}
++		bss->macsec_offload = macsec_offload;
+ 	} else if (os_strcmp(buf, "macsec_port") == 0) {
+ 		int macsec_port = atoi(pos);
+ 
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index c5e74a6a2b..0e5b8d82bd 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -1117,6 +1117,14 @@ eapol_key_index_workaround=0
+ # 0: No replay window, strict check (default)
+ # 1..2^32-1: number of packets that could be misordered
+ #
++# macsec_offload: IEEE 802.1X/MACsec hardware offload
++# This setting applies only when MACsec is in use, i.e.,
++#  - macsec_policy is enabled
++#  - the key server has decided to enable MACsec
++# 0 = MACSEC_OFFLOAD_OFF (default)
++# 1 = MACSEC_OFFLOAD_PHY
++# 2 = MACSEC_OFFLOAD_MAC
++#
+ # macsec_port: IEEE 802.1X/MACsec port
+ # Port component of the SCI
+ # Range: 1-65534 (default: 1)
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 1631cf2aac..dfe259c307 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -844,6 +844,19 @@ struct hostapd_bss_config {
+ 	 */
+ 	u32 macsec_replay_window;
+ 
++	/**
++	 * macsec_offload - Enable MACsec offload
++	 *
++	 * This setting applies only when MACsec is in use, i.e.,
++	 *  - macsec_policy is enabled
++	 *  - the key server has decided to enable MACsec
++	 *
++	 * 0 = MACSEC_OFFLOAD_OFF (default)
++	 * 1 = MACSEC_OFFLOAD_PHY
++	 * 2 = MACSEC_OFFLOAD_MAC
++	 */
++	int macsec_offload;
++
+ 	/**
+ 	 * macsec_port - MACsec port (in SCI)
+ 	 *
+diff --git a/src/ap/wpa_auth_kay.c b/src/ap/wpa_auth_kay.c
+index 663604f067..625f405127 100644
+--- a/src/ap/wpa_auth_kay.c
++++ b/src/ap/wpa_auth_kay.c
+@@ -327,6 +327,7 @@ int ieee802_1x_alloc_kay_sm_hapd(struct hostapd_data *hapd,
+ 	res = ieee802_1x_kay_init(kay_ctx, policy,
+ 				  hapd->conf->macsec_replay_protect,
+ 				  hapd->conf->macsec_replay_window,
++				  hapd->conf->macsec_offload,
+ 				  hapd->conf->macsec_port,
+ 				  hapd->conf->mka_priority,
+ 				  hapd->conf->macsec_csindex,
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 38a20965a7..96a54ef2a7 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -4520,6 +4520,16 @@ struct wpa_driver_ops {
+ 	 */
+ 	int (*set_replay_protect)(void *priv, bool enabled, u32 window);
+ 
++	/**
++	 * set_offload - Set MACsec hardware offload
++	 * @priv: Private driver interface data
++	 * @offload: 0 = MACSEC_OFFLOAD_OFF
++	 *           1 = MACSEC_OFFLOAD_PHY
++	 *           2 = MACSEC_OFFLOAD_MAC
++	 * Returns: 0 on success, -1 on failure (or if not supported)
++	 */
++	int (*set_offload)(void *priv, u8 offload);
++
+ 	/**
+ 	 * set_current_cipher_suite - Set current cipher suite
+ 	 * @priv: Private driver interface data
+diff --git a/src/pae/ieee802_1x_cp.c b/src/pae/ieee802_1x_cp.c
+index 2bf3e8e8cf..d06ad862a2 100644
+--- a/src/pae/ieee802_1x_cp.c
++++ b/src/pae/ieee802_1x_cp.c
+@@ -84,6 +84,7 @@ struct ieee802_1x_cp_sm {
+ 
+ 	/* not defined IEEE Std 802.1X-2010 */
+ 	struct ieee802_1x_kay *kay;
++	u8 offload;
+ };
+ 
+ static void ieee802_1x_cp_retire_when_timeout(void *eloop_ctx,
+@@ -188,6 +189,7 @@ SM_STATE(CP, AUTHENTICATED)
+ 	sm->protect_frames = false;
+ 	sm->replay_protect = false;
+ 	sm->validate_frames = Checked;
++	sm->offload = sm->kay->macsec_offload;
+ 
+ 	sm->port_valid = false;
+ 	sm->controlled_port_enabled = true;
+@@ -197,6 +199,7 @@ SM_STATE(CP, AUTHENTICATED)
+ 	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
+ 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
+ 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
++	secy_cp_control_offload(sm->kay, sm->offload);
+ }
+ 
+ 
+@@ -208,6 +211,7 @@ SM_STATE(CP, SECURED)
+ 
+ 	sm->protect_frames = sm->kay->macsec_protect;
+ 	sm->replay_protect = sm->kay->macsec_replay_protect;
++	sm->offload = sm->kay->macsec_offload;
+ 	sm->validate_frames = sm->kay->macsec_validate;
+ 
+ 	sm->current_cipher_suite = sm->cipher_suite;
+@@ -223,6 +227,7 @@ SM_STATE(CP, SECURED)
+ 	secy_cp_control_encrypt(sm->kay, sm->kay->macsec_encrypt);
+ 	secy_cp_control_validate_frames(sm->kay, sm->validate_frames);
+ 	secy_cp_control_replay(sm->kay, sm->replay_protect, sm->replay_window);
++	secy_cp_control_offload(sm->kay, sm->offload);
+ }
+ 
+ 
+@@ -462,6 +467,7 @@ struct ieee802_1x_cp_sm * ieee802_1x_cp_sm_init(struct ieee802_1x_kay *kay)
+ 	sm->validate_frames = kay->macsec_validate;
+ 	sm->replay_protect = kay->macsec_replay_protect;
+ 	sm->replay_window = kay->macsec_replay_window;
++	sm->offload = kay->macsec_offload;
+ 
+ 	sm->controlled_port_enabled = false;
+ 
+@@ -491,6 +497,7 @@ struct ieee802_1x_cp_sm * ieee802_1x_cp_sm_init(struct ieee802_1x_kay *kay)
+ 	secy_cp_control_confidentiality_offset(sm->kay,
+ 					       sm->confidentiality_offset);
+ 	secy_cp_control_current_cipher_suite(sm->kay, sm->current_cipher_suite);
++	secy_cp_control_offload(sm->kay, sm->offload);
+ 
+ 	SM_STEP_RUN(CP);
+ 
+diff --git a/src/pae/ieee802_1x_kay.c b/src/pae/ieee802_1x_kay.c
+index a1f8ae9341..c7dcc3039f 100644
+--- a/src/pae/ieee802_1x_kay.c
++++ b/src/pae/ieee802_1x_kay.c
+@@ -3464,8 +3464,8 @@ static void kay_l2_receive(void *ctx, const u8 *src_addr, const u8 *buf,
+ struct ieee802_1x_kay *
+ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
+ 		    bool macsec_replay_protect, u32 macsec_replay_window,
+-		    u16 port, u8 priority, u32 macsec_csindex,
+-		    const char *ifname, const u8 *addr)
++		    u8 macsec_offload, u16 port, u8 priority,
++		    u32 macsec_csindex, const char *ifname, const u8 *addr)
+ {
+ 	struct ieee802_1x_kay *kay;
+ 
+@@ -3524,6 +3524,7 @@ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
+ 		kay->macsec_validate = Disabled;
+ 		kay->macsec_replay_protect = false;
+ 		kay->macsec_replay_window = 0;
++		kay->macsec_offload = 0;
+ 		kay->macsec_confidentiality = CONFIDENTIALITY_NONE;
+ 		kay->mka_hello_time = MKA_HELLO_TIME;
+ 	} else {
+@@ -3540,6 +3541,7 @@ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
+ 		kay->macsec_validate = Strict;
+ 		kay->macsec_replay_protect = macsec_replay_protect;
+ 		kay->macsec_replay_window = macsec_replay_window;
++		kay->macsec_offload = macsec_offload;
+ 		kay->mka_hello_time = MKA_HELLO_TIME;
+ 	}
+ 
+@@ -3740,6 +3742,7 @@ ieee802_1x_kay_create_mka(struct ieee802_1x_kay *kay,
+ 	secy_cp_control_protect_frames(kay, kay->macsec_protect);
+ 	secy_cp_control_replay(kay, kay->macsec_replay_protect,
+ 			       kay->macsec_replay_window);
++	secy_cp_control_offload(kay, kay->macsec_offload);
+ 	if (secy_create_transmit_sc(kay, participant->txsc))
+ 		goto fail;
+ 
+diff --git a/src/pae/ieee802_1x_kay.h b/src/pae/ieee802_1x_kay.h
+index 11cf7b758d..11464f7fc6 100644
+--- a/src/pae/ieee802_1x_kay.h
++++ b/src/pae/ieee802_1x_kay.h
+@@ -166,6 +166,7 @@ struct ieee802_1x_kay_ctx {
+ 	int (*delete_transmit_sa)(void *ctx, struct transmit_sa *sa);
+ 	int (*enable_transmit_sa)(void *ctx, struct transmit_sa *sa);
+ 	int (*disable_transmit_sa)(void *ctx, struct transmit_sa *sa);
++	int (*set_offload)(void *ctx, u8 offload);
+ };
+ 
+ struct ieee802_1x_kay {
+@@ -206,6 +207,7 @@ struct ieee802_1x_kay {
+ 	bool is_key_server;
+ 	bool is_obliged_key_server;
+ 	char if_name[IFNAMSIZ];
++	u8 macsec_offload;
+ 
+ 	unsigned int macsec_csindex;  /* MACsec cipher suite table index */
+ 	int mka_algindex;  /* MKA alg table index */
+@@ -240,8 +242,8 @@ u64 mka_sci_u64(struct ieee802_1x_mka_sci *sci);
+ struct ieee802_1x_kay *
+ ieee802_1x_kay_init(struct ieee802_1x_kay_ctx *ctx, enum macsec_policy policy,
+ 		    bool macsec_replay_protect, u32 macsec_replay_window,
+-		    u16 port, u8 priority, u32 macsec_csindex,
+-		    const char *ifname, const u8 *addr);
++		    u8 macsec_offload, u16 port, u8 priority,
++		    u32 macsec_csindex, const char *ifname, const u8 *addr);
+ void ieee802_1x_kay_deinit(struct ieee802_1x_kay *kay);
+ 
+ struct ieee802_1x_mka_participant *
+diff --git a/src/pae/ieee802_1x_secy_ops.c b/src/pae/ieee802_1x_secy_ops.c
+index 0f36e6b536..f35baadbfb 100644
+--- a/src/pae/ieee802_1x_secy_ops.c
++++ b/src/pae/ieee802_1x_secy_ops.c
+@@ -85,6 +85,26 @@ int secy_cp_control_replay(struct ieee802_1x_kay *kay, bool enabled, u32 win)
+ }
+ 
+ 
++int secy_cp_control_offload(struct ieee802_1x_kay *kay, u8 offload)
++{
++	struct ieee802_1x_kay_ctx *ops;
++
++	if (!kay) {
++		wpa_printf(MSG_ERROR, "KaY: %s params invalid", __func__);
++		return -1;
++	}
++
++	ops = kay->ctx;
++	if (!ops || !ops->set_offload) {
++		wpa_printf(MSG_ERROR,
++			   "KaY: secy set_offload operation not supported");
++		return -1;
++	}
++
++	return ops->set_offload(ops->ctx, offload);
++}
++
++
+ int secy_cp_control_current_cipher_suite(struct ieee802_1x_kay *kay, u64 cs)
+ {
+ 	struct ieee802_1x_kay_ctx *ops;
+diff --git a/src/pae/ieee802_1x_secy_ops.h b/src/pae/ieee802_1x_secy_ops.h
+index 18c06f665a..b82507bca4 100644
+--- a/src/pae/ieee802_1x_secy_ops.h
++++ b/src/pae/ieee802_1x_secy_ops.h
+@@ -23,6 +23,7 @@ int secy_cp_control_validate_frames(struct ieee802_1x_kay *kay,
+ int secy_cp_control_protect_frames(struct ieee802_1x_kay *kay, bool flag);
+ int secy_cp_control_encrypt(struct ieee802_1x_kay *kay, bool enabled);
+ int secy_cp_control_replay(struct ieee802_1x_kay *kay, bool flag, u32 win);
++int secy_cp_control_offload(struct ieee802_1x_kay *kay, u8 offload);
+ int secy_cp_control_current_cipher_suite(struct ieee802_1x_kay *kay, u64 cs);
+ int secy_cp_control_confidentiality_offset(struct ieee802_1x_kay *kay,
+ 					   enum confidentiality_offset co);
+diff --git a/wpa_supplicant/config.c b/wpa_supplicant/config.c
+index 277a896450..5c57427af6 100644
+--- a/wpa_supplicant/config.c
++++ b/wpa_supplicant/config.c
+@@ -2677,6 +2677,7 @@ static const struct parse_data ssid_fields[] = {
+ 	{ INT_RANGE(macsec_integ_only, 0, 1) },
+ 	{ INT_RANGE(macsec_replay_protect, 0, 1) },
+ 	{ INT(macsec_replay_window) },
++	{ INT_RANGE(macsec_offload, 0, 2) },
+ 	{ INT_RANGE(macsec_port, 1, 65534) },
+ 	{ INT_RANGE(mka_priority, 0, 255) },
+ 	{ INT_RANGE(macsec_csindex, 0, 1) },
+diff --git a/wpa_supplicant/config_file.c b/wpa_supplicant/config_file.c
+index b5d114ebd0..88370e88d6 100644
+--- a/wpa_supplicant/config_file.c
++++ b/wpa_supplicant/config_file.c
+@@ -814,6 +814,7 @@ static void wpa_config_write_network(FILE *f, struct wpa_ssid *ssid)
+ 	INT(macsec_integ_only);
+ 	INT(macsec_replay_protect);
+ 	INT(macsec_replay_window);
++	INT(macsec_offload);
+ 	INT(macsec_port);
+ 	INT_DEF(mka_priority, DEFAULT_PRIO_NOT_KEY_SERVER);
+ 	INT(macsec_csindex);
+diff --git a/wpa_supplicant/config_ssid.h b/wpa_supplicant/config_ssid.h
+index 383e948ee9..18b92b40d8 100644
+--- a/wpa_supplicant/config_ssid.h
++++ b/wpa_supplicant/config_ssid.h
+@@ -926,6 +926,18 @@ struct wpa_ssid {
+ 	 */
+ 	u32 macsec_replay_window;
+ 
++	/**
++	 * macsec_offload - Enable MACsec hardware offload
++	 *
++	 * This setting applies only when MACsec is in use, i.e.,
++	 *  - the key server has decided to enable MACsec
++	 *
++	 * 0 = MACSEC_OFFLOAD_OFF (default)
++	 * 1 = MACSEC_OFFLOAD_PHY
++	 * 2 = MACSEC_OFFLOAD_MAC
++	 */
++	int macsec_offload;
++
+ 	/**
+ 	 * macsec_port - MACsec port (in SCI)
+ 	 *
+diff --git a/wpa_supplicant/driver_i.h b/wpa_supplicant/driver_i.h
+index 5dd2a514cc..cfce5fa6a7 100644
+--- a/wpa_supplicant/driver_i.h
++++ b/wpa_supplicant/driver_i.h
+@@ -803,6 +803,14 @@ static inline int wpa_drv_set_replay_protect(struct wpa_supplicant *wpa_s,
+ 						 window);
+ }
+ 
++static inline int wpa_drv_set_offload(struct wpa_supplicant *wpa_s, u8 offload)
++{
++	if (!wpa_s->driver->set_offload)
++		return -1;
++	return wpa_s->driver->set_offload(wpa_s->drv_priv, offload);
++
++}
++
+ static inline int wpa_drv_set_current_cipher_suite(struct wpa_supplicant *wpa_s,
+ 						   u64 cs)
+ {
+diff --git a/wpa_supplicant/wpa_cli.c b/wpa_supplicant/wpa_cli.c
+index bfdc42de47..f808ac424a 100644
+--- a/wpa_supplicant/wpa_cli.c
++++ b/wpa_supplicant/wpa_cli.c
+@@ -1487,6 +1487,7 @@ static const char *network_fields[] = {
+ 	"macsec_integ_only",
+ 	"macsec_replay_protect",
+ 	"macsec_replay_window",
++	"macsec_offload",
+ 	"macsec_port",
+ 	"mka_priority",
+ #endif /* CONFIG_MACSEC */
+diff --git a/wpa_supplicant/wpa_supplicant.conf b/wpa_supplicant/wpa_supplicant.conf
+index 1bb3cc18b7..f0b82443ec 100644
+--- a/wpa_supplicant/wpa_supplicant.conf
++++ b/wpa_supplicant/wpa_supplicant.conf
+@@ -1142,6 +1142,15 @@ fast_reauth=1
+ # 0: No replay window, strict check (default)
+ # 1..2^32-1: number of packets that could be misordered
+ #
++# macsec_offload - Enable MACsec hardware offload
++#
++# This setting applies only when MACsec is in use, i.e.,
++#  - the key server has decided to enable MACsec
++#
++# 0 = MACSEC_OFFLOAD_OFF (default)
++# 1 = MACSEC_OFFLOAD_PHY
++# 2 = MACSEC_OFFLOAD_MAC
++#
+ # macsec_port: IEEE 802.1X/MACsec port
+ # Port component of the SCI
+ # Range: 1-65534 (default: 1)
+diff --git a/wpa_supplicant/wpas_kay.c b/wpa_supplicant/wpas_kay.c
+index 4e29553b0d..600b3bc545 100644
+--- a/wpa_supplicant/wpas_kay.c
++++ b/wpa_supplicant/wpas_kay.c
+@@ -98,6 +98,12 @@ static int wpas_set_receive_lowest_pn(void *wpa_s, struct receive_sa *sa)
+ }
+ 
+ 
++static int wpas_set_offload(void *wpa_s, u8 offload)
++{
++	return wpa_drv_set_offload(wpa_s, offload);
++}
++
++
+ static unsigned int conf_offset_val(enum confidentiality_offset co)
+ {
+ 	switch (co) {
+@@ -219,6 +225,7 @@ int ieee802_1x_alloc_kay_sm(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
+ 	kay_ctx->enable_protect_frames = wpas_enable_protect_frames;
+ 	kay_ctx->enable_encrypt = wpas_enable_encrypt;
+ 	kay_ctx->set_replay_protect = wpas_set_replay_protect;
++	kay_ctx->set_offload = wpas_set_offload;
+ 	kay_ctx->set_current_cipher_suite = wpas_set_current_cipher_suite;
+ 	kay_ctx->enable_controlled_port = wpas_enable_controlled_port;
+ 	kay_ctx->get_receive_lowest_pn = wpas_get_receive_lowest_pn;
+@@ -239,7 +246,8 @@ int ieee802_1x_alloc_kay_sm(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid)
+ 	kay_ctx->disable_transmit_sa = wpas_disable_transmit_sa;
+ 
+ 	res = ieee802_1x_kay_init(kay_ctx, policy, ssid->macsec_replay_protect,
+-				  ssid->macsec_replay_window, ssid->macsec_port,
++				  ssid->macsec_replay_window,
++				  ssid->macsec_offload, ssid->macsec_port,
+ 				  ssid->mka_priority, ssid->macsec_csindex,
+ 				  wpa_s->ifname, wpa_s->own_addr);
+ 	/* ieee802_1x_kay_init() frees kay_ctx on failure */

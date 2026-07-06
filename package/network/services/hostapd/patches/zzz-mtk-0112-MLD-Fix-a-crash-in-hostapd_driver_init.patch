@@ -1,0 +1,64 @@
+From 782b0c2bacc0566f6e948537f50898f66e5845bc Mon Sep 17 00:00:00 2001
+From: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+Date: Sun, 1 Sep 2024 19:31:35 +0300
+Subject: [PATCH] AP MLD: Fix a crash in hostapd_driver_init()
+
+In case of an AP MLD it is assumed that the multi link information
+(hapd->mld) is already initialized by the time this function is called.
+However, if the interface is added without bss_config parameter,
+hostapd_bss_setup_multi_link() would bail out immediately as mld_ap
+parameter isn't set yet. When the interface gets enabled later,
+hapd->mld would be NULL resulting in NULL dereference.
+
+Signed-off-by: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+---
+ hostapd/main.c   | 5 ++++-
+ src/ap/hostapd.c | 4 ++--
+ src/ap/hostapd.h | 2 ++
+ 3 files changed, 8 insertions(+), 3 deletions(-)
+
+diff --git a/hostapd/main.c b/hostapd/main.c
+index 43c4fa1fb..a8bb9d4d6 100644
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -169,8 +169,11 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 	}
+ 
+ #ifdef CONFIG_IEEE80211BE
+-	if (conf->mld_ap)
++	if (conf->mld_ap) {
++		if (!hapd->mld)
++			hostapd_bss_setup_multi_link(hapd, iface->interfaces);
+ 		h_hapd = hostapd_mld_get_first_bss(hapd);
++	}
+ 
+ 	if (h_hapd) {
+ 		hapd->drv_priv = h_hapd->drv_priv;
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 9dfc21e00..92478c29a 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -3100,8 +3100,8 @@ static void hostapd_bss_alloc_link_id(struct hostapd_data *hapd)
+ #endif /* CONFIG_IEEE80211BE */
+ 
+ 
+-static void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
+-					 struct hapd_interfaces *interfaces)
++void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
++				  struct hapd_interfaces *interfaces)
+ {
+ #ifdef CONFIG_IEEE80211BE
+ 	struct hostapd_mld *mld, **all_mld;
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index 0862d5dfd..8edfc827c 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -766,6 +766,8 @@ struct hostapd_iface * hostapd_init(struct hapd_interfaces *interfaces,
+ 			   const char *config_fname, int debug);
+ int hostapd_setup_bss(struct hostapd_data *hapd, int first);
+ void hostapd_bss_deinit(struct hostapd_data *hapd);
++void hostapd_bss_setup_multi_link(struct hostapd_data *hapd,
++				  struct hapd_interfaces *interfaces);
+ void hostapd_new_assoc_sta(struct hostapd_data *hapd, struct sta_info *sta,
+ 			   int reassoc);
+ void hostapd_interface_deinit_free(struct hostapd_iface *iface);

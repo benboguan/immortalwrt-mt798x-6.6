@@ -1,0 +1,113 @@
+From eb146ee804990e0530eb078f4efa7bc21f7fbcb2 Mon Sep 17 00:00:00 2001
+From: Anthony Refuerzo <anthony96922@gmail.com>
+Date: Wed, 22 Feb 2023 20:57:23 -0800
+Subject: [PATCH] AP: Add some bridge port attribute settings
+
+"multicast_to_unicast" and "hairpin_mode" are usually set outside of
+hostapd. However, DFS channel change events pull the BSS out of the
+bridge causing these attributes to be lost. Make these settings tunable
+within hostapd so they are retained after the BSS is brought up again.
+
+Signed-off-by: Anthony Refuerzo <anthony96922@gmail.com>
+---
+ hostapd/config_file.c        |  4 ++++
+ src/ap/ap_config.h           |  2 ++
+ src/ap/hostapd.c             | 16 ++++++++++++++++
+ src/drivers/driver.h         |  1 +
+ src/drivers/driver_nl80211.c |  2 ++
+ 5 files changed, 25 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index 472a91df2..2e208d3f6 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -2533,6 +2533,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		os_strlcpy(bss->bridge, pos, sizeof(bss->bridge));
+ 		if (!bss->wds_bridge[0])
+ 			os_strlcpy(bss->wds_bridge, pos, sizeof(bss->wds_bridge));
++	} else if (os_strcmp(buf, "bridge_hairpin") == 0) {
++		bss->bridge_hairpin = atoi(pos);
+ 	} else if (os_strcmp(buf, "snoop_iface") == 0) {
+ 		os_strlcpy(bss->snoop_iface, pos, sizeof(bss->snoop_iface));
+ 	} else if (os_strcmp(buf, "vlan_bridge") == 0) {
+@@ -4908,6 +4910,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ #endif /* CONFIG_FILS */
+ 	} else if (os_strcmp(buf, "multicast_to_unicast") == 0) {
+ 		bss->multicast_to_unicast = atoi(pos);
++	} else if (os_strcmp(buf, "bridge_multicast_to_unicast") == 0) {
++		bss->bridge_multicast_to_unicast = atoi(pos);
+ 	} else if (os_strcmp(buf, "broadcast_deauth") == 0) {
+ 		bss->broadcast_deauth = atoi(pos);
+ 	} else if (os_strcmp(buf, "notify_mgmt_frames") == 0) {
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index dfe259c30..7036c15d5 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -304,6 +304,7 @@ struct hostapd_bss_config {
+ 	char snoop_iface[IFNAMSIZ + 1];
+ 	char vlan_bridge[IFNAMSIZ + 1];
+ 	char wds_bridge[IFNAMSIZ + 1];
++	int bridge_hairpin; /* hairpin_mode on bridge members */
+ 
+ 	char *config_id;
+ 
+@@ -796,6 +797,7 @@ struct hostapd_bss_config {
+ #endif /* CONFIG_FILS */
+ 
+ 	int multicast_to_unicast;
++	int bridge_multicast_to_unicast;
+ 
+ 	int broadcast_deauth;
+ 
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 58492e51e..c3fd91e43 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -1528,6 +1528,22 @@ static int hostapd_setup_bss(struct hostapd_data *hapd, int first,
+ 		return -1;
+ 	}
+ 
++	if (conf->bridge[0]) {
++		/* Set explicitly configured bridge parameters that might have
++		 * been lost if the interface has been removed out of the
++		 * bridge. */
++
++		/* multicast to unicast on bridge ports */
++		if (conf->bridge_multicast_to_unicast)
++			hostapd_drv_br_port_set_attr(
++				hapd, DRV_BR_PORT_ATTR_MCAST2UCAST, 1);
++
++		/* hairpin mode */
++		if (conf->bridge_hairpin)
++			hostapd_drv_br_port_set_attr(
++				hapd, DRV_BR_PORT_ATTR_HAIRPIN_MODE, 1);
++	}
++
+ 	if (conf->proxy_arp) {
+ 		if (x_snoop_init(hapd)) {
+ 			wpa_printf(MSG_ERROR,
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 46182552d..b205744d0 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2584,6 +2584,7 @@ struct macsec_init_params {
+ enum drv_br_port_attr {
+ 	DRV_BR_PORT_ATTR_PROXYARP,
+ 	DRV_BR_PORT_ATTR_HAIRPIN_MODE,
++	DRV_BR_PORT_ATTR_MCAST2UCAST,
+ };
+ 
+ enum drv_br_net_param {
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index 4db29f1d5..75825bd94 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -12118,6 +12118,8 @@ static const char * drv_br_port_attr_str(enum drv_br_port_attr attr)
+ 		return "proxyarp_wifi";
+ 	case DRV_BR_PORT_ATTR_HAIRPIN_MODE:
+ 		return "hairpin_mode";
++	case DRV_BR_PORT_ATTR_MCAST2UCAST:
++		return "multicast_to_unicast";
+ 	}
+ 
+ 	return NULL;

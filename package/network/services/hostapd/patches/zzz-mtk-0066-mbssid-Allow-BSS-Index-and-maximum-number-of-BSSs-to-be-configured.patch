@@ -1,0 +1,143 @@
+From ce7b3c2caf5ff48888ac23e06397165aa4b81a25 Mon Sep 17 00:00:00 2001
+From: Baligh Gasmi <gasmibal@gmail.com>
+Date: Wed, 11 Dec 2024 21:37:38 +0100
+Subject: [PATCH] MBSSID: Allow BSS Index and maximum number of BSSs to be
+ configured
+
+Configuring hostapd's BSSs with a custom BSSID via the `bssid` parameter
+in the config file can lead to a misconfigured Multiple BSSID element
+consequently leading to stations failing to calculate the correct BSSID
+for non-transmitting BSSs, as specified in IEEE Std 802.11-2020,
+9.4.2.45.
+
+To ensure consistency, the configuration need to include critical
+parameters: `MaxBSSID Indicator` and `Multiple BSSID Index` to customize
+the Multiple BSSID element following the custom BSSIDs as well.
+
+Add a new global parameter, `mbssid_max`, to set the `MaxBSSID
+Indicator` and a per-BSS parameter, `mbssid_index`, to explicitly set
+the `Multiple BSSID Index`. If these are not set, the previous behavior
+of determining these values automatically is maintained (with its limits
+to dynamic addition of BSSs to a Multiple BSSID set).
+
+Signed-off-by: Baligh Gasmi <gasmibal@gmail.com>
+---
+ hostapd/config_file.c |  4 ++++
+ hostapd/hostapd.conf  | 12 ++++++++++++
+ src/ap/ap_config.h    |  2 ++
+ src/ap/ieee802_11.c   | 15 ++++++++++++---
+ 4 files changed, 30 insertions(+), 3 deletions(-)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index e59e98d7c..0139d5bde 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -3646,6 +3646,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 			return 1;
+ 		}
+ 		conf->mbssid = mbssid;
++	} else if (os_strcmp(buf, "mbssid_index") == 0) {
++		bss->mbssid_index = atoi(pos);
++	} else if (os_strcmp(buf, "mbssid_max") == 0) {
++		conf->mbssid_max = atoi(pos);
+ 	} else if (os_strcmp(buf, "dot11vmbssid") == 0) {
+ 		bss->dot11vmbssid = atoi(pos);
+ #endif /* CONFIG_IEEE80211AX */
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index b8d7d3412..b1e8ac5bb 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -3423,6 +3423,18 @@ own_ip_addr=127.0.0.1
+ # 2 = Enhanced multiple BSSID advertisement enabled.
+ #mbssid=0
+ #
++# Maximum number of BSSs that can be added into a Multiple BSSID set
++# This is a radio level parameter. If not set (or 0), the maximum is determined
++# automatically based on the configured BSSs which may limit dynamic addition
++# of new BSSs.
++#mbssid_max=0
++#
++# Multiple BSSID Index override
++# This is a BSS level parameter. If not set (or 0), the BSSID index is
++# determined automatically based on the configured BSSs which may limit dynamic
++# addition of new BSSs.
++#mbssid_index=0
++#
+ # The transmitting interface should be added with the 'interface' option while
+ # the non-transmitting interfaces should be added using the 'bss' option.
+ # Security configuration should be added separately per interface, if required.
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index b0ae71e1e..8ed07b68c 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -966,6 +966,7 @@ struct hostapd_bss_config {
+ 
+ 	u8 rnr;
+ 	bool xrates_supported;
++	int mbssid_index;
+ #ifdef CONFIG_IEEE80211AX
+ 	u8 dot11vmbssid;
+ #endif /* CONFIG_IEEE80211AX */
+@@ -1210,6 +1211,7 @@ struct hostapd_config {
+ 		MBSSID_ENABLED = 1,
+ 		ENHANCED_MBSSID_ENABLED = 2,
+ 	} mbssid;
++	unsigned int mbssid_max;
+ };
+ 
+ 
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 409f39916..a9ed6eb0f 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -4215,7 +4215,10 @@ static u8 hostapd_max_bssid_indicator(struct hostapd_data *hapd)
+ 	if (!hapd->iconf->mbssid || hapd->iface->num_bss <= 1)
+ 		return 0;
+ 
+-	num_bss_nontx = hapd->iface->num_bss - 1;
++	if (hapd->iface->conf->mbssid_max > 0)
++		num_bss_nontx = hapd->iface->conf->mbssid_max - 1;
++	else
++		num_bss_nontx = hapd->iface->conf->num_bss - 1;
+ 	while (num_bss_nontx > 0) {
+ 		max_bssid_ind++;
+ 		num_bss_nontx >>= 1;
+@@ -7942,11 +7945,13 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 	for (i = *bss_index; i < hapd->iface->num_bss; i++) {
+ 		struct hostapd_data *bss = hapd->iface->bss[i];
+ 		struct hostapd_bss_config *conf;
++		struct hostapd_bss_config *tx_conf = tx_bss->conf;
+ 		u8 *eid_len_pos, *nontx_bss_start = eid;
+ 		const u8 *auth, *rsn = NULL, *rsnx = NULL;
+ 		u8 ie_count = 0, non_inherit_ie[3];
+ 		size_t auth_len = 0;
+ 		u16 capab_info;
++		u8 mbssindex = i;
+ 
+ 		if (!bss || !bss->conf || !bss->started ||
+ 		    mbssid_known_bss(i, known_bss, known_bss_len))
+@@ -8370,10 +8375,14 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 		os_memcpy(eid, conf->ssid.ssid, conf->ssid.ssid_len);
+ 		eid += conf->ssid.ssid_len;
+ 
++		if (conf->mbssid_index &&
++		    conf->mbssid_index > tx_conf->mbssid_index)
++			mbssindex = conf->mbssid_index - tx_conf->mbssid_index;
++
+ 		*eid++ = WLAN_EID_MULTIPLE_BSSID_INDEX;
+ 		if (frame_type == WLAN_FC_STYPE_BEACON) {
+ 			*eid++ = 3;
+-			*eid++ = i; /* BSSID Index */
++			*eid++ = mbssindex; /* BSSID Index */
+ 			if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
+ 			    (conf->dtim_period % elem_count))
+ 				conf->dtim_period = elem_count;
+@@ -8389,7 +8398,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			/* Probe Request frame does not include DTIM Period and
+ 			 * DTIM Count fields. */
+ 			*eid++ = 1;
+-			*eid++ = i; /* BSSID Index */
++			*eid++ = mbssindex; /* BSSID Index */
+ 		}
+ 
+ 		auth = wpa_auth_get_wpa_ie(bss->wpa_auth, &auth_len);

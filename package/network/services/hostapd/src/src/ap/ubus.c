@@ -362,7 +362,42 @@ hostapd_bss_get_clients(struct ubus_context *ctx, struct ubus_object *obj,
 			blobmsg_add_u32(&b, "rx", sta_driver_data.current_rx_rate * 100);
 			blobmsg_add_u32(&b, "tx", sta_driver_data.current_tx_rate * 100);
 			blobmsg_close_table(&b, r);
+			blobmsg_add_u32(&b, "retries", sta_driver_data.tx_retry_count);
+			blobmsg_add_u32(&b, "failed", sta_driver_data.tx_retry_failed);
 			blobmsg_add_u32(&b, "signal", sta_driver_data.signal);
+
+			r = blobmsg_open_table(&b, "mcs");
+			if (sta_driver_data.rx_hemcs) {
+				blobmsg_add_u32(&b, "he", 1);
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_hemcs);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_hemcs);
+			} else if (sta_driver_data.rx_vhtmcs) {
+				blobmsg_add_u32(&b, "vht", 1);
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_vhtmcs);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_vhtmcs);
+			} else {
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_mcs);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_mcs);
+			}
+			blobmsg_close_table(&b, r);
+
+			r = blobmsg_open_table(&b, "nss");
+			if (sta_driver_data.rx_he_nss) {
+				blobmsg_add_u32(&b, "he", 1);
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_he_nss);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_he_nss);
+			} else if (sta_driver_data.rx_vht_nss) {
+				blobmsg_add_u32(&b, "vht", 1);
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_vht_nss);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_vht_nss);
+			} else {
+				blobmsg_add_u32(&b, "rx", sta_driver_data.rx_mcs);
+				blobmsg_add_u32(&b, "tx", sta_driver_data.tx_mcs);
+			}
+			blobmsg_close_table(&b, r);
+		
+			if (sta->signal_mgmt)
+				blobmsg_add_u32(&b, "signal_mgmt", sta->signal_mgmt);
 		}
 
 		hostapd_parse_capab_blobmsg(sta);
@@ -438,6 +473,7 @@ hostapd_bss_get_status(struct ubus_context *ctx, struct ubus_object *obj,
 				      &op_class, &channel);
 
 	blob_buf_init(&b, 0);
+	blobmsg_add_string(&b, "driver", hapd->driver->name);
 	blobmsg_add_string(&b, "status", hostapd_state_text(hapd->iface->state));
 	blobmsg_printf(&b, "bssid", MACSTR, MAC2STR(hapd->conf->bssid));
 
@@ -486,6 +522,9 @@ hostapd_bss_get_status(struct ubus_context *ctx, struct ubus_object *obj,
 	blobmsg_add_u32(&b, "cac_seconds_left",
 			hapd->iface->cac_started ? hapd->iface->dfs_cac_ms / 1000 - now.sec : 0);
 	blobmsg_close_table(&b, dfs_table);
+
+	if (hapd->signal_mgmt)
+		blobmsg_add_u32(&b, "signal_mgmt", hapd->signal_mgmt);
 
 	ubus_send_reply(ctx, req, b.head);
 
@@ -1907,6 +1946,7 @@ int hostapd_ubus_handle_event(struct hostapd_data *hapd, struct hostapd_ubus_req
 
 	blob_buf_init(&b, 0);
 	blobmsg_add_macaddr(&b, "address", addr);
+	blobmsg_add_string(&b, "ifname", hapd->conf->iface);
 	if (req->mgmt_frame)
 		blobmsg_add_macaddr(&b, "target", req->mgmt_frame->da);
 	if (req->ssi_signal)
@@ -1981,6 +2021,7 @@ void hostapd_ubus_notify(struct hostapd_data *hapd, const char *type, const u8 *
 
 	blob_buf_init(&b, 0);
 	blobmsg_add_macaddr(&b, "address", addr);
+	blobmsg_add_string(&b, "ifname", hapd->conf->iface);
 
 	ubus_notify(ctx, &hapd->ubus.obj, type, b.head, -1);
 }
@@ -1995,6 +2036,9 @@ void hostapd_ubus_notify_authorized(struct hostapd_data *hapd, struct sta_info *
 	blobmsg_add_macaddr(&b, "address", sta->addr);
 	if (auth_alg)
 		blobmsg_add_string(&b, "auth-alg", auth_alg);
+	if (sta->vlan_id)
+		blobmsg_add_u32(&b, "vlan", sta->vlan_id);
+	blobmsg_add_string(&b, "ifname", hapd->conf->iface);
 
 	ubus_notify(ctx, &hapd->ubus.obj, "sta-authorized", b.head, -1);
 }
@@ -2031,6 +2075,9 @@ void hostapd_ubus_notify_radar_detected(struct hostapd_iface *iface, int frequen
 {
 	struct hostapd_data *hapd;
 	int i;
+
+	if (!ctx)
+		return;
 
 	blob_buf_init(&b, 0);
 	blobmsg_add_u16(&b, "frequency", frequency);
@@ -2125,3 +2172,18 @@ int hostapd_ubus_notify_bss_transition_query(
 	return ureq.resp;
 #endif
 }
+
+#ifdef CONFIG_APUP
+void hostapd_ubus_notify_apup_newpeer(
+	struct hostapd_data *hapd, const u8 *addr, const char *ifname)
+{
+	if (!hapd->ubus.obj.has_subscribers)
+		return;
+
+	blob_buf_init(&b, 0);
+	blobmsg_add_macaddr(&b, "address", addr);
+	blobmsg_add_string(&b, "ifname", ifname);
+
+	ubus_notify(ctx, &hapd->ubus.obj, "apup-newpeer", b.head, -1);
+}
+#endif // def CONFIG_APUP

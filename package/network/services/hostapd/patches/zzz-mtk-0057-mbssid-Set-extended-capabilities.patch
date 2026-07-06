@@ -1,0 +1,185 @@
+From fc2e4bac5a374d10d147bf301bd1f4703d1a6ed9 Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:39 -0800
+Subject: [PATCH] mbssid: Set extended capabilities
+
+Set extended capabilities as described in IEEE Std 802.11ax-2021,
+9.4.2.26. Reset the capability bits to 0 explicitly if MBSSID and/or EMA
+is not enabled because otherwise some client devices fail to associate.
+
+Bit 80 (complete list of non-tx profiles) is set for all Probe Response
+frames, but for Beacon frames it is set only if EMA is disabled or if
+EMA profile periodicity is 1.
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+Co-developed-by: John Crispin <john@phrozen.org>
+Signed-off-by: John Crispin <john@phrozen.org>
+---
+ src/ap/ap_drv_ops.c        |  2 +-
+ src/ap/beacon.c            | 26 +++++++++++++++++---------
+ src/ap/ieee802_11.c        |  2 +-
+ src/ap/ieee802_11.h        |  3 ++-
+ src/ap/ieee802_11_shared.c | 22 +++++++++++++++++++---
+ 5 files changed, 40 insertions(+), 15 deletions(-)
+
+diff --git a/src/ap/ap_drv_ops.c b/src/ap/ap_drv_ops.c
+index ebc0dba9a..1ffc37ff3 100644
+--- a/src/ap/ap_drv_ops.c
++++ b/src/ap/ap_drv_ops.c
+@@ -84,7 +84,7 @@ int hostapd_build_ap_extra_ies(struct hostapd_data *hapd,
+ 		goto fail;
+ 
+ 	pos = buf;
+-	pos = hostapd_eid_ext_capab(hapd, pos);
++	pos = hostapd_eid_ext_capab(hapd, pos, false);
+ 	if (add_buf_data(&assocresp, buf, pos - buf) < 0)
+ 		goto fail;
+ 	pos = hostapd_eid_interworking(hapd, pos);
+diff --git a/src/ap/beacon.c b/src/ap/beacon.c
+index 87d9ed018..36e32e142 100644
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
+@@ -720,7 +720,9 @@ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 	pos = hostapd_eid_ht_capabilities(hapd, pos);
+ 	pos = hostapd_eid_ht_operation(hapd, pos);
+ 
+-	pos = hostapd_eid_ext_capab(hapd, pos);
++	/* Probe Response frames always include all non-TX profiles */
++	pos = hostapd_eid_ext_capab(hapd, pos,
++				    hapd->iconf->mbssid >= MBSSID_ENABLED);
+ 
+ 	pos = hostapd_eid_time_adv(hapd, pos);
+ 	pos = hostapd_eid_time_zone(hapd, pos);
+@@ -1599,6 +1611,7 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
+ #ifdef NEED_AP_MLME
+ 	u16 capab_info;
+ 	u8 *pos, *tailpos, *tailend, *csa_pos;
++	bool complete = false;
+ #endif /* NEED_AP_MLME */
+ 
+ 	os_memset(params, 0, sizeof(*params));
+@@ -1753,16 +1756,21 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
+ 	tailpos = hostapd_eid_ht_capabilities(hapd, tailpos);
+ 	tailpos = hostapd_eid_ht_operation(hapd, tailpos);
+ 
+-	tailpos = hostapd_eid_ext_capab(hapd, tailpos);
+-
+-	if (hapd->iconf->mbssid && hapd->iconf->num_bss > 1 &&
+-	    ieee802_11_build_ap_params_mbssid(hapd, params)) {
+-		os_free(head);
+-		os_free(tail);
+-		wpa_printf(MSG_ERROR, "MBSSID: Failed to set beacon data");
+-		return -1;
++	if (hapd->iconf->mbssid && hapd->iconf->num_bss > 1) {
++		if (ieee802_11_build_ap_params_mbssid(hapd, params)) {
++			os_free(head);
++			os_free(tail);
++			wpa_printf(MSG_ERROR,
++				   "MBSSID: Failed to set beacon data");
++			return -1;
++		}
++		complete = hapd->iconf->mbssid == MBSSID_ENABLED ||
++			(hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
++			 params->mbssid_elem_count == 1);
+ 	}
+ 
++	tailpos = hostapd_eid_ext_capab(hapd, tailpos, complete);
++
+ 	/*
+ 	 * TODO: Time Advertisement element should only be included in some
+ 	 * DTIM Beacon frames.
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 756f3af9b..d8424238b 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -5498,7 +5498,7 @@ static u16 send_assoc_resp(struct hostapd_data *hapd, struct sta_info *sta,
+ 	}
+ #endif /* CONFIG_IEEE80211AX */
+ 
+-	p = hostapd_eid_ext_capab(hapd, p);
++	p = hostapd_eid_ext_capab(hapd, p, false);
+ 	p = hostapd_eid_bss_max_idle_period(hapd, p);
+ 	if (sta && sta->qos_map_enabled)
+ 		p = hostapd_eid_qos_map_set(hapd, p);
+diff --git a/src/ap/ieee802_11.h b/src/ap/ieee802_11.h
+index 6fa7cc41d..1b46440d0 100644
+--- a/src/ap/ieee802_11.h
++++ b/src/ap/ieee802_11.h
+@@ -45,7 +45,8 @@ static inline int ieee802_11_get_mib_sta(struct hostapd_data *hapd,
+ #endif /* NEED_AP_MLME */
+ u16 hostapd_own_capab_info(struct hostapd_data *hapd);
+ void ap_ht2040_timeout(void *eloop_data, void *user_data);
+-u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid);
++u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
++			   bool mbssid_complete);
+ u8 * hostapd_eid_qos_map_set(struct hostapd_data *hapd, u8 *eid);
+ u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid);
+ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid);
+diff --git a/src/ap/ieee802_11_shared.c b/src/ap/ieee802_11_shared.c
+index ad8afff2a..a7ab3a2d7 100644
+--- a/src/ap/ieee802_11_shared.c
++++ b/src/ap/ieee802_11_shared.c
+@@ -340,7 +340,8 @@ void ieee802_11_sa_query_action(struct hostapd_data *hapd,
+ }
+ 
+ 
+-static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx)
++static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx,
++				   bool mbssid_complete)
+ {
+ 	*pos = 0x00;
+ 
+@@ -364,6 +365,8 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx)
+ 			*pos |= 0x02; /* Bit 17 - WNM-Sleep Mode */
+ 		if (hapd->conf->bss_transition)
+ 			*pos |= 0x08; /* Bit 19 - BSS Transition */
++		if (hapd->iconf->mbssid)
++			*pos |= 0x40; /* Bit 22 - Multiple BSSID */
+ 		break;
+ 	case 3: /* Bits 24-31 */
+ #ifdef CONFIG_WNM_AP
+@@ -435,6 +438,11 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx)
+ 		    (hapd->iface->drv_flags &
+ 		     WPA_DRIVER_FLAGS_BEACON_PROTECTION))
+ 			*pos |= 0x10; /* Bit 84 - Beacon Protection Enabled */
++		if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED)
++			*pos |= 0x08; /* Bit 83 - Enhanced multiple BSSID */
++		if (mbssid_complete)
++			*pos |= 0x01; /* Bit 80 - Complete List of NonTxBSSID
++				       * Profiles */
+ 		break;
+ 	case 11: /* Bits 88-95 */
+ #ifdef CONFIG_SAE_PK
+@@ -448,7 +456,8 @@ static void hostapd_ext_capab_byte(struct hostapd_data *hapd, u8 *pos, int idx)
+ }
+ 
+ 
+-u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid)
++u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid,
++			   bool mbssid_complete)
+ {
+ 	u8 *pos = eid;
+ 	u8 len = EXT_CAPA_MAX_LEN, i;
+@@ -459,7 +468,7 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid)
+ 	*pos++ = WLAN_EID_EXT_CAPAB;
+ 	*pos++ = len;
+ 	for (i = 0; i < len; i++, pos++) {
+-		hostapd_ext_capab_byte(hapd, pos, i);
++		hostapd_ext_capab_byte(hapd, pos, i, mbssid_complete);
+ 
+ 		if (i < hapd->iface->extended_capa_len) {
+ 			*pos &= ~hapd->iface->extended_capa_mask[i];
+@@ -470,6 +479,13 @@ u8 * hostapd_eid_ext_capab(struct hostapd_data *hapd, u8 *eid)
+ 			*pos &= ~hapd->conf->ext_capa_mask[i];
+ 			*pos |= hapd->conf->ext_capa[i];
+ 		}
++
++		/* Clear bits 83 and 22 if EMA and MBSSID are not enabled
++		 * otherwise association fails with some clients */
++		if (i == 10 && hapd->iconf->mbssid < ENHANCED_MBSSID_ENABLED)
++			*pos &= ~0x08;
++		if (i == 2 && !hapd->iconf->mbssid)
++			*pos &= ~0x40;
+ 	}
+ 
+ 	while (len > 0 && eid[1 + len] == 0) {

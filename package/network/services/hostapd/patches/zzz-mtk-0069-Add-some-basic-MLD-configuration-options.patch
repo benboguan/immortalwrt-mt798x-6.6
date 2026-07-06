@@ -1,0 +1,65 @@
+From f2dd75093f9ee5211cedc125e2f211b8cd3d93cd Mon Sep 17 00:00:00 2001
+From: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+Date: Mon, 22 May 2023 22:33:32 +0300
+Subject: [PATCH] AP: Add some basic MLD configuration options
+
+Signed-off-by: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+---
+ hostapd/config_file.c | 4 ++++
+ hostapd/hostapd.conf  | 8 ++++++++
+ src/ap/ap_config.h    | 8 ++++++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index 2c29971b3..412ca8a9f 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -5207,6 +5207,10 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		conf->eht_phy_capab.mu_beamformer = atoi(pos);
+ 	} else if (os_strcmp(buf, "punct_bitmap") == 0) {
+ 		conf->punct_bitmap = atoi(pos);
++	} else if (os_strcmp(buf, "mld_ap") == 0) {
++		bss->mld_ap = !!atoi(pos);
++	} else if (os_strcmp(buf, "mld_id") == 0) {
++		bss->mld_id = atoi(pos);
+ 	} else if (os_strcmp(buf, "eht_bw320_offset") == 0) {
+ 		conf->eht_bw320_offset = atoi(pos);
+ #endif /* CONFIG_IEEE80211BE */
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index 5868bfde4..30fb06d1c 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -1058,6 +1058,14 @@ wmm_ac_vo_acm=0
+ # value is 0 indicating that all channels are active.
+ #punct_bitmap=0
+ 
++# AP MLD - Whether this AP is a part of an AP MLD
++# 0 = no (no MLO)
++# 1 = yes (MLO)
++#mld_ap=0
++
++# MLD ID - Affiliated MLD ID
++#mld_id=1
++
+ ##### IEEE 802.1X-2004 related configuration ##################################
+ 
+ # Require IEEE 802.1X authorization
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 63b9ef701..777aa5af0 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -985,6 +985,14 @@ struct hostapd_bss_config {
+ #ifdef CONFIG_IEEE80211AX
+ 	u8 dot11vmbssid;
+ #endif /* CONFIG_IEEE80211AX */
++
++#ifdef CONFIG_IEEE80211BE
++	/* The AP is part of an AP MLD */
++	u8 mld_ap;
++
++	/* The MLD ID to which the AP MLD is affiliated with */
++	u8 mld_id;
++#endif /* CONFIG_IEEE80211BE */
+ };
+ 
+ /**

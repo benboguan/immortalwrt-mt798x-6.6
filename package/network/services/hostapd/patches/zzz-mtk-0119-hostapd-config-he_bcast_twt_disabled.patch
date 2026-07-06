@@ -1,0 +1,315 @@
+From 6715365eaa5d5205520b3ec1095a50693c352294 Mon Sep 17 00:00:00 2001
+From: Howard Hsu <howard-yh.hsu@mediatek.com>
+Date: Wed, 4 Mar 2026 15:08:22 +0800
+Subject: [PATCH 251/260] mtk: hostapd: add hostapd config
+ he_bcast_twt_disabled and eht_restricted_twt_disabled
+
+Add support for disabling HE Broadcast TWT and EHT Restricted TWT
+capabilities in hostapd configuration to enhance control over TWT
+features. This update allows configuration of these capabilities based
+on hardware support.
+
+Signed-off-by: Howard Hsu <howard-yh.hsu@mediatek.com>
+
+Fix compile error if the config CONFIG_IEEE80211BE is not set.
+
+Signed-off-by: Howard Hsu <howard-yh.hsu@mediatek.com>
+---
+ hostapd/config_file.c        |  4 ++++
+ hostapd/hostapd.conf         | 10 ++++++++++
+ src/ap/ap_config.h           |  4 ++++
+ src/ap/hostapd.c             |  6 ++++++
+ src/ap/hostapd.h             |  2 ++
+ src/ap/ieee802_11.h          |  4 ++++
+ src/ap/ieee802_11_eht.c      |  3 +++
+ src/ap/ieee802_11_he.c       |  5 +++++
+ src/ap/ieee802_11_shared.c   | 22 +++++++++++++++++++++-
+ src/common/ieee802_11_defs.h |  2 ++
+ 10 files changed, 61 insertions(+), 1 deletion(-)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index fcdb5984d..7620d0c01 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -4063,6 +4063,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		conf->mbssid_max = atoi(pos);
+ 	} else if (os_strcmp(buf, "dot11vmbssid") == 0) {
+ 		bss->dot11vmbssid = atoi(pos);
++	} else if (os_strcmp(buf, "he_btwt_disabled") == 0) {
++		bss->he_btwt_disabled = !!atoi(pos);
+ #endif /* CONFIG_IEEE80211AX */
+ 	} else if (os_strcmp(buf, "max_listen_interval") == 0) {
+ 		bss->max_listen_interval = atoi(pos);
+@@ -5231,6 +5233,8 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 		}
+ 	} else if (os_strcmp(buf, "eht_bw320_offset") == 0) {
+ 		conf->eht_bw320_offset = atoi(pos);
++	} else if (os_strcmp(buf, "eht_rtwt_disabled") == 0) {
++		bss->eht_rtwt_disabled = !!atoi(pos);
+ #endif /* CONFIG_IEEE80211BE */
+ #ifdef CONFIG_APUP
+ 	} else if (os_strcmp(buf, "apup") == 0) {
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index 3e63f8328..fc9af900f 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -1072,6 +1072,16 @@ wmm_ac_vo_acm=0
+ # will be used as the AP MLD MAC address.
+ #mld_addr=02:03:04:05:06:07
+ 
++# Broadcast TWT disable configuration
++# 0 = enabled if supported by the hardware (default)
++# 1 = disabled
++#he_btwt_disabled=0
++
++# Restricted TWT disable configuration
++# 0 = enabled if supported by the hardware (default)
++# 1 = disabled
++#eht_rtwt_disabled=0
++
+ ##### IEEE 802.1X-2004 related configuration ##################################
+ 
+ # Require IEEE 802.1X authorization
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 7246d4cf1..ea84ce586 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -985,6 +985,7 @@ struct hostapd_bss_config {
+ 
+ 	bool spp_amsdu;
+ #ifdef CONFIG_IEEE80211AX
++	bool he_btwt_disabled;
+ 	u8 dot11vmbssid;
+ #endif /* CONFIG_IEEE80211AX */
+ 
+@@ -1006,6 +1007,7 @@ struct hostapd_bss_config {
+ 
+ 	/* The AP's MLD MAC address within the AP MLD */
+ 	u8 mld_addr[ETH_ALEN];
++	bool eht_rtwt_disabled;
+ #endif /* CONFIG_IEEE80211BE */
+ #ifdef CONFIG_APUP
+ 	/**
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 057055bb8..ab8e5b449 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -2279,6 +2279,55 @@ #endif /* CONFIG_OWE */
+ }
+ 
+ 
++static void hostapd_mld_started(struct hostapd_iface *iface)
++{
++#ifdef CONFIG_IEEE80211BE
++	struct hostapd_data *hapd;
++	unsigned int i, j, k;
++	u16 valid_links;
++
++	for (i = 0; i < iface->num_bss; i++) {
++		hapd = iface->bss[i];
++		if (!hapd->conf->mld_ap || !hapd->mld || hapd->mld->started)
++			continue;
++
++		valid_links = hapd->mld->valid_links | BIT(hapd->mld_link_id);
++		/*
++		 * For non-first BSSes of the interface that require CAC,
++		 * they will not be added to the valid link until CAC is completed.
++		 */
++		for (j = 0; j < iface->interfaces->count; j++) {
++			struct hostapd_iface *tmp_iface = iface->interfaces->iface[j];
++
++			if (!tmp_iface || tmp_iface == iface || !tmp_iface->cac_started)
++				continue;
++			for (k = 0; k < tmp_iface->num_bss; k++) {
++				struct hostapd_data *tmp = tmp_iface->bss[k];
++
++				if (!tmp || !tmp->conf->mld_ap || !tmp->mld)
++					continue;
++
++				valid_links |= BIT(tmp->mld_link_id);
++			}
++		}
++
++		if (hapd->conf->mld_allowed_links != valid_links &&
++		    hapd->conf->mld_allowed_links != 255 &&
++		    hapd->conf->mld_allowed_links != 0)
++			continue;
++
++		hapd->mld->started = 1;
++
++		if (hapd->conf->he_btwt_disabled)
++			hapd->mld->he_btwt_disabled = hapd->conf->he_btwt_disabled;
++
++		if (hapd->conf->eht_rtwt_disabled)
++			hapd->mld->eht_rtwt_disabled = hapd->conf->eht_rtwt_disabled;
++	}
++#endif /* CONFIG_IEEE80211BE */
++}
++
++
+ static void hostapd_interface_setup_failure_handler(void *eloop_ctx,
+ 						    void *timeout_ctx)
+ {
+@@ -2306,6 +2355,7 @@ static int hostapd_setup_interface_complete_sync(struct
+ 	if (err)
+ 		goto fail;
+ 
++	hostapd_mld_started(iface);
+ 	hostapd_ubus_add_iface(iface);
+ 	wpa_printf(MSG_DEBUG, "Completing interface initialization");
+ 
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index bef1f62ce..e9d483d6e 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -552,6 +552,8 @@ struct hostapd_mld {
+ 
+ 	struct hostapd_data *fbss;
+ 	struct dl_list links; /* List head of all affiliated links */
++	bool he_btwt_disabled;
++	bool eht_rtwt_disabled;
+ };
+ #endif /* CONFIG_IEEE80211BE */
+ 
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -5207,6 +5207,44 @@
+ }
+ 
+ 
++#ifdef CONFIG_IEEE80211BE
++bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd)
++{
++	struct hostapd_data *bss;
++
++	if (!hapd->conf->mld_ap)
++		return false;
++
++	if (!hapd->iface || !hapd->iface->interfaces ||
++	    hapd->iface->interfaces->count <= 1)
++		return false;
++
++	/*
++	 * Checking for interfaces count above is not sufficient as there
++	 * could be non-MLD interfaces or MLD interface that are not affiliated
++	 * with the same MLD as the currently processing one. So need to check
++	 * if other partner links exist for this the same AP MLD.
++	 */
++	for_each_mld_link(bss, hapd) {
++		if (bss != hapd)
++			return true;
++	}
++
++	return false;
++}
++
++
++bool hostapd_is_mld_ap(struct hostapd_data *hapd)
++{
++	if (!hapd->conf->mld_ap)
++		return false;
++
++	return true;
++}
++
++#endif /* CONFIG_IEEE80211BE */
++
++
+ static void send_deauth(struct hostapd_data *hapd, const u8 *addr,
+ 			u16 reason_code)
+ {
+diff --git a/src/ap/ieee802_11.h b/src/ap/ieee802_11.h
+index 843fc9cab..9abe99cc4 100644
+--- a/src/ap/ieee802_11.h
++++ b/src/ap/ieee802_11.h
+@@ -227,6 +227,13 @@
+ 			const u8 *known_bss, size_t known_bss_len);
+ 
+ /* Convenience method to make mtk patches easier to apply. */
+-#define hostapd_is_mld_ap(hapd) hostapd_is_multiple_link_mld(hapd)
+ 
++#ifdef CONFIG_IEEE80211BE
++bool hostapd_is_multiple_link_mld(struct hostapd_data *hapd);
++bool hostapd_is_mld_ap(struct hostapd_data *hapd);
++bool hostapd_is_eht_rtwt_disabled(struct hostapd_data *hapd);
++#endif /* CONFIG_IEEE80211BE */
++#ifdef CONFIG_IEEE80211AX
++bool hostapd_is_he_btwt_disabled(struct hostapd_data *hapd);
++#endif /* CONFIG_IEEE80211AX */
+ #endif /* IEEE802_11_H */
+diff --git a/src/ap/ieee802_11_eht.c b/src/ap/ieee802_11_eht.c
+index 1cf5aa28f..c7d8eb287 100644
+--- a/src/ap/ieee802_11_eht.c
++++ b/src/ap/ieee802_11_eht.c
+@@ -131,6 +131,10 @@ u8 * hostapd_eid_eht_capab(struct hostapd_data *hapd, u8 *eid,
+ 	cap = (struct ieee80211_eht_capabilities *) pos;
+ 	os_memset(cap, 0, sizeof(*cap));
+ 	cap->mac_cap = host_to_le16(eht_cap->mac_cap);
++
++	if (hostapd_is_eht_rtwt_disabled(hapd))
++		cap->mac_cap &= ~host_to_le16(EHT_MACCAP_RESTRICTED_TWT);
++
+ 	os_memcpy(cap->phy_cap, eht_cap->phy_cap, EHT_PHY_CAPAB_LEN);
+ 
+ 	if (!is_6ghz_op_class(hapd->iconf->op_class))
+diff --git a/src/ap/ieee802_11_he.c b/src/ap/ieee802_11_he.c
+index 56935ce83..54af382fb 100644
+--- a/src/ap/ieee802_11_he.c
++++ b/src/ap/ieee802_11_he.c
+@@ -132,6 +132,11 @@ u8 * hostapd_eid_he_capab(struct hostapd_data *hapd, u8 *eid,
+ 
+ 	os_memcpy(cap->he_mac_capab_info, mode->he_capab[opmode].mac_cap,
+ 		  HE_MAX_MAC_CAPAB_SIZE);
++
++	if (hostapd_is_he_btwt_disabled(hapd))
++		cap->he_mac_capab_info[HE_MACCAP_BROADCAST_TWT_SUPPORT_IDX] &=
++			~HE_MACCAP_BROADCAST_TWT_SUPPORT;
++
+ 	os_memcpy(cap->he_phy_capab_info, mode->he_capab[opmode].phy_cap,
+ 		  HE_MAX_PHY_CAPAB_SIZE);
+ 	os_memcpy(cap->optional, mode->he_capab[opmode].mcs, mcs_nss_size);
+diff --git a/src/ap/ieee802_11_shared.c b/src/ap/ieee802_11_shared.c
+index 9ebacbc7d..528f9fd76 100644
+--- a/src/ap/ieee802_11_shared.c
++++ b/src/ap/ieee802_11_shared.c
+@@ -1134,3 +1134,25 @@ void hostapd_wfa_capab(struct hostapd_data *hapd, struct sta_info *sta,
+ 
+ 	return WLAN_STATUS_SUCCESS;
+ }
++
++#ifdef CONFIG_IEEE80211AX
++bool hostapd_is_he_btwt_disabled(struct hostapd_data *hapd)
++{
++#ifdef CONFIG_IEEE80211BE
++	if (hostapd_is_mld_ap(hapd))
++		return hapd->mld && hapd->mld->he_btwt_disabled;
++#endif
++
++	return hapd->conf->he_btwt_disabled;
++}
++#endif /* CONFIG_IEEE80211AX */
++
++#ifdef CONFIG_IEEE80211BE
++bool hostapd_is_eht_rtwt_disabled(struct hostapd_data *hapd)
++{
++	if (hostapd_is_mld_ap(hapd))
++		return hapd->mld && hapd->mld->eht_rtwt_disabled;
++
++	return hapd->conf->eht_rtwt_disabled;
++}
++#endif /* CONFIG_IEEE80211BE */
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index 5d411376b..c9727bf64 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -2321,6 +2321,8 @@ struct ieee80211_spatial_reuse {
+ /* HE Capabilities Information defines */
+ 
+ #define HE_MACCAP_TWT_RESPONDER			((u8) BIT(2))
++#define HE_MACCAP_BROADCAST_TWT_SUPPORT_IDX	2
++#define HE_MACCAP_BROADCAST_TWT_SUPPORT		((u8) BIT(4))
+ 
+ #define HE_PHYCAP_CHANNEL_WIDTH_SET_IDX		0
+ #define HE_PHYCAP_CHANNEL_WIDTH_MASK		((u8) (BIT(1) | BIT(2) | \
+-- 
+2.45.2

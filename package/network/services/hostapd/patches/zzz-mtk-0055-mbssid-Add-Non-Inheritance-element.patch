@@ -1,0 +1,191 @@
+From c5a09b051a91e02093ca2c9f493cbc6c5e8630b1 Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:37 -0800
+Subject: [PATCH] mbssid: Add Non-Inheritance element
+
+Add data per IEEE Std 802.11-2020, 9.4.2.240. Current implementation is
+added for the security and extended supported rates only.
+
+For the Extended rates element, add a new member 'xrates_supported'
+which is set to 1 only if hostapd_eid_ext_supp_rates() returns success.
+Without this change, there are cases where this function returns before
+adding the element for the transmitting interface resulting in incorrect
+addition of this element inside the MBSSID Non-Inheritance element.
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+Co-developed-by: John Crispin <john@phrozen.org>
+Signed-off-by: John Crispin <john@phrozen.org>
+Co-developed-by: Sowmiya Sree Elavalagan <quic_ssreeela@quicinc.com>
+Signed-off-by: Sowmiya Sree Elavalagan <quic_ssreeela@quicinc.com>
+---
+ src/ap/ap_config.h           |  1 +
+ src/ap/hostapd.c             | 23 +++++++++++++++++++++++
+ src/ap/hostapd.h             |  2 ++
+ src/ap/ieee802_11.c          | 35 +++++++++++++++++++++++++++++++++--
+ src/common/ieee802_11_defs.h |  1 +
+ 5 files changed, 60 insertions(+), 2 deletions(-)
+
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 92293dc88..46b7a4781 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -965,6 +965,7 @@ struct hostapd_bss_config {
+ 	u8 ext_capa[EXT_CAPA_MAX_LEN];
+ 
+ 	u8 rnr;
++	bool xrates_supported;
+ #ifdef CONFIG_IEEE80211AX
+ 	u8 dot11vmbssid;
+ #endif /* CONFIG_IEEE80211AX */
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index 20073a6c2..a0f865a7b 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -95,6 +95,29 @@ int hostapd_for_each_interface(struct hapd_interfaces *interfaces,
+ }
+ 
+ 
++struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd)
++{
++	if (hapd->iconf->mbssid)
++		return hapd->iface->bss[0];
++
++	return hapd;
++}
++
++
++int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd)
++{
++	if (hapd->iconf->mbssid) {
++		size_t i;
++
++		for (i = 1; i < hapd->iface->num_bss; i++)
++			if (hapd->iface->bss[i] == hapd)
++				return i;
++	}
++
++	return 0;
++}
++
++
+ void hostapd_reconfig_encryption(struct hostapd_data *hapd)
+ {
+ 	if (hapd->wpa_auth)
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index e945a211e..ed2ff4587 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -800,6 +800,8 @@ void fst_hostapd_fill_iface_obj(struct hostapd_data *hapd,
+ #endif /* CONFIG_FST */
+ 
+ int hostapd_set_acl(struct hostapd_data *hapd);
++struct hostapd_data * hostapd_mbssid_get_tx_bss(struct hostapd_data *hapd);
++int hostapd_mbssid_get_bss_index(struct hostapd_data *hapd);
+ 
+ #ifdef CONFIG_MTK_IEEE80211BE
+ struct pmk_list * wpa_auth_mlo_get_pmk(struct hostapd_data *hapd, const u8 *addr);
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 5ed91b4f3..756f3af9b 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -173,6 +173,7 @@ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 	int i, num, count;
+ 	int h2e_required;
+ 
++	hapd->conf->xrates_supported = false;
+ 	if (hapd->iface->current_rates == NULL)
+ 		return eid;
+ 
+@@ -222,6 +223,7 @@ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 			*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY;
+ 	}
+ 
++	hapd->conf->xrates_supported = true;
+ 	return pos;
+ }
+ 
+@@ -7853,12 +7855,14 @@ u8 * hostapd_eid_rnr(struct hostapd_data *hapd, u8 *eid, u32 type)
+ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
+ 					  u32 frame_type, size_t *bss_index)
+ {
++	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+ 	size_t len = 3, i;
+ 
+ 	for (i = *bss_index; i < hapd->iface->num_bss; i++) {
+ 		struct hostapd_data *bss = hapd->iface->bss[i];
+-		const u8 *auth, *rsn, *rsnx;
++		const u8 *auth, *rsn = NULL, *rsnx = NULL;
+ 		size_t nontx_profile_len, auth_len;
++		u8 ie_count = 0;
+ 
+ 		if (!bss || !bss->conf || !bss->started)
+ 			continue;
+@@ -7886,6 +7890,16 @@ static size_t hostapd_eid_mbssid_elem_len(struct hostapd_data *hapd,
+ 			if (rsnx)
+ 				nontx_profile_len += 2 + rsnx[1];
+ 		}
++		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))
++			ie_count++;
++		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
++			ie_count++;
++		if (bss->conf->xrates_supported)
++			nontx_profile_len += 8;
++		else if (hapd->conf->xrates_supported)
++			ie_count++;
++		if (ie_count)
++			nontx_profile_len += 4 + ie_count;
+ 
+ 		if (len + nontx_profile_len > 255)
+ 			break;
+@@ -7919,6 +7933,7 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 				    u32 frame_type, u8 max_bssid_indicator,
+ 				    size_t *bss_index, u8 elem_count)
+ {
++	struct hostapd_data *tx_bss = hostapd_mbssid_get_tx_bss(hapd);
+ 	size_t i;
+ 	u8 *eid_len_offset, *max_bssid_indicator_offset;
+ 
+@@ -7952,7 +7969,8 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 		struct hostapd_data *bss = hapd->iface->bss[i];
+ 		struct hostapd_bss_config *conf;
+ 		u8 *eid_len_pos, *nontx_bss_start = eid;
+-		const u8 *auth, *rsn, *rsnx;
++		const u8 *auth, *rsn = NULL, *rsnx = NULL;
++		u8 ie_count = 0, non_inherit_ie[3];
+ 		size_t auth_len = 0;
+ 		u16 capab_info;
+ 
+@@ -7985,6 +8003,21 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 				eid += 2 + rsnx[1];
+ 			}
+ 		}
++		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))
++			non_inherit_ie[ie_count++] = WLAN_EID_RSN;
++		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
++			non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
++		if (hapd->conf->xrates_supported &&
++		    !bss->conf->xrates_supported)
++			non_inherit_ie[ie_count++] = WLAN_EID_EXT_SUPP_RATES;
++		if (ie_count) {
++			*eid++ = WLAN_EID_EXTENSION;
++			*eid++ = 2 + ie_count;
++			*eid++ = WLAN_EID_EXT_NON_INHERITANCE;
++			*eid++ = ie_count;
++			os_memcpy(eid, non_inherit_ie, ie_count);
++			eid += ie_count;
++		}
+ 
+ 		*eid_len_pos = (eid - eid_len_pos) - 1;
+ 
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index 023bbc332..ed0051e7b 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -484,6 +484,7 @@
+ #define WLAN_EID_EXT_SPATIAL_REUSE 39
+ #define WLAN_EID_EXT_COLOR_CHANGE_ANNOUNCEMENT 42
+ #define WLAN_EID_EXT_OCV_OCI 54
++#define WLAN_EID_EXT_NON_INHERITANCE 56
+ #define WLAN_EID_EXT_SHORT_SSID_LIST 58
+ #define WLAN_EID_EXT_HE_6GHZ_BAND_CAP 59
+ #define WLAN_EID_EXT_EDMG_CAPABILITIES 61

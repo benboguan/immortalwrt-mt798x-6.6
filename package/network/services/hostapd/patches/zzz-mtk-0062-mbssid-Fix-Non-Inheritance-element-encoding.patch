@@ -1,0 +1,32 @@
+From 4bfc007b61e6d2495bda502bea17fbfba4c95640 Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <quic_jouni@quicinc.com>
+Date: Tue, 31 Oct 2023 15:51:30 +0200
+Subject: [PATCH] MBSSID: Fix Non-Inheritance element encoding
+
+The List of Element ID Extensions field is not an optional field, so
+include it in the Non-Inheritance element with Length=0 to indicate that
+there is no Element ID Extension List.
+
+Signed-off-by: Jouni Malinen <quic_jouni@quicinc.com>
+---
+ src/ap/ieee802_11.c | 3 ++-
+ 1 file changed, 2 insertions(+), 1 deletion(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 2defe6c91..a5e5e875c 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -7785,11 +7785,12 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			non_inherit_ie[ie_count++] = WLAN_EID_EXT_SUPP_RATES;
+ 		if (ie_count) {
+ 			*eid++ = WLAN_EID_EXTENSION;
+-			*eid++ = 2 + ie_count;
++			*eid++ = 2 + ie_count + 1;
+ 			*eid++ = WLAN_EID_EXT_NON_INHERITANCE;
+ 			*eid++ = ie_count;
+ 			os_memcpy(eid, non_inherit_ie, ie_count);
+ 			eid += ie_count;
++			*eid++ = 0; /* No Element ID Extension List */
+ 		}
+ 
+ 		*eid_len_pos = (eid - eid_len_pos) - 1;

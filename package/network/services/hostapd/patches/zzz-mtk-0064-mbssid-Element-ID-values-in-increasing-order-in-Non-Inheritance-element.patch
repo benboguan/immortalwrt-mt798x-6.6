@@ -1,0 +1,35 @@
+From 09d57e5f89e47f99d8b338bd172890f0202ea06f Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <quic_jouni@quicinc.com>
+Date: Thu, 21 Dec 2023 13:19:36 +0200
+Subject: [PATCH] MBSSID: Element ID values in increasing order in
+ Non-Inheritance element
+
+Reorder the Element ID List to fill in the values in increasing order to
+match the way the Element ID List is defined.
+
+Signed-off-by: Jouni Malinen <quic_jouni@quicinc.com>
+---
+ src/ap/ieee802_11.c | 5 +++--
+ 1 file changed, 3 insertions(+), 2 deletions(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 1438d2ecc..dd5acd9c2 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -7908,13 +7908,14 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 				eid += 2 + rsnx[1];
+ 			}
+ 		}
++		/* List of Element ID values in increasing order */
+ 		if (!rsn && hostapd_wpa_ie(tx_bss, WLAN_EID_RSN))
+ 			non_inherit_ie[ie_count++] = WLAN_EID_RSN;
+-		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
+-			non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
+ 		if (hapd->conf->xrates_supported &&
+ 		    !bss->conf->xrates_supported)
+ 			non_inherit_ie[ie_count++] = WLAN_EID_EXT_SUPP_RATES;
++		if (!rsnx && hostapd_wpa_ie(tx_bss, WLAN_EID_RSNX))
++			non_inherit_ie[ie_count++] = WLAN_EID_RSNX;
+ 		if (ie_count) {
+ 			*eid++ = WLAN_EID_EXTENSION;
+ 			*eid++ = 2 + ie_count + 1;

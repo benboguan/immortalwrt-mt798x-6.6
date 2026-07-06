@@ -1,0 +1,29 @@
+--- a/wpa_supplicant/mesh.c
++++ b/wpa_supplicant/mesh.c
+@@ -225,7 +225,7 @@ static int wpas_mesh_update_freq_params(struct
+ 		    ifmsh->conf->ieee80211n,
+ 		    ifmsh->conf->ieee80211ac,
+ 		    ifmsh->conf->ieee80211ax,
+-		    false,
++		    ifmsh->conf->ieee80211be,
+ 		    ifmsh->conf->secondary_channel,
+ 		    hostapd_get_oper_chwidth(ifmsh->conf),
+ 		    hostapd_get_oper_centr_freq_seg0_idx(ifmsh->conf),
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -2916,12 +2916,12 @@ skip_to_6ghz:
+ 	if (hostapd_set_freq_params(&vht_freq, mode->mode, freq->freq,
+ 				    freq->channel, ssid->enable_edmg,
+ 				    ssid->edmg_channel, freq->ht_enabled,
+-				    vht_freq.vht_enabled, freq->he_enabled,
+-				    false,
++				    vht_freq.vht_enabled, vht_freq.he_enabled,
++				    vht_freq.eht_enabled,
+ 				    freq->sec_channel_offset,
+ 				    chwidth, seg0, seg1, vht_caps,
+ 				    &mode->he_capab[ieee80211_mode],
+-				    NULL) != 0)
++				    &mode->eht_capab[ieee80211_mode]) != 0)
+ 		return;
+ 
+ 	*freq = vht_freq;

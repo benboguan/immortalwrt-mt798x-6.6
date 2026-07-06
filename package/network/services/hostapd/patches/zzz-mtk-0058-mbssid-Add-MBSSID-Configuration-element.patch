@@ -1,0 +1,75 @@
+From 15690faada17f429e5386bf5cb6153ed47773eff Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:40 -0800
+Subject: [PATCH] mbssid: Add MBSSID Configuration element
+
+Add Multiple BSSID Configuration element data per IEEE Std
+802.11ax-2021, 9.4.2.260 when enhanced multiple BSSID advertisement
+(EMA) is enabled. This element informs the stations about the EMA
+profile periodicity of the multiple BSSID set.
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+---
+ src/ap/beacon.c              | 22 ++++++++++++++++++++++
+ src/common/ieee802_11_defs.h |  1 +
+ 2 files changed, 23 insertions(+)
+
+diff --git a/src/ap/beacon.c b/src/ap/beacon.c
+index 36e32e142..97c126923 100644
+--- a/src/ap/beacon.c
++++ b/src/ap/beacon.c
+@@ -512,6 +512,23 @@ ieee802_11_build_ap_params_mbssid(struct hostapd_data *hapd,
+ }
+ 
+ 
++static u8 * hostapd_eid_mbssid_config(struct hostapd_data *hapd, u8 *eid,
++				      u8 mbssid_elem_count)
++{
++	struct hostapd_iface *iface = hapd->iface;
++
++	if (iface->conf->mbssid == ENHANCED_MBSSID_ENABLED) {
++		*eid++ = WLAN_EID_EXTENSION;
++		*eid++ = 3;
++		*eid++ = WLAN_EID_EXT_MULTIPLE_BSSID_CONFIGURATION;
++		*eid++ = iface->num_bss;
++		*eid++ = mbssid_elem_count;
++	}
++
++	return eid;
++}
++
++
+ static u8 * hostapd_gen_probe_resp(struct hostapd_data *hapd,
+ 				   const struct ieee80211_mgmt *req,
+ 				   int is_p2p, size_t *resp_len,
+@@ -1635,6 +1652,9 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
+ 	}
+ #endif /* CONFIG_IEEE80211BE */
+ 
++	if (hapd->iconf->mbssid == ENHANCED_MBSSID_ENABLED &&
++	    hapd == hostapd_mbssid_get_tx_bss(hapd))
++		tail_len += 5; /* Multiple BSSID Configuration element */
+ 	tail_len += hostapd_eid_rnr_len(hapd, WLAN_FC_STYPE_BEACON);
+ 	tail_len += hostapd_mbo_ie_len(hapd);
+ 	tail_len += hostapd_eid_owe_trans_len(hapd);
+@@ -1774,6 +1794,8 @@ int ieee802_11_build_ap_params(struct hostapd_data *hapd,
+ 	tailpos = hostapd_eid_rnr(hapd, tailpos, WLAN_FC_STYPE_BEACON);
+ 	tailpos = hostapd_eid_fils_indic(hapd, tailpos, 0);
+ 	tailpos = hostapd_get_rsnxe(hapd, tailpos, tailend - tailpos);
++	tailpos = hostapd_eid_mbssid_config(hapd, tailpos,
++					    params->mbssid_elem_count);
+ 
+ #ifdef CONFIG_IEEE80211AX
+ 	if (hapd->iconf->ieee80211ax && !hapd->conf->disable_11ax) {
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index ed0051e7b..59c3b6a83 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -481,6 +481,7 @@
+ #define WLAN_EID_EXT_SPATIAL_REUSE 39
+ #define WLAN_EID_EXT_COLOR_CHANGE_ANNOUNCEMENT 42
+ #define WLAN_EID_EXT_OCV_OCI 54
++#define WLAN_EID_EXT_MULTIPLE_BSSID_CONFIGURATION 55
+ #define WLAN_EID_EXT_NON_INHERITANCE 56
+ #define WLAN_EID_EXT_SHORT_SSID_LIST 58
+ #define WLAN_EID_EXT_HE_6GHZ_BAND_CAP 59

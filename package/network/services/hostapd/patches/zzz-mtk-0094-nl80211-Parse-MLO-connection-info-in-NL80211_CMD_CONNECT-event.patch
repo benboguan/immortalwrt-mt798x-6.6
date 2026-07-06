@@ -1,0 +1,308 @@
+From c7741009f7000114f699d22cf90243b422b07bb2 Mon Sep 17 00:00:00 2001
+From: Veerendranath Jakkam <quic_vjakkam@quicinc.com>
+Date: Thu, 8 Sep 2022 20:14:09 +0530
+Subject: [PATCH] nl80211: Parse MLO connection info in NL80211_CMD_CONNECT
+ event
+
+Parse NL80211_ATTR_MLO_LINKS in NL80211_CMD_CONNECT event and cache the
+MLO connection information. Set the legacy connection fields such as
+assoc_freq and bssid to the values of the MLO link on which association
+happened.
+
+Signed-off-by: Veerendranath Jakkam <quic_vjakkam@quicinc.com>
+---
+ src/common/defs.h                  |  2 +
+ src/drivers/driver.h               | 10 ++++
+ src/drivers/driver_nl80211.c       | 59 +++++++++++++++---
+ src/drivers/driver_nl80211.h       |  2 +
+ src/drivers/driver_nl80211_event.c | 96 ++++++++++++++++++++++++++++--
+ 5 files changed, 158 insertions(+), 11 deletions(-)
+
+diff --git a/src/common/defs.h b/src/common/defs.h
+index e3d02f810..3e658cbcf 100644
+--- a/src/common/defs.h
++++ b/src/common/defs.h
+@@ -518,4 +518,6 @@ enum frame_encryption {
+ 	FRAME_ENCRYPTED = 1
+ };
+ 
++#define MAX_NUM_MLD_LINKS 15
++
+ #endif /* DEFS_H */
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 20cbda862..42be1bc6f 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2730,6 +2730,16 @@ struct weighted_pcl {
+ 	u32 flag; /* bitmap for WEIGHTED_PCL_* */
+ };
+ 
++struct driver_sta_mlo_info {
++	u16 valid_links; /* bitmap of valid link IDs */
++	u8 ap_mld_addr[ETH_ALEN];
++	struct {
++		u8 addr[ETH_ALEN];
++		u8 bssid[ETH_ALEN];
++		unsigned int freq;
++	} links[MAX_NUM_MLD_LINKS];
++};
++
+ /**
+  * struct wpa_driver_ops - Driver interface API definition
+  *
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index a4b2d5219..963344bc4 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -270,6 +270,7 @@ void nl80211_mark_disconnected(struct wpa_driver_nl80211_data *drv)
+ 	if (drv->associated)
+ 		os_memcpy(drv->prev_bssid, drv->bssid, ETH_ALEN);
+ 	drv->associated = 0;
++	drv->sta_mlo_info.valid_links = 0;
+ 	os_memset(drv->bssid, 0, ETH_ALEN);
+ 	drv->first_bss->freq = 0;
+ #ifdef CONFIG_DRIVER_NL80211_QCA
+@@ -1441,6 +1442,8 @@ struct nl80211_get_assoc_freq_arg {
+ 	u8 assoc_bssid[ETH_ALEN];
+ 	u8 assoc_ssid[SSID_MAX_LEN];
+ 	u8 assoc_ssid_len;
++	u8 bssid[MAX_NUM_MLD_LINKS][ETH_ALEN];
++	unsigned int freq[MAX_NUM_MLD_LINKS];
+ };
+ 
+ static int nl80211_get_assoc_freq_handler(struct nl_msg *msg, void *arg)
+@@ -1453,9 +1456,11 @@ static int nl80211_get_assoc_freq_handler(struct nl_msg *msg, void *arg)
+ 		[NL80211_BSS_FREQUENCY] = { .type = NLA_U32 },
+ 		[NL80211_BSS_INFORMATION_ELEMENTS] = { .type = NLA_UNSPEC },
+ 		[NL80211_BSS_STATUS] = { .type = NLA_U32 },
++		[NL80211_BSS_MLO_LINK_ID] = { .type = NLA_U8 },
+ 	};
+ 	struct nl80211_get_assoc_freq_arg *ctx = arg;
+ 	enum nl80211_bss_status status;
++	struct wpa_driver_nl80211_data *drv = ctx->drv;
+ 
+ 	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
+ 		  genlmsg_attrlen(gnlh, 0), NULL);
+@@ -1468,9 +1473,25 @@ static int nl80211_get_assoc_freq_handler(struct nl_msg *msg, void *arg)
+ 	status = nla_get_u32(bss[NL80211_BSS_STATUS]);
+ 	if (status == NL80211_BSS_STATUS_ASSOCIATED &&
+ 	    bss[NL80211_BSS_FREQUENCY]) {
+-		ctx->assoc_freq = nla_get_u32(bss[NL80211_BSS_FREQUENCY]);
+-		wpa_printf(MSG_DEBUG, "nl80211: Associated on %u MHz",
+-			   ctx->assoc_freq);
++		int link_id = -1;
++		u32 freq = nla_get_u32(bss[NL80211_BSS_FREQUENCY]);
++
++		if (bss[NL80211_BSS_MLO_LINK_ID])
++			link_id = nla_get_u8(bss[NL80211_BSS_MLO_LINK_ID]);
++
++		if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
++			ctx->freq[link_id] = freq;
++			wpa_printf(MSG_DEBUG,
++				   "nl80211: MLO link %d associated on %u MHz",
++				   link_id, ctx->freq[link_id]);
++		}
++
++		if (!drv->sta_mlo_info.valid_links ||
++		    drv->mlo_assoc_link_id == link_id) {
++			ctx->assoc_freq = freq;
++			wpa_printf(MSG_DEBUG, "nl80211: Associated on %u MHz",
++				   ctx->assoc_freq);
++		}
+ 	}
+ 	if (status == NL80211_BSS_STATUS_IBSS_JOINED &&
+ 	    bss[NL80211_BSS_FREQUENCY]) {
+@@ -1480,10 +1501,26 @@ static int nl80211_get_assoc_freq_handler(struct nl_msg *msg, void *arg)
+ 	}
+ 	if (status == NL80211_BSS_STATUS_ASSOCIATED &&
+ 	    bss[NL80211_BSS_BSSID]) {
+-		os_memcpy(ctx->assoc_bssid,
+-			  nla_data(bss[NL80211_BSS_BSSID]), ETH_ALEN);
+-		wpa_printf(MSG_DEBUG, "nl80211: Associated with "
+-			   MACSTR, MAC2STR(ctx->assoc_bssid));
++		int link_id = -1;
++		const u8 *bssid = nla_data(bss[NL80211_BSS_BSSID]);
++
++		if (bss[NL80211_BSS_MLO_LINK_ID])
++			link_id = nla_get_u8(bss[NL80211_BSS_MLO_LINK_ID]);
++
++		if (link_id >= 0 && link_id < MAX_NUM_MLD_LINKS) {
++			os_memcpy(ctx->bssid[link_id], bssid, ETH_ALEN);
++			wpa_printf(MSG_DEBUG,
++				   "nl80211: MLO link %d associated with "
++				   MACSTR, link_id, MAC2STR(bssid));
++		}
++
++		if (!drv->sta_mlo_info.valid_links ||
++		    drv->mlo_assoc_link_id == link_id) {
++			os_memcpy(ctx->assoc_bssid, bssid, ETH_ALEN);
++			wpa_printf(MSG_DEBUG, "nl80211: Associated with "
++				   MACSTR, MAC2STR(bssid));
++		}
++
+ 	}
+ 
+ 	if (status == NL80211_BSS_STATUS_ASSOCIATED &&
+@@ -1569,6 +1606,14 @@ unsigned int nl80211_get_assoc_freq(struct wpa_driver_nl80211_data *drv)
+ 			   "associated BSS from scan results: %u MHz", freq);
+ 		if (freq)
+ 			drv->assoc_freq = freq;
++
++		if (drv->sta_mlo_info.valid_links) {
++			int i;
++
++			for (i = 0; i < MAX_NUM_MLD_LINKS; i++)
++				drv->sta_mlo_info.links[i].freq = arg.freq[i];
++		}
++
+ 		return drv->assoc_freq;
+ 	}
+ 	wpa_printf(MSG_DEBUG, "nl80211: Scan result fetch failed: ret=%d "
+diff --git a/src/drivers/driver_nl80211.h b/src/drivers/driver_nl80211.h
+index 9a9faf698..c84b21974 100644
+--- a/src/drivers/driver_nl80211.h
++++ b/src/drivers/driver_nl80211.h
+@@ -128,6 +128,8 @@ struct wpa_driver_nl80211_data {
+ 	u8 bssid[ETH_ALEN];
+ 	u8 prev_bssid[ETH_ALEN];
+ 	int associated;
++	int mlo_assoc_link_id;
++	struct driver_sta_mlo_info sta_mlo_info;
+ 	u8 ssid[SSID_MAX_LEN];
+ 	size_t ssid_len;
+ 	enum nl80211_iftype nlmode;
+diff --git a/src/drivers/driver_nl80211_event.c b/src/drivers/driver_nl80211_event.c
+index 266c8c1e9..a7fc4b355 100644
+--- a/src/drivers/driver_nl80211_event.c
++++ b/src/drivers/driver_nl80211_event.c
+@@ -423,6 +423,89 @@ convert_connect_fail_reason_codes(enum qca_sta_connect_fail_reason_codes
+ #endif /* CONFIG_DRIVER_NL80211_QCA */
+ 
+ 
++static int nl80211_get_assoc_link_id(const u8 *data, u8 len)
++{
++	if (!(data[0] & BASIC_MULTI_LINK_CTRL0_PRES_LINK_ID))
++		return -1;
++
++#define BASIC_ML_IE_COMMON_INFO_LINK_ID_IDX \
++		(2 + /* Multi-Link Control field */ \
++		 1 + /* Common Info Length field (Basic) */ \
++		 ETH_ALEN) /* MLD MAC Address field (Basic) */
++	if (len <= BASIC_ML_IE_COMMON_INFO_LINK_ID_IDX)
++		return -1;
++
++	return data[BASIC_ML_IE_COMMON_INFO_LINK_ID_IDX] & 0x0F;
++}
++
++
++static void nl80211_parse_mlo_info(struct wpa_driver_nl80211_data *drv,
++				   struct nlattr *addr,
++				   struct nlattr *mlo_links,
++				   struct nlattr *resp_ie)
++{
++	struct nlattr *link;
++	int rem_links;
++	const u8 *ml_ie;
++	struct driver_sta_mlo_info *mlo = &drv->sta_mlo_info;
++
++	if (!addr || !mlo_links || !resp_ie)
++		return;
++
++	ml_ie = get_ml_ie(nla_data(resp_ie), nla_len(resp_ie),
++			  MULTI_LINK_CONTROL_TYPE_BASIC);
++	if (!ml_ie)
++		return;
++
++	drv->mlo_assoc_link_id = nl80211_get_assoc_link_id(&ml_ie[3],
++							   ml_ie[1] - 1);
++	if (drv->mlo_assoc_link_id < 0 ||
++	    drv->mlo_assoc_link_id >= MAX_NUM_MLD_LINKS)
++		return;
++
++	os_memcpy(mlo->ap_mld_addr, nla_data(addr), ETH_ALEN);
++	wpa_printf(MSG_DEBUG, "nl80211: AP MLD MAC Address " MACSTR,
++		   MAC2STR(mlo->ap_mld_addr));
++
++	nla_for_each_nested(link, mlo_links, rem_links) {
++		struct nlattr *tb[NL80211_ATTR_MAX + 1];
++		int link_id;
++
++		nla_parse(tb, NL80211_ATTR_MAX, nla_data(link), nla_len(link),
++			  NULL);
++
++		if (!tb[NL80211_ATTR_MLO_LINK_ID] || !tb[NL80211_ATTR_MAC] ||
++		    !tb[NL80211_ATTR_BSSID])
++			continue;
++
++		link_id = nla_get_u8(tb[NL80211_ATTR_MLO_LINK_ID]);
++		if (link_id >= MAX_NUM_MLD_LINKS)
++			continue;
++
++		mlo->valid_links |= BIT(link_id);
++		os_memcpy(mlo->links[link_id].addr,
++			  nla_data(tb[NL80211_ATTR_MAC]), ETH_ALEN);
++		os_memcpy(mlo->links[link_id].bssid,
++			  nla_data(tb[NL80211_ATTR_BSSID]), ETH_ALEN);
++		wpa_printf(MSG_DEBUG, "nl80211: MLO link[%u] addr " MACSTR
++			   " bssid " MACSTR,
++			   link_id, MAC2STR(mlo->links[link_id].addr),
++			   MAC2STR(mlo->links[link_id].bssid));
++	}
++
++	if (!(mlo->valid_links & BIT(drv->mlo_assoc_link_id))) {
++		wpa_printf(MSG_ERROR, "nl80211: Invalid MLO assoc link ID %d",
++			   drv->mlo_assoc_link_id);
++		mlo->valid_links = 0;
++		return;
++	}
++
++	os_memcpy(drv->bssid, mlo->links[drv->mlo_assoc_link_id].bssid,
++		  ETH_ALEN);
++	os_memcpy(drv->prev_bssid, drv->bssid, ETH_ALEN);
++}
++
++
+ static void mlme_event_connect(struct wpa_driver_nl80211_data *drv,
+ 			       enum nl80211_commands cmd, struct nlattr *status,
+ 			       struct nlattr *addr, struct nlattr *req_ie,
+@@ -436,7 +519,8 @@ static void mlme_event_connect(struct wpa_driver_nl80211_data *drv,
+ 			       struct nlattr *subnet_status,
+ 			       struct nlattr *fils_erp_next_seq_num,
+ 			       struct nlattr *fils_pmk,
+-			       struct nlattr *fils_pmkid)
++			       struct nlattr *fils_pmkid,
++			       struct nlattr *mlo_links)
+ {
+ 	union wpa_event_data event;
+ 	const u8 *ssid = NULL;
+@@ -528,7 +612,9 @@ static void mlme_event_connect(struct wpa_driver_nl80211_data *drv,
+ 	}
+ 
+ 	drv->associated = 1;
+-	if (addr) {
++	drv->sta_mlo_info.valid_links = 0;
++	nl80211_parse_mlo_info(drv, addr, mlo_links, resp_ie);
++	if (!drv->sta_mlo_info.valid_links && addr) {
+ 		os_memcpy(drv->bssid, nla_data(addr), ETH_ALEN);
+ 		os_memcpy(drv->prev_bssid, drv->bssid, ETH_ALEN);
+ 	}
+@@ -2135,7 +2221,8 @@ static void qca_nl80211_key_mgmt_auth(struct wpa_driver_nl80211_data *drv,
+ 			   tb[QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_SUBNET_STATUS],
+ 			   tb[QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_FILS_ERP_NEXT_SEQ_NUM],
+ 			   tb[QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PMK],
+-			   tb[QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PMKID]);
++			   tb[QCA_WLAN_VENDOR_ATTR_ROAM_AUTH_PMKID],
++			   NULL);
+ }
+ 
+ 
+@@ -3210,7 +3297,8 @@ static void do_process_drv_event(struct i802_bss *bss, int cmd,
+ 				   NULL,
+ 				   tb[NL80211_ATTR_FILS_ERP_NEXT_SEQ_NUM],
+ 				   tb[NL80211_ATTR_PMK],
+-				   tb[NL80211_ATTR_PMKID]);
++				   tb[NL80211_ATTR_PMKID],
++				   tb[NL80211_ATTR_MLO_LINKS]);
+ 		break;
+ 	case NL80211_CMD_CH_SWITCH_STARTED_NOTIFY:
+ 		mlme_event_ch_switch(drv,

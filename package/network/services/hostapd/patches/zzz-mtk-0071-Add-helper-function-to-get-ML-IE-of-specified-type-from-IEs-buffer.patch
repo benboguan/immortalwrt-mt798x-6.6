@@ -1,0 +1,51 @@
+From bd499f0e6e60142244732a747b2b8527f06eebaf Mon Sep 17 00:00:00 2001
+From: Veerendranath Jakkam <quic_vjakkam@quicinc.com>
+Date: Thu, 8 Sep 2022 20:14:08 +0530
+Subject: [PATCH] Add a helper function to get ML IE of specified type from IEs
+ buffer
+
+Add a helper function to find the specified type of Multi-Link element
+from IEs buffer.
+
+Signed-off-by: Veerendranath Jakkam <quic_vjakkam@quicinc.com>
+---
+ src/common/ieee802_11_common.c | 17 +++++++++++++++++
+ src/common/ieee802_11_common.h |  1 +
+ 2 files changed, 18 insertions(+)
+
+diff --git a/src/common/ieee802_11_common.c b/src/common/ieee802_11_common.c
+index c8ee90cd7..54db7c82e 100644
+--- a/src/common/ieee802_11_common.c
++++ b/src/common/ieee802_11_common.c
+@@ -2755,3 +2755,20 @@ struct wpabuf * ieee802_11_defrag(struct ieee802_11_elems *elems,
+ 
+ 	return ieee802_11_defrag_data(elems, eid, eid_ext, data, len);
+ }
++
++
++const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type)
++{
++	const struct element *elem;
++
++	if (!ies)
++		return NULL;
++
++	for_each_element_extid(elem, WLAN_EID_EXT_MULTI_LINK, ies, len) {
++		if (elem->datalen >= 2 &&
++		    (elem->data[1] & MULTI_LINK_CONTROL_TYPE_MASK) == type)
++			return &elem->id;
++	}
++
++	return NULL;
++}
+diff --git a/src/common/ieee802_11_common.h b/src/common/ieee802_11_common.h
+index 94e1d7b8b..bd2c9fbf5 100644
+--- a/src/common/ieee802_11_common.h
++++ b/src/common/ieee802_11_common.h
+@@ -343,5 +343,6 @@ struct wpabuf * ieee802_11_defrag_data(struct ieee802_11_elems *elems,
+ 				       const u8 *data, u8 len);
+ struct wpabuf * ieee802_11_defrag(struct ieee802_11_elems *elems,
+ 				  u8 eid, u8 eid_ext);
++const u8 * get_ml_ie(const u8 *ies, size_t len, u8 type);
+ 
+ #endif /* IEEE802_11_COMMON_H */

@@ -86,8 +86,6 @@ ifeq ($(LOCAL_VARIANT),mesh)
   CONFIG_VARIANT:=full
 endif
 
-include $(INCLUDE_DIR)/package.mk
-
 STAMP_CONFIGURED:=$(STAMP_CONFIGURED)_$(CONFIG_WPA_MSG_MIN_PRIORITY)
 
 
@@ -120,10 +118,10 @@ DRIVER_MAKEOPTS= \
 	CONFIG_IEEE80211BE=$(HOSTAPD_IEEE80211BE) \
 	CONFIG_DRIVER_WEXT=$(CONFIG_DRIVER_WEXT_SUPPORT) \
 	CONFIG_MBO=$(CONFIG_WPA_MBO_SUPPORT) \
-	CONFIG_UCODE=y CONFIG_HE_OVERRIDES=y CONFIG_EHT_OVERRIDES=y \
+	CONFIG_UCODE=y CONFIG_APUP=y CONFIG_HE_OVERRIDES=y CONFIG_EHT_OVERRIDES=y \
 	$(if $(HOSTAPD_IEEE80211BE),CONFIG_OCV=y)
 ifeq ($(CONFIG_MTK_WIFI7_CFG80211_SUPPORT),y)
-DRIVER_MAKEOPTS += CONFIG_MTK=y CONFIG_DEBUG_FILE=y CONFIG_IEEE80211W=y CONFIG_IEEE80211BE=y CONFIG_IEEE80211AX=y CONFIG_IEEE80211AC=y CONFIG_MBO=y CONFIG_WPA_ENABLE_WEP=y
+DRIVER_MAKEOPTS += CONFIG_MTK=y CONFIG_DEBUG_FILE=y CONFIG_IEEE80211W=y CONFIG_IEEE80211BE=y CONFIG_IEEE80211AX=y CONFIG_IEEE80211AC=y CONFIG_MBO=y CONFIG_SHA384=y CONFIG_WPA_ENABLE_WEP=y
 endif
 
 
@@ -605,7 +603,6 @@ endef
 #   PROVIDES:=eapol-test
 # endef
 
-
 ifneq ($(wildcard $(PKG_BUILD_DIR)/.config_*),$(subst .configured_,.config_,$(STAMP_CONFIGURED)))
   define Build/Configure/rebuild
 	$(FIND) $(PKG_BUILD_DIR) -name \*.o -or -name \*.a | $(XARGS) rm -f
@@ -697,19 +694,27 @@ define Build/Compile/supplicant
 endef
 
 define Build/Compile/supplicant-full-internal
-	+$(call Build/RunMake,wpa_supplicant)
+	+$(call Build/RunMake,wpa_supplicant, \
+		wpa_cli wpa_supplicant \
+	)
 endef
 
 define Build/Compile/supplicant-full-openssl
-	+$(call Build/RunMake,wpa_supplicant)
+	+$(call Build/RunMake,wpa_supplicant, \
+		wpa_cli wpa_supplicant \
+	)
 endef
 
 define Build/Compile/supplicant-full-wolfssl
-	+$(call Build/RunMake,wpa_supplicant)
+	+$(call Build/RunMake,wpa_supplicant, \
+		wpa_cli wpa_supplicant \
+	)
 endef
 
 define Build/Compile/supplicant-full-mbedtls
-	+$(call Build/RunMake,wpa_supplicant)
+	+$(call Build/RunMake,wpa_supplicant, \
+		wpa_cli wpa_supplicant \
+	)
 endef
 
 define Build/Compile

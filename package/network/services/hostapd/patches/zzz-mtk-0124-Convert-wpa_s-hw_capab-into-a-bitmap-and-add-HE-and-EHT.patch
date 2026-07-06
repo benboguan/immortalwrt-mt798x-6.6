@@ -1,0 +1,93 @@
+From d4cd22ac9552f75409b1401343eab152fc15d423 Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <quic_jouni@quicinc.com>
+Date: Wed, 6 Nov 2024 19:41:44 +0200
+Subject: [PATCH] Convert wpa_s->hw_capab into a bitmap and add HE and EHT
+
+This makes wpa_s->hw_capab more useful for determining local
+capabilities, e.g., for reporting them using Wi-Fi Alliance generational
+capabilities indication.
+
+Signed-off-by: Jouni Malinen <quic_jouni@quicinc.com>
+---
+ wpa_supplicant/events.c           |  2 +-
+ wpa_supplicant/wpa_supplicant.c   | 21 ++++++++++-----------
+ wpa_supplicant/wpa_supplicant_i.h | 14 ++++++++------
+ 3 files changed, 19 insertions(+), 18 deletions(-)
+
+diff --git a/wpa_supplicant/events.c b/wpa_supplicant/events.c
+index 7947b6f089..a7c56f771d 100644
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -3461,7 +3461,7 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
+ #endif /* CONFIG_WNM */
+ 		interworking_process_assoc_resp(wpa_s, data->assoc_info.resp_ies,
+ 						data->assoc_info.resp_ies_len);
+-		if (wpa_s->hw_capab == CAPAB_VHT &&
++		if ((wpa_s->hw_capab & BIT(CAPAB_VHT)) &&
+ 		    get_ie(data->assoc_info.resp_ies,
+ 			   data->assoc_info.resp_ies_len, WLAN_EID_VHT_CAP))
+ 			wpa_s->ieee80211ac = 1;
+diff --git a/wpa_supplicant/wpa_supplicant.c b/wpa_supplicant/wpa_supplicant.c
+index c8ab4485e0..deb07e2681 100644
+--- a/wpa_supplicant/wpa_supplicant.c
++++ b/wpa_supplicant/wpa_supplicant.c
+@@ -7600,17 +7600,16 @@ static int wpa_supplicant_init_iface(struct wpa_supplicant *wpa_s,
+ 		u16 i;
+ 
+ 		for (i = 0; i < wpa_s->hw.num_modes; i++) {
+-			if (wpa_s->hw.modes[i].vht_capab) {
+-				wpa_s->hw_capab = CAPAB_VHT;
+-				break;
+-			}
+-
+-			if (wpa_s->hw.modes[i].ht_capab &
+-			    HT_CAP_INFO_SUPP_CHANNEL_WIDTH_SET)
+-				wpa_s->hw_capab = CAPAB_HT40;
+-			else if (wpa_s->hw.modes[i].ht_capab &&
+-				 wpa_s->hw_capab == CAPAB_NO_HT_VHT)
+-				wpa_s->hw_capab = CAPAB_HT;
++			if (wpa_s->hw.modes[i].eht_capab[IEEE80211_MODE_INFRA].
++			    eht_supported)
++				wpa_s->hw_capab |= BIT(CAPAB_EHT);
++			if (wpa_s->hw.modes[i].he_capab[IEEE80211_MODE_INFRA].
++			    he_supported)
++				wpa_s->hw_capab |= BIT(CAPAB_HE);
++			if (wpa_s->hw.modes[i].vht_capab)
++				wpa_s->hw_capab |= BIT(CAPAB_VHT);
++			if (wpa_s->hw.modes[i].ht_capab)
++				wpa_s->hw_capab |= BIT(CAPAB_HT);
+ 		}
+ 	}
+ 
+diff --git a/wpa_supplicant/wpa_supplicant_i.h b/wpa_supplicant/wpa_supplicant_i.h
+index 2549c8b5cd..030ceec14c 100644
+--- a/wpa_supplicant/wpa_supplicant_i.h
++++ b/wpa_supplicant/wpa_supplicant_i.h
+@@ -669,6 +669,13 @@ struct ml_sta_link_info {
+ };
+ 
+ 
++enum local_hw_capab {
++	CAPAB_HT,
++	CAPAB_VHT,
++	CAPAB_HE,
++	CAPAB_EHT,
++};
++
+ /**
+  * struct wpa_supplicant - Internal data for wpa_supplicant interface
+  *
+@@ -1253,12 +1260,7 @@ struct wpa_supplicant {
+ 		u16 num_modes;
+ 		u16 flags;
+ 	} hw;
+-	enum local_hw_capab {
+-		CAPAB_NO_HT_VHT,
+-		CAPAB_HT,
+-		CAPAB_HT40,
+-		CAPAB_VHT,
+-	} hw_capab;
++	unsigned int hw_capab; /* bitmap of enum local_hw_capab bits */
+ #ifdef CONFIG_MACSEC
+ 	struct ieee802_1x_kay *kay;
+ #endif /* CONFIG_MACSEC */

@@ -1,0 +1,397 @@
+From 00c2c20d74ee94c149fb0b82feb416e642818f57 Mon Sep 17 00:00:00 2001
+From: Aditya Kumar Singh <quic_adisi@quicinc.com>
+Date: Wed, 13 Nov 2024 12:56:19 +0530
+Subject: [PATCH] hostapd: Maintain single wpa_driver_nl80211_data (drv) object
+ across interfaces
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Currently, the first BSS of each hostapd interface (struct hostapd_iface)
+creates a new driver data object (struct wpa_driver_nl80211_data, referred
+to as drv). When a non-first BSS of an interface initializes, it copies the
+drv_priv and thus uses the first BSS’s drv object. This can lead to
+situations where multiple drv objects are maintained for the same
+underlying hardware in hostapd.
+
+Some of such situations are:
+
+1. Two different configs for two different wlanX interface but on the
+   same underlying radio. In this case, two drv objects will be
+   maintained.
+
+2. MLO case - 5 GHz config having two BSS. 6 GHz config having one BSS.
+   5 GHz's second BSS is partnering with 6 GHz's BSS and forming MLD.
+   And 6 GHz config is enabled first and then 5 GHz. In this case, two
+   different driver instance will be maintained - one having 5 GHz BSS
+   and other having 5 GHz + 6 GHz MLO BSS. To visualize this:
+
+Assumption: Only 1 phy (say phy0 exist on system). On this phy, the driver
+            has grouped both 5 GHz and 6 GHz underlying radio as a single
+            radio.
+Config:
+     +--------------------+     +------------------+
+     |     5 GHz config   |     |   6 GHz config   |
+     |                    |     |                  |
+     |                    |     |                  |
+     | +----------------+ |     |                  |
+     | |     BSS 1      | |     |                  |
+     | | ssid: guest_ap | |     |                  |
+     | +----------------+ |     |                  |
+     |                    |     |                  |
+   +------------------------------------------------------------------+
+   | | +----------------+ |     | +--------------+ |                  |
+   | | |     BSS 2      | |     | |     BSS 1    | |                  |
+   | | | ssid: mlo_ap   | |     | | ssid: mlo_ap | |   2 Link MLO AP  |
+   | | +----------------+ |     | +--------------+ |                  |
+   | +--------------------+     +------------------+                  |
+   +------------------------------------------------------------------+
+
+Expectation:
++-----------------------------------+
+|   wpa_driver_nl80211_data (drv)   |
+|          (for the phy0)           |
+|                                   |
+|        +----------------+         |        +----------------+
+|        |    first_bss   -------------------|   second_bss   |
+|        |                |         |        |                |
+|        | ssid: guest_ap |         |        | ssid: mlo_ap   |
+|        +----------------+         |        +----------------+
++-----------------------------------+
+
+Current situation (without this change):
++-----------------------------+   +-----------------------------+
+|wpa_driver_nl80211_data (drv)|   |wpa_driver_nl80211_data (drv)|
+|       (for the phy0)        |   |       (again for the phy0)  |
+|                             |   |                             |
+|     +----------------+      |   |     +----------------+      |
+|     |    first_bss   |      |   |     |    first_bss   |      |
+|     |                |      |   |     |                |      |
+|     | ssid: guest_ap |      |   |     | ssid: mlo_ap   |      |
+|     +----------------+      |   |     +----------------+      |
++-----------------------------+   +-----------------------------+
+
+With this change, it will behave as per the expectation.
+
+3. Three different underlying hardwares - 2.4 GHz, 5 GHz, 6 GHz, capable
+   of three different bands and they are grouped together and advertised
+   as single hardware supporting all bands to upper layer. In this case,
+   if one interface (wlanX) is enabled in each hardware (three
+   independent configs) three different drv will be maintained.
+
+Because of this, at times during de-initialization, proper
+deinitialization will not happen and WPA_TRACE could be seen:
+
+nl80211: 1 interface(s) remain at nl80211_global_deinit
+ELOOP: remaining socket: sock=12 eloop_data=0x5500292620 user_data=(nil) handler=0x55000f6cb0
+WPA_TRACE: eloop unregistered socket handler: 0x55000f6cb0
+     rfkill_receive() ../src/drivers/rfkill.c:56
+WPA_TRACE: eloop sock - START
+[0]: ../../hostapd/hostapd(+0x82fe1) [0x5500082fe1]
+     eloop_sock_table_add_sock() ../src/utils/eloop.c:367
+[1]: ../../hostapd/hostapd(rfkill_init+0x1ea) [0x55000f700a]
+     rfkill_init() ../src/drivers/rfkill.c:200
+[2]: ../../hostapd/hostapd(+0xe5325) [0x55000e5325]
+     wpa_driver_nl80211_drv_init_rfkill() ../src/drivers/driver_nl80211.c:2276
+     wpa_driver_nl80211_finish_drv_init() ../src/drivers/driver_nl80211.c:3036
+[3]: ../../hostapd/hostapd(+0xe89f1) [0x55000e89f1]
+     wpa_driver_nl80211_drv_init() ../src/drivers/driver_nl80211.c:2350
+[4]: ../../hostapd/hostapd(+0xe8c6e) [0x55000e8c6e]
+     i802_init() ../src/drivers/driver_nl80211.c:8714
+[5]: ../../hostapd/hostapd(+0x32605) [0x5500032605]
+     hostapd_driver_init() main.c:257
+[6]: ../../hostapd/hostapd(main+0xd08) [0x5500031ad8]
+     main() main.c:1021
+[7]: /lib/x86_64-linux-gnu/libc.so.6(+0x29d90) [0x409acd90]
+WPA_TRACE: eloop sock - EN
+
+Also, for situation #3, during handling of incoming NL commands, the
+above is causing issue in routing the events. This is because since all
+underlying hardwares are part of same phy, phy index is same in all the
+drv objects. Hence when the event comes, it will be given to the first
+drv which might not be having the intended BSS. For example, 5 GHz DFS
+events (which does not have if_idx). The event can be passed to driver
+having 2.4 GHz's BSS or 6 GHz's depending upon which was enabled first.
+
+Hence to avoid these situations, try to maintain single drv object as
+much as possible.
+
+Signed-off-by: Aditya Kumar Singh <quic_adisi@quicinc.com>
+---
+ hostapd/main.c                    |  38 ++++++++++
+ src/ap/hostapd.c                  |   8 +-
+ src/drivers/driver.h              |  19 +++++
+ src/drivers/driver_nl80211.c      | 120 ++++++++++++++++++++++++++++++
+ src/drivers/driver_nl80211.h      |   1 +
+ src/drivers/driver_nl80211_capa.c |   2 +-
+ 6 files changed, 184 insertions(+), 4 deletions(-)
+
+diff --git a/hostapd/main.c b/hostapd/main.c
+index 512cd892b..43c4fa1fb 100644
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -160,6 +160,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 	struct wpa_driver_capa capa;
+ #ifdef CONFIG_IEEE80211BE
+ 	struct hostapd_data *h_hapd = NULL;
++	void *shared_hapd = NULL;
+ #endif /* CONFIG_IEEE80211BE */
+ 
+ 	if (hapd->driver == NULL || hapd->driver->hapd_init == NULL) {
+@@ -253,6 +254,42 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 
+ 	params.own_addr = hapd->own_addr;
+ 
++#ifdef CONFIG_IEEE80211BE
++	if (hapd->driver->can_share_drv &&
++	    hapd->driver->can_share_drv(hapd, &params, &shared_hapd)) {
++		char force_ifname[IFNAMSIZ];
++		const u8 *addr = params.bssid;
++		u8 if_addr[ETH_ALEN];
++
++		if (!shared_hapd) {
++			wpa_printf(MSG_ERROR, "Failed to get the shared drv");
++			os_free(params.bridge);
++			return -1;
++		}
++
++		/* Share an already initialized driver interface instance
++		 * using an AP mode BSS in it instead of adding a new driver
++		 * interface instance for the same driver. */
++		if (hostapd_if_add(shared_hapd, WPA_IF_AP_BSS,
++				   params.ifname, addr, hapd,
++				   &hapd->drv_priv, force_ifname, if_addr,
++				   params.num_bridge && params.bridge[0] ?
++				   params.bridge[0] : NULL,
++				   0)) {
++			wpa_printf(MSG_ERROR, "Failed to add BSS (BSSID="
++				   MACSTR ")", MAC2STR(hapd->own_addr));
++			os_free(params.bridge);
++			return -1;
++		}
++		os_free(params.bridge);
++
++		hapd->interface_added = 1;
++		os_memcpy(params.own_addr, addr ? addr : if_addr, ETH_ALEN);
++
++		goto pre_setup_mld;
++	}
++#endif /* CONFIG_IEEE80211BE */
++
+ 	hapd->drv_priv = hapd->driver->hapd_init(hapd, &params);
+ 	os_free(params.bridge);
+ 	if (hapd->drv_priv == NULL) {
+@@ -263,6 +300,7 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 	}
+ 
+ #ifdef CONFIG_IEEE80211BE
++pre_setup_mld:
+ 	/*
+ 	 * This is the first interface added to the AP MLD, so have the
+ 	 * interface hardware address be the MLD address, while the link address
+diff --git a/src/ap/hostapd.c b/src/ap/hostapd.c
+index c6d3c315a..9dfc21e00 100644
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -525,7 +525,10 @@ void hostapd_free_hapd_data(struct hostapd_data *hapd)
+ 
+ 	authsrv_deinit(hapd);
+ 
+-	if (hapd->interface_added) {
++	/* For single drv, first bss would have interface_added flag set.
++	 * Don't remove interface now. Driver deinit part will take care
++	 */
++	if (hapd->interface_added && hapd->iface->bss[0] != hapd) {
+ 		hapd->interface_added = 0;
+ 		if (hostapd_if_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface)) {
+ 			wpa_printf(MSG_WARNING,
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index b28046db3..6db740223 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -4835,6 +4835,25 @@ struct wpa_driver_ops {
+ 	 */
+ 	int (*link_add)(void *priv, u8 link_id, const u8 *addr);
+ 
++	/**
++	 * can_share_drv - Check whether driver interface can be shared
++	 * @ctx: Pointer to hostapd context
++	 * @params: Configuration for the driver wrapper
++	 * @hapd: Pointer for overwriting the hapd context or %NULL
++	 * 	if can't find a shared drv
++	 *
++	 * Checks whether the driver interface with same phy name is
++	 * already present under the global driver which can be shared
++	 * instead of creating a new driver interface instance. If present,
++	 * @hapd will be overwritten with the hapd pointer which this shared
++	 * drv's first BSS is using. This will help the caller to later call
++	 * if_add().
++	 *
++	 * Returns: true if it can be shared or else false.
++	 */
++	bool (*can_share_drv)(void *ctx, struct wpa_init_params *params,
++			      void **hapd);
++
+ #ifdef CONFIG_TESTING_OPTIONS
+ 	int (*register_frame)(void *priv, u16 type,
+ 			      const u8 *match, size_t match_len,
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index a8434fdbf..034f24e36 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -13680,6 +13680,122 @@ static int nl80211_link_add(void
+ }
+ 
+ 
++static int wpa_driver_get_wiphy_name_handler(struct nl_msg *msg, void *arg)
++{
++	struct nlattr *tb[NL80211_ATTR_MAX + 1];
++	struct genlmsghdr *gnlh = nlmsg_data(nlmsg_hdr(msg));
++	struct wpa_driver_nl80211_data *drv = arg;
++
++	nla_parse(tb, NL80211_ATTR_MAX, genlmsg_attrdata(gnlh, 0),
++		  genlmsg_attrlen(gnlh, 0), NULL);
++
++	if (!tb[NL80211_ATTR_WIPHY_NAME])
++		return NL_SKIP;
++
++	os_strlcpy(drv->phyname, nla_get_string(tb[NL80211_ATTR_WIPHY_NAME]),
++		   sizeof(drv->phyname));
++
++	return NL_SKIP;
++}
++
++
++static int wpa_driver_get_phyname(struct wpa_driver_nl80211_data *drv)
++{
++	struct nl_msg *msg;
++	u32 feat, nl_flags;
++
++	feat = get_nl80211_protocol_features(drv);
++	if (feat & NL80211_PROTOCOL_FEATURE_SPLIT_WIPHY_DUMP)
++		nl_flags = NLM_F_DUMP;
++
++	if (!(msg = nl80211_cmd_msg(drv->first_bss, nl_flags,
++				    NL80211_CMD_GET_WIPHY)) ||
++	    nla_put_flag(msg, NL80211_ATTR_SPLIT_WIPHY_DUMP)) {
++		nlmsg_free(msg);
++		return -1;
++	}
++
++	if (send_and_recv_msgs(drv, msg, wpa_driver_get_wiphy_name_handler,
++			       drv, NULL, NULL))
++		return -1;
++
++	return 0;
++}
++
++
++static bool
++wpa_driver_nl80211_name_match(struct wpa_driver_nl80211_data *drv,
++			      struct wpa_driver_nl80211_data **match_drv)
++{
++	struct wpa_driver_nl80211_data *drv2;
++
++	dl_list_for_each(drv2, &drv->global->interfaces,
++			 struct wpa_driver_nl80211_data, list) {
++		if (os_strcmp(drv2->phyname, drv->phyname) == 0) {
++			if (match_drv)
++				*match_drv = drv2;
++			return true;
++		}
++	}
++
++	return false;
++}
++
++
++static bool wpa_driver_nl80211_can_share_drv(void *ctx,
++					     struct wpa_init_params *params,
++					     void **hapd)
++{
++	struct wpa_driver_nl80211_data *drv, *match_drv = NULL;
++	struct i802_bss *bss;
++	bool ret = false;
++
++	if (!params->global_priv)
++		return false;
++
++	/* Create a temporary drv to read the phyname */
++	drv = os_zalloc(sizeof(*drv));
++	if (!drv)
++		return false;
++	drv->global = params->global_priv;
++	drv->ctx = ctx;
++
++	drv->first_bss = os_zalloc(sizeof(*drv->first_bss));
++	if (!drv->first_bss) {
++		os_free(drv);
++		return false;
++	}
++
++	bss = drv->first_bss;
++	bss->drv = drv;
++	bss->ctx = ctx;
++
++	os_strlcpy(bss->ifname, params->ifname, sizeof(bss->ifname));
++
++	if (nl80211_init_bss(bss))
++		goto free_all;
++
++	drv->ifindex = if_nametoindex(bss->ifname);
++	bss->ifindex = drv->ifindex;
++
++	if (wpa_driver_get_phyname(drv) ||
++	    !wpa_driver_nl80211_name_match(drv, &match_drv) ||
++	    !match_drv)
++		goto free_all;
++
++	wpa_printf(MSG_DEBUG, "nl80211: Driver for phy %s already exist",
++		   match_drv->phyname);
++
++	*hapd = match_drv->first_bss->ctx;
++	ret = true;
++
++free_all:
++	nl80211_destroy_bss(bss);
++	os_free(bss);
++	os_free(drv);
++	return ret;
++}
++
+ #ifdef CONFIG_TESTING_OPTIONS
+ 
+ static int testing_nl80211_register_frame(void *priv, u16 type,
+@@ -14725,6 +14844,7 @@ const struct wpa_driver_ops wpa_driver_nl80211_ops = {
+ 	.dpp_listen = nl80211_dpp_listen,
+ #endif /* CONFIG_DPP */
+ 	.link_add = nl80211_link_add,
++	.can_share_drv = wpa_driver_nl80211_can_share_drv,
+ #ifdef CONFIG_TESTING_OPTIONS
+ 	.register_frame = testing_nl80211_register_frame,
+ 	.radio_disable = testing_nl80211_radio_disable,
+diff --git a/src/drivers/driver_nl80211.h b/src/drivers/driver_nl80211.h
+index 40941ea7d..7fd234c8a 100644
+--- a/src/drivers/driver_nl80211.h
++++ b/src/drivers/driver_nl80211.h
+@@ -351,6 +351,7 @@ int wpa_driver_nl80211_vendor_scan(struct i802_bss *bss,
+ int wpa_driver_nl80211_vendor_scan(struct i802_bss *bss,
+ 				   struct wpa_driver_scan_params *params);
+ int nl80211_set_default_scan_ies(void *priv, const u8 *ies, size_t ies_len);
++u32 get_nl80211_protocol_features(struct wpa_driver_nl80211_data *drv);
+ int set_pasn_key(struct wpa_driver_nl80211_data *drv,
+                 const u8 *key, size_t key_len);
+ #endif /* DRIVER_NL80211_H */
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index c4a23d542..c950ddffc 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -36,7 +36,7 @@ static int protocol_feature_handler(struct nl_msg *msg, void *arg)
+ }
+ 
+ 
+-static u32 get_nl80211_protocol_features(struct wpa_driver_nl80211_data *drv)
++u32 get_nl80211_protocol_features(struct wpa_driver_nl80211_data *drv)
+ {
+ 	u32 feat = 0;
+ 	struct nl_msg *msg;

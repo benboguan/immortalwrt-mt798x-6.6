@@ -1,0 +1,35 @@
+From 84c33cc81fdd21028ecb42ddf102e2ed5152b198 Mon Sep 17 00:00:00 2001
+From: Jouni Malinen <quic_jouni@quicinc.com>
+Date: Tue, 7 Nov 2023 10:44:28 +0200
+Subject: [PATCH] MBSSID: Use DTIM Count 0 in the Beacon template for
+ nontransmitted BSSID
+
+The driver is expected to update the DTIM Count field for each BSS that
+corresponds to a nontransmitted BSSID. Initialized this value to 0 in
+the Beacon frame template so that the DTIM count would be somewhat
+functional even if the driver were not to update this.
+
+Signed-off-by: Jouni Malinen <quic_jouni@quicinc.com>
+---
+ src/ap/ieee802_11.c | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 889348762..d48185a17 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -7763,7 +7763,13 @@ static u8 * hostapd_eid_mbssid_elem(struct hostapd_data *hapd, u8 *eid, u8 *end,
+ 			    (conf->dtim_period % elem_count))
+ 				conf->dtim_period = elem_count;
+ 			*eid++ = conf->dtim_period;
+-			*eid++ = 0xFF; /* DTIM Count */
++			/* The driver is expected to update the DTIM Count
++			 * field for each BSS that corresponds to a
++			 * nontransmitted BSSID. The value is initialized to
++			 * 0 here so that the DTIM count would be somewhat
++			 * functional even if the driver were not to update
++			 * this. */
++			*eid++ = 0; /* DTIM Count */
+ 		} else {
+ 			/* Probe Request frame does not include DTIM Period and
+ 			 * DTIM Count fields. */

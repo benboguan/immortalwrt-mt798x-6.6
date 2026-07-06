@@ -50,11 +50,11 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  #endif /* CONFIG_HE_OVERRIDES */
  
 +#ifdef CONFIG_EHT_OVERRIDES
-+		if (params->disable_eht) {
-+			wpa_printf(MSG_DEBUG, "  * EHT disabled");
-+			if (nla_put_flag(msg, NL80211_ATTR_DISABLE_EHT))
-+				return -1;
-+		}
++	if (params->disable_eht) {
++		wpa_printf(MSG_DEBUG, "  * EHT disabled");
++		if (nla_put_flag(msg, NL80211_ATTR_DISABLE_EHT))
++			return -1;
++	}
 +#endif /* CONFIG_EHT_OVERRIDES */
 +
 +
@@ -187,7 +187,41 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  	"macsec_policy",
 --- a/wpa_supplicant/wpa_supplicant.c
 +++ b/wpa_supplicant/wpa_supplicant.c
-@@ -2895,6 +2895,12 @@ skip_to_6ghz:
+@@ -2670,10 +2670,18 @@ void ibss_mesh_setup_freq(struct wpa_sup
+ 
+ 	/* Allow HE on 2.4 GHz without VHT: see nl80211_put_freq_params() */
+ 	if (is_24ghz) {
++#ifdef CONFIG_EHT_OVERRIDES
++		if (is_24ghz && ssid->disable_eht)
++			freq->eht_enabled = 0;
++		else
++#endif /* CONFIG_EHT_OVERRIDES */
++			freq->eht_enabled = mode->eht_capab[ieee80211_mode].eht_supported;
++
+ #ifdef CONFIG_HE_OVERRIDES
+-		if (ssid->disable_he)
++		if (ssid->disable_he) {
+ 			freq->he_enabled = 0;
+-		else
++			freq->eht_enabled = 0;
++		} else
+ #endif /* CONFIG_HE_OVERRIDES */
+ 			freq->he_enabled = mode->he_capab[ieee80211_mode].he_supported;
+ 	}
+@@ -2780,6 +2788,12 @@ skip_vht80:
+ 		vht_freq.he_enabled = 0;
+ #endif /* CONFIG_HE_OVERRIDES */
+ 
++#ifdef CONFIG_EHT_OVERRIDES
++	if (ssid->disable_eht)
++		vht_freq.eht_enabled = 0;
++#endif /* CONFIG_EHT_OVERRIDES */
++
++
+ #ifdef CONFIG_HT_OVERRIDES
+ skip_ht40:
+ #endif /* CONFIG_HT_OVERRIDES */
+@@ -2895,6 +2909,12 @@ skip_to_6ghz:
  		freq->he_enabled = 0;
  	}
  #endif /* CONFIG_HE_OVERRIDES */
@@ -200,7 +234,7 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  	if (hostapd_set_freq_params(&vht_freq, mode->mode, freq->freq,
  				    freq->channel, ssid->enable_edmg,
  				    ssid->edmg_channel, freq->ht_enabled,
-@@ -4157,6 +4163,10 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
+@@ -4157,6 +4177,10 @@ static void wpas_start_assoc_cb(struct wpa_radio_work *work, int deinit)
  #ifdef CONFIG_HE_OVERRIDES
  	wpa_supplicant_apply_he_overrides(wpa_s, ssid, &params);
  #endif /* CONFIG_HE_OVERRIDES */
@@ -211,7 +245,7 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  
  #ifdef CONFIG_P2P
  	/*
-@@ -5952,6 +5962,17 @@ void wpa_supplicant_apply_he_overrides(
+@@ -5952,6 +5976,17 @@ void wpa_supplicant_apply_he_overrides(
  }
  #endif /* CONFIG_HE_OVERRIDES */
  
@@ -244,35 +278,3 @@ Signed-off-by: Amit Khatri <amit.khatri@mediatek.com>
  
  int wpa_set_wep_keys(struct wpa_supplicant *wpa_s, struct wpa_ssid *ssid);
  int wpa_supplicant_set_wpa_none_key(struct wpa_supplicant *wpa_s,
---- a/wpa_supplicant/ctrl_iface.c
-+++ b/wpa_supplicant/ctrl_iface.c
-@@ -2334,7 +2334,7 @@ static int wpa_supplicant_ctrl_iface_status(struct
- 			pos += ret;
- 		}
- 
--		if (wpa_s->connection_set &&
-+		if (wpa_s->connection_set ||
- 		    (wpa_s->connection_ht || wpa_s->connection_vht ||
- 		     wpa_s->connection_he || wpa_s->connection_eht)) {
- 			ret = os_snprintf(pos, end - pos,
-@@ -2547,6 +2547,20 @@ static int wpa_supplicant_ctrl_iface_status(struct
- 		pos += ret;
- 	}
- 
-+	if (wpa_s->current_ssid->he) {
-+		ret = os_snprintf(pos, end - pos, "ieee80211ax=1\n");
-+		if (os_snprintf_error(end - pos, ret))
-+			return pos - buf;
-+		pos += ret;
-+	}
-+
-+	if (wpa_s->current_ssid->eht) {
-+		ret = os_snprintf(pos, end - pos, "ieee80211be=1\n");
-+		if (os_snprintf_error(end - pos, ret))
-+			return pos - buf;
-+		pos += ret;
-+	}
-+
- #ifdef ANDROID
- 	/*
- 	 * Allow using the STATUS command with default behavior, say for debug,

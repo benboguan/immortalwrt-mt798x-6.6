@@ -1,0 +1,135 @@
+From 78d0b989956aa934603705354ca42008642c79fa Mon Sep 17 00:00:00 2001
+From: Aloka Dixit <quic_alokad@quicinc.com>
+Date: Wed, 30 Nov 2022 19:18:34 -0800
+Subject: [PATCH] mbssid: Retrieve driver capabilities
+
+Retrieve driver capabilities for the maximum number of interfaces for
+MBSSID and the maximum allowed profile periodicity for enhanced MBSSID
+advertisement.
+
+Signed-off-by: Aloka Dixit <quic_alokad@quicinc.com>
+---
+ hostapd/main.c                    |  3 +++
+ src/ap/hostapd.h                  |  5 +++++
+ src/drivers/driver.h              |  5 +++++
+ src/drivers/driver_nl80211.c      |  8 ++++++--
+ src/drivers/driver_nl80211_capa.c | 27 +++++++++++++++++++++++++++
+ 5 files changed, 46 insertions(+), 2 deletions(-)
+
+diff --git a/hostapd/main.c b/hostapd/main.c
+index a6268ad37..ce2df81c4 100644
+--- a/hostapd/main.c
++++ b/hostapd/main.c
+@@ -254,6 +254,9 @@ static int hostapd_driver_init(struct hostapd_iface *iface)
+ 				wpa_printf(MSG_ERROR, "set_wowlan failed");
+ 		}
+ 		os_free(triggs);
++
++		iface->mbssid_max_interfaces = capa.mbssid_max_interfaces;
++		iface->ema_max_periodicity = capa.ema_max_periodicity;
+ 	}
+ 
+ 	return 0;
+diff --git a/src/ap/hostapd.h b/src/ap/hostapd.h
+index 2a2533ff6..e945a211e 100644
+--- a/src/ap/hostapd.h
++++ b/src/ap/hostapd.h
+@@ -694,6 +694,11 @@ struct hostapd_iface {
+ 	/* Previous WMM element information */
+ 	struct hostapd_wmm_ac_params prev_wmm[WMM_AC_NUM];
+ 
++	/* Maximum number of interfaces supported for MBSSID advertisement */
++	unsigned int mbssid_max_interfaces;
++	/* Maximum profile periodicity for enhanced MBSSID advertisement */
++	unsigned int ema_max_periodicity;
++
+ 	int (*enable_iface_cb)(struct hostapd_iface *iface);
+ 	int (*disable_iface_cb)(struct hostapd_iface *iface);
+ 	char **bss_config_fname;
+diff --git a/src/drivers/driver.h b/src/drivers/driver.h
+index 0b019e3af..b7e9774ff 100644
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -2221,6 +2221,11 @@ struct wpa_driver_capa {
+ 
+ 	/* Maximum number of supported CSA counters */
+ 	u16 max_csa_counters;
++
++	/* Maximum number of interfaces supported for MBSSID advertisement */
++	unsigned int mbssid_max_interfaces;
++	/* Maximum profile periodicity for enhanced MBSSID advertisement */
++	unsigned int ema_max_periodicity;
+ };
+ 
+ 
+diff --git a/src/drivers/driver_nl80211.c b/src/drivers/driver_nl80211.c
+index c3e6594f3..cf06179a3 100644
+--- a/src/drivers/driver_nl80211.c
++++ b/src/drivers/driver_nl80211.c
+@@ -10823,7 +10823,9 @@ static int wpa_driver_nl80211_status(void *priv, char *buf, size_t buflen)
+ 				  "capa.max_conc_chan_5_0=%u\n"
+ 				  "capa.max_sched_scan_plans=%u\n"
+ 				  "capa.max_sched_scan_plan_interval=%u\n"
+-				  "capa.max_sched_scan_plan_iterations=%u\n",
++				  "capa.max_sched_scan_plan_iterations=%u\n"
++				  "capa.mbssid_max_interfaces=%u\n"
++				  "capa.ema_max_periodicity=%u\n",
+ 				  drv->capa.key_mgmt,
+ 				  drv->capa.enc,
+ 				  drv->capa.auth,
+@@ -10845,7 +10847,9 @@ static int wpa_driver_nl80211_status(void *priv, char *buf, size_t buflen)
+ 				  drv->capa.max_conc_chan_5_0,
+ 				  drv->capa.max_sched_scan_plans,
+ 				  drv->capa.max_sched_scan_plan_interval,
+-				  drv->capa.max_sched_scan_plan_iterations);
++				  drv->capa.max_sched_scan_plan_iterations,
++				  drv->capa.mbssid_max_interfaces,
++				  drv->capa.ema_max_periodicity);
+ 		if (os_snprintf_error(end - pos, res))
+ 			return pos - buf;
+ 		pos += res;
+diff --git a/src/drivers/driver_nl80211_capa.c b/src/drivers/driver_nl80211_capa.c
+index 512bbb6de..bb2fd4cd0 100644
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -860,6 +860,30 @@ static void wiphy_info_extended_capab(struct wpa_driver_nl80211_data *drv,
+ }
+ 
+ 
++static void wiphy_info_mbssid(struct wpa_driver_capa *cap, struct nlattr *attr)
++{
++	struct nlattr *config[NL80211_MBSSID_CONFIG_ATTR_MAX + 1];
++
++	if (nla_parse_nested(config, NL80211_MBSSID_CONFIG_ATTR_MAX, attr,
++			     NULL))
++		return;
++
++	if (!config[NL80211_MBSSID_CONFIG_ATTR_MAX_INTERFACES])
++		return;
++
++	cap->mbssid_max_interfaces =
++		nla_get_u8(config[NL80211_MBSSID_CONFIG_ATTR_MAX_INTERFACES]);
++
++	if (config[NL80211_MBSSID_CONFIG_ATTR_MAX_EMA_PROFILE_PERIODICITY])
++		cap->ema_max_periodicity =
++			nla_get_u8(config[NL80211_MBSSID_CONFIG_ATTR_MAX_EMA_PROFILE_PERIODICITY]);
++
++	wpa_printf(MSG_DEBUG,
++		   "mbssid: max interfaces %u, max profile periodicity %u",
++		   cap->mbssid_max_interfaces, cap->ema_max_periodicity);
++}
++
++
+ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
+ {
+ 	struct nlattr *tb[NL80211_ATTR_MAX + 1];
+@@ -1104,6 +1128,9 @@ static int wiphy_info_handler(struct nl_msg *msg, void *arg)
+ 	if (tb[NL80211_ATTR_WIPHY_SELF_MANAGED_REG])
+ 		capa->flags |= WPA_DRIVER_FLAGS_SELF_MANAGED_REGULATORY;
+ 
++	if (tb[NL80211_ATTR_MBSSID_CONFIG])
++		wiphy_info_mbssid(capa, tb[NL80211_ATTR_MBSSID_CONFIG]);
++
+ 	return NL_SKIP;
+ }
+ 
