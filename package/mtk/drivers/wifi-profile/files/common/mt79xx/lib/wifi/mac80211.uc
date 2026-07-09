@@ -68,7 +68,7 @@ for (let pIdx = 0; pIdx < length(phy_list); pIdx++)
 
 
 	let band_name = band_map[phy_name];
-	let channel, hwmode, htmode, noscan = 0, rnr = 0, background_radar = 0;
+	let channel, hwmode, htmode, noscan = 0, background_radar = 0;
 	let encryption = "none";
 	let mbssid = 0;
 	let mbo = 0;
@@ -77,7 +77,7 @@ for (let pIdx = 0; pIdx < length(phy_list); pIdx++)
 
 	if (band_name == "6g") {
 		channel = 37; htmode = "EHT320";
-		noscan = 1; rnr = 1;
+		noscan = 1;
 		mbo = 1;
 		hwmode = a;
 		ssid = "ImmortalWrt_6G";
@@ -86,11 +86,11 @@ for (let pIdx = 0; pIdx < length(phy_list); pIdx++)
 	} else if (band_name == "5g") {
 		channel = 36; htmode = "EHT160";
 		hwmode = a;
-		noscan = 1; rnr = 1; background_radar = 1;
+		noscan = 1;
 		ssid = "ImmortalWrt_5G";
 	} else if (band_name == "2g") {
 		channel = 6; htmode = "EHT40";
-		noscan = 1; rnr = 1;
+		noscan = 1;
 		hwmode = g;
 		ssid = "ImmortalWrt_2.4G";
 	} else {
@@ -117,7 +117,6 @@ set wireless.${name}.disabled='0'
 set wireless.${name}.noscan=${noscan}
 `);
 	if (mbssid) print(`set wireless.${name}.mbssid=1\n`);
-	if (rnr) print(`set wireless.${name}.rnr=1\n`);
 	if (background_radar) print(`set wireless.${name}.background_radar=1\n`);
 	print(`set wireless.${name}.tx_burst=2.0\n`);
 

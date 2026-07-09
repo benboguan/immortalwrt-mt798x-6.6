@@ -39,7 +39,7 @@ prepare_key_wep() {
 }
 
 _wdev_prepare_channel() {
-	json_get_vars channel band hwmode
+	json_get_vars channel band hwmode htmode
 
 	auto_channel=0
 	enable_ht=0
@@ -78,6 +78,11 @@ _wdev_prepare_channel() {
 				*b|*g) band=2g;;
 			esac
 		;;
+	esac
+
+	case "$htmode" in
+		HE*|EHT*) wpa3_cipher="GCMP-256 ";;
+		*) wpa3_cipher="";;
 	esac
 }
 
@@ -241,27 +246,29 @@ wireless_vif_parse_encryption_rsno() {
 }
 
 wireless_vif_parse_encryption() {
-	json_get_vars encryption
+	json_get_vars encryption rsn_override
 	set_default encryption none
 
-	local device="$__netifd_device"
-	local htmode=$(uci get wireless.${device}.htmode 2>/dev/null)
-	[ -z "$htmode" ] && htmode=""
-
+	set_default rsn_override 0
 	auth_mode_open=1
 	auth_mode_shared=0
 	auth_type=none
+	wpa_override_cipher=
+	rsn_override_pairwise=
 
 	if [ "$hwmode" = "ad" ]; then
 		wpa_cipher="GCMP"
-	elif [ "$mode" = "ap" ] && [ "$encryption" = "sae-mixed" -o "$encryption" = "sae" -o "$encryption" = "sae_sae-ext" ]; then
-		wpa_cipher="CCMP GCMP-256"
-	elif [ "$_w_mode" = "sta" ] && [ "$encryption" = "sae-mixed" ]; then
-		wpa_cipher="CCMP GCMP-256"
-	elif [ "$encryption" = "sae-ext" ]; then
-		wpa_cipher="GCMP-256"
 	else
 		wpa_cipher="CCMP"
+		case "$encryption" in
+			sae*)
+				if [ "$rsn_override" -gt 0 -o "$_w_mode" = "sta" ]; then
+					wpa_override_cipher="${wpa3_cipher}$wpa_cipher"
+				else
+					wpa_cipher="${wpa3_cipher}$wpa_cipher"
+				fi
+			;;
+		esac
 	fi
 
 	case "$encryption" in
@@ -272,8 +279,7 @@ wireless_vif_parse_encryption() {
 		*gcmp256) wpa_cipher="GCMP-256";;
 		*gcmp) wpa_cipher="GCMP";;
 		wpa3-192*) wpa_cipher="GCMP-256";;
-		sae_sae-ext) wpa_cipher="CCMP GCMP-256";;
-		sae-ext-mixed) wpa_cipher="CCMP GCMP-256";;
+		*) rsn_override_pairwise="$wpa_override_cipher";;
 	esac
 
 	# 802.11n requires CCMP for WPA
@@ -285,7 +291,7 @@ wireless_vif_parse_encryption() {
 	# wpa2/tkip+aes     => WPA2 RADIUS, CCMP+TKIP
 
 	case "$encryption" in
-		wpa2*|wpa3*|*psk2*|psk3*|sae*|owe*|dpp)
+		wpa2*|wpa3*|*psk2*|psk3*|*sae*|owe*|dpp)
 			wpa=2
 		;;
 		wpa*mixed*|*psk*mixed*)
@@ -308,6 +314,9 @@ wireless_vif_parse_encryption() {
 		dpp)
 			auth_type=dpp
 		;;
+		wpa3-192-mixed*)
+			auth_type=eap-eap192
+		;;
 		wpa3-192*)
 			auth_type=eap192
 		;;
@@ -316,6 +325,12 @@ wireless_vif_parse_encryption() {
 		;;
 		wpa3*)
 			auth_type=eap2
+		;;
+		sae-ext-key*)
+			auth_type=sae-ext-key
+		;;
+		sae-ext-mixed*)
+			auth_type=psk-sae-ext
 		;;
 		sae-ext)
 			if [ "$mode" = "ap" ]; then
@@ -329,9 +344,6 @@ wireless_vif_parse_encryption() {
 				*) auth_type=psk-sae;;
 			esac
 		;;
-		sae-ext-mixed*)
-			auth_type=psk-sae-ext
-		;;
 		psk3*|sae*)
 			if [ "$mode" = "ap" ]; then
 				encryption="sae_sae-ext"
@@ -344,6 +356,12 @@ wireless_vif_parse_encryption() {
 		*wpa*|*8021x*)
 			auth_type=eap
 		;;
+		*osen*)
+			auth_type=osen
+		;;
+		*pasn*)
+			auth_type=pasn
+		;;
 		*wep*)
 			auth_type=wep
 			case "$encryption" in
@@ -355,12 +373,6 @@ wireless_vif_parse_encryption() {
 					auth_mode_shared=1
 				;;
 			esac
-		;;
-	esac
-
-	case "$encryption" in
-		*osen*)
-			auth_osen=1
 		;;
 	esac
 }
@@ -439,7 +451,7 @@ for_each_station() {
 }
 
 _wdev_common_device_config() {
-	config_add_string channel hwmode band htmode noscan
+	config_add_string channel hwmode band htmode noscan twt
 }
 
 _wdev_common_iface_config() {
@@ -447,6 +459,7 @@ _wdev_common_iface_config() {
 	config_add_string encryption_rsno encryption_rsno_2
 	config_add_boolean bridge_isolate
 	config_add_array tags
+	config_add_int frag rts
 }
 
 _wdev_common_vlan_config() {
@@ -455,8 +468,7 @@ _wdev_common_vlan_config() {
 }
 
 _wdev_common_station_config() {
-	config_add_string key vid iface
-	config_add_array mac
+	config_add_string mac key vid iface
 }
 
 init_wireless_driver() {

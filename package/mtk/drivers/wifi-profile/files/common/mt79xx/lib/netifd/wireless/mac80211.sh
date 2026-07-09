@@ -6,18 +6,6 @@
 
 init_wireless_driver "$@"
 
-L1_PROFILE="/etc/wireless/l1profile.dat"
-if [ -f "$L1_PROFILE" ]; then
-    DAT_PATH=$(awk -F= '/^INDEX0_init_path=/ {print $2; exit}' "$L1_PROFILE")
-    if [ -z "$DAT_PATH" ] || [ ! -f "$DAT_PATH" ]; then
-        echo "Error: INDEX0_init_path not found or file does not exist in $L1_PROFILE" >&2
-        exit 1
-    fi
-else
-    echo "Error: Required l1_config file not found at $L1_PROFILE" >&2
-    exit 1
-fi
-
 MP_CONFIG_INT="mesh_retry_timeout mesh_confirm_timeout mesh_holding_timeout mesh_max_peer_links
 	       mesh_max_retries mesh_ttl mesh_element_ttl mesh_hwmp_max_preq_retries
 	       mesh_path_refresh_time mesh_min_discovery_timeout mesh_hwmp_active_path_timeout
@@ -42,10 +30,10 @@ drv_mac80211_init_device_config() {
 	config_add_string path phy 'macaddr:macaddr'
 	config_add_string tx_burst twt
 	config_add_string distance
-	config_add_int beacon_int chanbw frag rts
-	config_add_int mbssid rnr obss_interval
+	config_add_int beacon_int chanbw
+	config_add_int obss_interval
 	config_add_int rxantenna txantenna txpower min_tx_power
-	config_add_int num_global_macaddr multiple_bssid
+	config_add_int num_global_macaddr
 	config_add_boolean noscan ht_coex acs_exclude_dfs background_radar
 	config_add_array ht_capab
 	config_add_array channels
@@ -97,7 +85,7 @@ drv_mac80211_init_iface_config() {
 
 	config_add_boolean wds powersave enable
 	config_add_string wds_bridge
-	config_add_int maxassoc
+	config_add_int maxassoc frag rts
 	config_add_int dtim_period
 	config_add_int start_disabled
 
@@ -146,25 +134,27 @@ mac80211_add_he_capabilities() {
 }
 
 get_dat_file() {
-    local band="$1"
-    local dat_file=""
+	local band="$1"
+	local dat_file=""
 
-    case "$band" in
-        2g) dat_file=$(grep "BN0" "$DAT_PATH" | awk -F'=' '{print $2}') ;;
-        5g) dat_file=$(grep "BN1" "$DAT_PATH" | awk -F'=' '{print $2}') ;;
-        6g) dat_file=$(grep "BN2" "$DAT_PATH" | awk -F'=' '{print $2}') ;;
-    esac
+	case "$band" in
+		2g) dat_file=$(grep -m1 "BN0" "$DAT_PATH" | awk -F'=' '{print $2}' | tr -d '\r') ;;
+		5g) dat_file=$(grep -m1 "BN1" "$DAT_PATH" | awk -F'=' '{print $2}' | tr -d '\r') ;;
+		6g) dat_file=$(grep -m1 "BN2" "$DAT_PATH" | awk -F'=' '{print $2}' | tr -d '\r') ;;
+	esac
 
-    echo "$dat_file"
+	echo "${dat_file}"
 }
 
 set_dat_params() {
-    local param="$1" value="$2" dat_file="$3"
+	local param="$1" value="$2" dat_file="$3"
 
-    [ ! -f "$dat_file" ] && return 1
+	[ ! -f "$dat_file" ] && return 1
 
-    sed -i "s/^${param}=.*/${param}=${value}/g" "$dat_file"
-    grep -q "^${param}=${value}" "$dat_file"
+	local esc_val=$(echo "$value" | sed 's/[\/&]/\\&/g')
+	sed -i "s/^${param}=.*/${param}=${esc_val}/" "${dat_file}"
+
+	grep -q "^${param}=${value}$" "${dat_file}"
 }
 
 # 通用 base 函数，同时处理所有频段的参数设置
@@ -279,6 +269,7 @@ get_basic_rate() {
 
 mac80211_hostapd_setup_base() {
 	local phy="$1"
+	local sedString=
 
 	json_select config
 
@@ -288,29 +279,30 @@ mac80211_hostapd_setup_base() {
 	[ -n "$acs_exclude_dfs" ] && [ "$acs_exclude_dfs" -gt 0 ] &&
 		append base_cfg "acs_exclude_dfs=1" "$N"
 
-	json_get_vars noscan ht_coex min_tx_power:0 tx_burst mbssid rnr obss_interval vendor_vht vht_1024
+	json_get_vars noscan ht_coex min_tx_power:0 tx_burst obss_interval vendor_vht vht_1024
 	json_get_values ht_capab_list ht_capab
 	json_get_values channel_list channels
 
-	[ "$auto_channel" = 0 ] && [ -z "$channel_list" ] && \
+	[ "$auto_channel" -gt 0 ] && [ -z "$channel_list" ] && \
 		channel_list="$channel"
 
 	[ "$min_tx_power" -gt 0 ] && append base_cfg "min_tx_power=$min_tx_power" "$N"
 
+	if [ "$band" = "2g" ]; then
+		sedString="iw phy ${phy} info | awk  '/Band 1/{ f = 1; next } /Band /{ f = 0 } f'"
+	elif [ "$band" = "5g" ]; then
+		sedString="iw phy ${phy} info | awk  '/Band 2/{ f = 1; next } /Band /{ f = 0 } f'"
+	elif [ "$band" = "6g" ]; then
+		sedString="iw phy ${phy} info | awk  '/Band 4/{ f = 1; next } /Band /{ f = 0 } f'"
+	fi
+
 	set_default noscan 0
 
-	[ "$noscan" -gt 0 ] && {
-		hostapd_noscan=1
-		disable_40mhz_scan=1
-	}
+	[ "$noscan" -gt 0 ] && hostapd_noscan=1
 	[ "$tx_burst" = 0 ] && tx_burst=
 
 	chan_ofs=0
 	[ "$band" = "6g" ] && chan_ofs=1
-
-	nl_band=1
-	[ "$band" = "5g" ] && nl_band=2
-	[ "$band" = "6g" ] && nl_band=4
 
 	if [ "$band" != "6g" ]; then
 		ieee80211n=1
@@ -380,7 +372,8 @@ mac80211_hostapd_setup_base() {
 				tx_stbc:1 \
 				rx_stbc:3 \
 				max_amsdu:1 \
-				dsss_cck_40:1
+				dsss_cck_40:1 \
+				intolerant_40:1
 
 			[ "$ht_coex" -eq 1 ] && {
 				set_default obss_interval 300
@@ -388,11 +381,12 @@ mac80211_hostapd_setup_base() {
 			}
 
 			ht_cap_mask=0
-			ht_cap_mask=$(iw phy "$phy" info | grep "Band ${nl_band}:" -A 1 | grep 'Capabilities: ' | cut -d: -f2)
+			for cap in $(eval $sedString | grep 'Capabilities:' | cut -d: -f2); do
+				ht_cap_mask="$(($ht_cap_mask | $cap))"
+			done
 
 			cap_rx_stbc=$((($ht_cap_mask >> 8) & 3))
 			[ "$rx_stbc" -lt "$cap_rx_stbc" ] && cap_rx_stbc="$rx_stbc"
-			[ "$cap_rx_stbc" -lt 1 ] && cap_rx_stbc=1
 			ht_cap_mask="$(( ($ht_cap_mask & ~(0x300)) | ($cap_rx_stbc << 8) ))"
 
 			mac80211_add_capabilities ht_capab_flags $ht_cap_mask \
@@ -405,7 +399,8 @@ mac80211_hostapd_setup_base() {
 				RX-STBC12:0x300:0x200:1 \
 				RX-STBC123:0x300:0x300:1 \
 				MAX-AMSDU-7935:0x800::$max_amsdu \
-				DSSS_CCK-40:0x1000::$dsss_cck_40
+				DSSS_CCK-40:0x1000::$dsss_cck_40 \
+				40-INTOLERANT:0x4000::$intolerant_40
 
 			ht_capab="$ht_capab$ht_capab_flags"
 			[ -n "$ht_capab" ] && append base_cfg "ht_capab=$ht_capab" "$N"
@@ -420,7 +415,7 @@ mac80211_hostapd_setup_base() {
 	idx="$channel"
 	case "$htmode" in
 		VHT*) append base_cfg "require_vht=1" "$N" ;;
-		VHT20|HE20|EHT20) enable_ac=1;;
+		VHT20|HE20|EHT20) enable_ac=1; vht_center_seg0=$idx;;
 		VHT40|HE40|EHT40)
 			case "$(( (($channel / 4) + $chan_ofs) % 2 ))" in
 				1) idx=$(($channel + 2));;
@@ -440,7 +435,7 @@ mac80211_hostapd_setup_base() {
 			vht_oper_chwidth=1
 			vht_center_seg0=$idx
 		;;
-		VHT160|HE160|EHT160|EHT320)
+		VHT160|HE160|EHT160)
 			if [ "$band" = "6g" ]; then
 				case "$channel" in
 					1|5|9|13|17|21|25|29) idx=15;;
@@ -544,7 +539,7 @@ mac80211_hostapd_setup_base() {
 		set_default tx_burst 2.0
 		append base_cfg "ieee80211ac=1" "$N"
 		vht_cap=0
-		for cap in $(iw phy "$phy" info | awk -F "[()]" '/VHT Capabilities/ { print $2 }'); do
+		for cap in $(eval $sedString | awk -F "[()]" '/VHT Capabilities/ { print $2 }'); do
 			vht_cap="$(($vht_cap | $cap))"
 		done
 
@@ -667,9 +662,9 @@ mac80211_hostapd_setup_base() {
 			he_bss_color \
 			he_bss_color_enabled:1
 
-		he_phy_cap=$(iw phy "$phy" info | sed -n '/Band '"${nl_band}"'/,$p' | sed -n '/HE Iftypes: .*AP/,$p' | awk -F "[()]" '/HE PHY Capabilities/ { print $2 }' | head -1)
+		he_phy_cap=$(eval $sedString | awk -F "[()]" '/HE PHY Capabilities/ { print $2 }' | head -1)
 		he_phy_cap=${he_phy_cap:2}
-		he_mac_cap=$(iw phy "$phy" info | sed -n '/Band '"${nl_band}"'/,$p' | sed -n '/HE Iftypes: .*AP/,$p' | awk -F "[()]" '/HE MAC Capabilities/ { print $2 }' | head -1)
+		he_mac_cap=$(eval $sedString | awk -F "[()]" '/HE MAC Capabilities/ { print $2 }' | head -1)
 		he_mac_cap=${he_mac_cap:2}
 
 		append base_cfg "ieee80211ax=1" "$N"
@@ -682,13 +677,14 @@ mac80211_hostapd_setup_base() {
 		mac80211_add_he_capabilities \
 			he_su_beamformer:${he_phy_cap:6:2}:0x80:$he_su_beamformer \
 			he_su_beamformee:${he_phy_cap:8:2}:0x1:$he_su_beamformee \
-			he_mu_beamformer:${he_phy_cap:8:2}:0x2:$he_mu_beamformer \
+			he_mu_beamformer:${he_phy_cap:8:2}:0x2:${mu_beamformer:-$he_mu_beamformer} \
 			he_spr_psr_enabled:${he_phy_cap:14:2}:0x1:$he_spr_psr_enabled \
 			he_twt_required:${he_mac_cap:0:2}:0x6:$he_twt_required
 
-		if [ "$twt" -gt 0 ]; then
+		[ "$twt" -gt 0 ] && {
 			append base_cfg "he_twt_responder=1" "$N"
-		fi
+		} || append base_cfg "he_twt_responder=0" "$N"
+
 		if [ "$he_bss_color_enabled" -gt 0 ]; then
 			if !([ -n "$he_bss_color" ] && [ "$he_bss_color" -gt 0 ] && [ "$he_bss_color" -le 64 ]); then
 				rand=$(head -n 1 /dev/urandom | tr -dc 0-9 | head -c 2 | sed 's/^0*//')
@@ -704,7 +700,6 @@ mac80211_hostapd_setup_base() {
 		else
 			append base_cfg "he_bss_color_disabled=1" "$N"
 		fi
-
 
 		append base_cfg "he_default_pe_duration=4" "$N"
 		append base_cfg "he_rts_threshold=1023" "$N"
@@ -738,7 +733,7 @@ mac80211_hostapd_setup_base() {
 		append base_cfg "ieee80211be=1" "$N"
 		append base_cfg "eht_su_beamformer=1" "$N"
 		append base_cfg "eht_su_beamformee=1" "$N"
-		append base_cfg "eht_mu_beamformer=1" "$N"
+		append base_cfg "eht_mu_beamformer=$mu_beamformer" "$N"
 		[ "$hwmode" = "a" ] && {
 			case $htmode in
 				EHT320*)
@@ -761,17 +756,13 @@ mac80211_hostapd_setup_base() {
 ${channel:+channel=$channel}
 ${channel_list:+chanlist=$channel_list}
 ${hostapd_noscan:+noscan=1}
-${disable_40mhz_scan:+disable_40mhz_scan=1}
 ${tx_burst:+tx_queue_data2_burst=$tx_burst}
-${mbssid:+mbssid=$mbssid}
-${rnr:+rnr=$rnr}
-${multiple_bssid:+mbssid=$multiple_bssid}
 #num_global_macaddr=$num_global_macaddr
-#used_radio_mask=$used_radio_mask
 $base_cfg
 
 EOF
 	json_select ..
+	radio_md5sum=$(md5sum $hostapd_conf_file | cut -d" " -f1)
 }
 
 mac80211_hostapd_setup_bss() {
@@ -779,16 +770,17 @@ mac80211_hostapd_setup_bss() {
 	local ifname="$2"
 	local macaddr="$3"
 	local type="$4"
+	local mode="$5"
 
 	hostapd_cfg=
 	append hostapd_cfg "$type=$ifname" "$N"
 
-	[ -z "$macaddr" -o "${macaddr:0:5}" != "00:0c" ] && {
-		macaddr=$(cat /sys/class/ieee80211/${phy}/macaddress)
-	}
+	#[ -z "$macaddr" -o "${macaddr:0:5}" == "00:0c" -o "${macaddr:0:8}" == "02:00:00" -o "${macaddr}" == "00:00:00:00:00:00" ] && {
+	#	macaddr=$(cat /sys/class/net/${ifname}/address)
+	#}
 
 	hostapd_set_bss_options hostapd_cfg "$phy" "$vif" || return 1
-	json_get_vars wds wds_bridge dtim_period start_disabled
+	json_get_vars wds wds_bridge dtim_period:2 start_disabled
 
 	set_default wds 0
 	set_default start_disabled 0
@@ -799,9 +791,19 @@ mac80211_hostapd_setup_bss() {
 	}
 	[ "$staidx" -gt 0 -o "$start_disabled" -eq 1 ] && append hostapd_cfg "start_disabled=1" "$N"
 
-	cat >> /var/run/hostapd-$phy.conf <<EOF
+	local ht_mode eht_twt
+	config_get ht_mode "$phy" htmode
+	config_get eht_twt "$phy" twt 0
+
+	[[ "$ht_mode" == "EHT"* ]] && [ -z "$eht_twt" -o "$eht_twt" -eq 0 ] && {
+		append hostapd_cfg "he_btwt_disabled=1" "$N"
+		append hostapd_cfg "eht_rtwt_disabled=1" "$N"
+	}
+
+	cat >> "$hostapd_conf_file"  <<EOF
 $hostapd_cfg
-bssid=$macaddr
+#bssid=$macaddr
+use_driver_iface_addr=1
 ${default_macaddr:+#default_macaddr}
 ${random_macaddr:+#random_macaddr}
 ${dtim_period:+dtim_period=$dtim_period}
@@ -812,14 +814,14 @@ mac80211_get_addr() {
 	local phy="$1"
 	local idx="$(($2 + 1))"
 
-	head -n $idx /sys/class/ieee80211/${phy}/addresses | tail -n1
+	head -n $idx /sys/class/ieee80211/"${phy}"/addresses | tail -n1
 }
 
 mac80211_generate_mac() {
 	local phy="$1"
 	local id="${macidx:-0}"
 
-	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr dot11vmbssid=${multiple_bssid:-0}
+	wdev_tool "$phy" get_macaddr id=$id num_global=$num_global_macaddr
 }
 
 get_board_phy_name() (
@@ -899,7 +901,7 @@ find_phy() {
 }
 
 mac80211_check_ap() {
-	has_ap=1
+	has_ap=$((has_ap+1))
 }
 
 mac80211_check_sta() {
@@ -1098,7 +1100,7 @@ mac80211_prepare_vif() {
 
 			[ "$retry" -eq 0 ] && [ ! -d $ifname_folder ] && return
 
-			mac80211_hostapd_setup_bss "$phy" "$ifname" "$macaddr" "$type" || return
+			mac80211_hostapd_setup_bss "$phy" "$ifname" "$macaddr" "$type" "$mode" || return
 
 			[ -n "$hostapd_ctrl" ] || {
 				ap_ifname="${ifname}"
@@ -1424,7 +1426,10 @@ mac80211_setup_vif() {
 	json_select config
 	json_get_var ifname _ifname
 	json_get_var macaddr _macaddr
-	json_get_vars mode wds powersave
+	json_get_vars mode wds powersave frag rts
+
+	[ -n "$frag" ] && iw phy "$phy" set frag "${frag%%.*}"
+	[ -n "$rts" ] && iw phy "$phy" set rts "${rts%%.*}"
 
 	set_default powersave 0
 	set_default wds 0
@@ -1619,8 +1624,8 @@ drv_mac80211_setup() {
 		country chanbw distance \
 		txpower \
 		rxantenna txantenna \
-		frag rts beacon_int:100 htmode \
-		num_global_macaddr:1 multiple_bssid
+		beacon_int:100 htmode \
+		num_global_macaddr:1
 	json_get_values basic_rate_list basic_rate
 	json_get_values scan_list scan_list
 	json_select ..
@@ -1706,7 +1711,7 @@ drv_mac80211_setup() {
 	}
 
 	set_default rxantenna 0x03
-	set_default txantenna 0x03
+	set_default txantenna 0x02
 	set_default distance 0
 
 	[ "$txantenna" = "all" ] && txantenna=0xffffffff
@@ -1731,8 +1736,6 @@ drv_mac80211_setup() {
 	iw phy "$phy" set antenna $txantenna $rxantenna >/dev/null 2>&1
 	iw phy "$phy" set distance "$distance" >/dev/null 2>&1
 
-	[ -n "$frag" ] && iw phy "$phy" set frag "${frag%%.*}"
-	[ -n "$rts" ] && iw phy "$phy" set rts "${rts%%.*}"
 
 	has_ap=
 	has_sta=
