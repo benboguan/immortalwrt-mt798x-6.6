@@ -1,0 +1,13 @@
+--- a/wlan_hwifi/Makefile
++++ b/wlan_hwifi/Makefile
+@@ -84,6 +84,10 @@
+ ifeq ($(CONFIG_HWIFI_FW_HDR_SUPPORT), y)
+ 	ccflags-y += -DCONFIG_HWIFI_FW_HDR_SUPPORT
+ endif
++
++ifeq ($(CONFIG_HWIFI_MULTI_FW_HEADER),y)
++	ccflags-y += -DCONFIG_HWIFI_MULTI_FW_HEADER
++endif
+ 
+ obj-$(CONFIG_HWIFI) += mtk_hwifi.o
+ mtk_hwifi-y := main.o bus.o mac_if.o chips.o utility.o

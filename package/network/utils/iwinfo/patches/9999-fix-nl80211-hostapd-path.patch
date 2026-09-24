@@ -1,0 +1,26 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -919,7 +919,7 @@ static int __nl80211_hostapd_query(const char *ifname, ...)
+ 	if (data.radio_idx >= 0)
+ 		snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.%d.conf", phy, data.radio_idx);
+ 	else
+-		snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.conf", phy);
++		snprintf(buf, sizeof(buf), "/var/run/hostapd/hostapd-%s.conf", ifname);
+ 	fp = fopen(buf, "r");
+ 
+ 	if (!fp)
+@@ -3546,12 +3546,13 @@ static int nl80211_get_htmode(const char *ifname, int *buf)
+ 
+ 	if (nl80211_hostapd_query(res ? res : ifname, "ieee80211be", b, sizeof(b)))
+ 		eht = b[0] == '1';
++	else if (nl80211_wpactl_query(res ? res : ifname, "wifi_generation", b, sizeof(b)))
++		eht = b[0] == '7';
+ 
+ 	if (nl80211_hostapd_query(res ? res : ifname, "ieee80211ax", b, sizeof(b)))
+ 		he = b[0] == '1';
+ 	else if (nl80211_wpactl_query(res ? res : ifname, "wifi_generation", b, sizeof(b))) {
+ 		he = b[0] == '6';
+-		eht = b[0] == '7';
+ 	}
+ 
+ 	switch (chn.width) {

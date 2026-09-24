@@ -1,0 +1,428 @@
+--- a/mt_wifi/common/security/pmf/pmf.c
++++ b/mt_wifi/common/security/pmf/pmf.c
+@@ -137,12 +137,15 @@ VOID PMF_MlmeSAQueryReq
+ 						  END_OF_ARGS);
+ 		if (wpa3_test_ctrl != 12) {
+ 			if (pPmfCfg->SAQueryStatus == SAQ_IDLE) {
+-				RTMPSetTimer(&pPmfCfg->SAQueryTimer, DEFAULT_SAQUERY_TIMEOUT);
++				RTMPSetTimer(&pPmfCfg->SAQueryTimer, pPmfCfg->SAQueryTimeout);
+ 				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR, "[PMF] -- SAQueryTimer\n");
+ 			}
+ 
+-			if (pPmfCfg->SAQueryConfirmTimes < DEFAULT_SAQUERY_TIMEOUT / DEFAULT_SAQUERY_CONFIRM_TIMEOUT) {
++			if (pPmfCfg->SAQueryConfirmTimes < pPmfCfg->SAQueryTimeout / pPmfCfg->SAQueryConfirmTimeout) {
+ 				pPmfCfg->SAQueryStatus = SAQ_SENDING;
+-				RTMPSetTimer(&pPmfCfg->SAQueryConfirmTimer, DEFAULT_SAQUERY_CONFIRM_TIMEOUT);
++				RTMPSetTimer(&pPmfCfg->SAQueryConfirmTimer, pPmfCfg->SAQueryConfirmTimeout);
++				MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR, 
++					"[PMF] -- SAQueryConfirmTimer set to %d ms for STA("MACSTR")\n", 
++					pPmfCfg->SAQueryConfirmTimeout, MAC2STR(pEntry->Addr));
+ 			}
+ 		}
+ 		/* transmit the frame */
+@@ -2330,6 +2333,114 @@ INT mtk_cfg80211_set_pmf_sha256(
+ 	return 0;
+ }
+ #endif
++
++INT Set_PMFSAQ_Time_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING *arg)
++{
++	if (strlen(arg) == 0)
++		return FALSE;
++
++#ifdef CONFIG_AP_SUPPORT
++	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
++		POS_COOKIE pObj;
++		UINT32 apidx = 0;
++		UINT32 timer_value;
++
++		pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++		if (pObj->ioctl_if >= pAd->ApCfg.BssidNum) {
++			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++				"pObj->ioctl_if is invalid value\n");
++			return FALSE;
++		}
++
++		apidx = pObj->ioctl_if;
++		timer_value = os_str_tol(arg, 0, 10);
++		pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryTimeout = timer_value;
++
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, "[PMF]: apidx=%d, SAQueryTimer=%d\n"
++				, apidx, pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryTimeout);
++	}
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++	IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
++		POS_COOKIE pObj;
++		UINT32 staidx = 0;
++		UINT32 timer_value;
++
++		pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++		if (pObj->ioctl_if >= pAd->MSTANum) {
++			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++				"pObj->ioctl_if is invalid value\n");
++			return FALSE;
++		}
++
++		staidx = pObj->ioctl_if;
++		timer_value = os_str_tol(arg, 0, 10);
++		pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryTimeout = timer_value;
++
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, "[PMF]: staidx=%d, SAQueryTimer=%d\n"
++				, staidx, pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryTimeout);
++	}
++#endif /* CONFIG_STA_SUPPORT */
++	return TRUE;
++}
++
++INT Set_PMFSAQ_ConfTime_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING *arg)
++{
++	if (strlen(arg) == 0)
++		return FALSE;
++
++#ifdef CONFIG_AP_SUPPORT
++	IF_DEV_CONFIG_OPMODE_ON_AP(pAd) {
++		POS_COOKIE pObj;
++		UINT32 apidx = 0;
++		UINT32 timer_value;
++
++		pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++		if (pObj->ioctl_if >= pAd->ApCfg.BssidNum) {
++			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++				"pObj->ioctl_if is invalid value\n");
++			return FALSE;
++		}
++
++		apidx = pObj->ioctl_if;
++		timer_value = os_str_tol(arg, 0, 10);
++		pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout = timer_value;
++
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, "[PMF]: apidx=%d, SAQueryConfirmTimer=%d\n"
++				, apidx, pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout);
++	}
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++	IF_DEV_CONFIG_OPMODE_ON_STA(pAd) {
++		POS_COOKIE pObj;
++		UINT32 staidx = 0;
++		UINT32 timer_value;
++
++		pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++		if (pObj->ioctl_if >= pAd->MSTANum) {
++			MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++				"pObj->ioctl_if is invalid value\n");
++			return FALSE;
++		}
++
++		staidx = pObj->ioctl_if;
++		timer_value = os_str_tol(arg, 0, 10);
++		pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout = timer_value;
++
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, "[PMF]: staidx=%d, SAQueryConfirmTimer=%d\n"
++				, staidx, pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout);
++	}
++#endif /* CONFIG_STA_SUPPORT */
++	return TRUE;
++}
+ 
+ INT Set_PMFSA_Q_Proc(
+ 	IN PRTMP_ADAPTER pAd,
+@@ -2611,6 +2723,82 @@ INT Set_ApCliPMFSHA256_Proc(
+ 	return TRUE;
+ }
+ 
++INT Set_ApCliPMFSAQ_Time_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING *arg)
++{
++	POS_COOKIE pObj;
++	PMF_CFG *pPmfCfg = NULL;
++	struct wifi_dev *wdev = NULL;
++	UINT32 staidx = 0;
++
++	if (strlen(arg) == 0)
++		return FALSE;
++
++	pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++	if (pObj->ioctl_if >= pAd->MSTANum) {
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++			"pObj->ioctl_if is invalid value\n");
++		return FALSE;
++	}
++
++	staidx = pObj->ioctl_if;
++	pPmfCfg = &pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg;
++	wdev = &pAd->StaCfg[staidx].wdev;
++
++	if (!pPmfCfg || !wdev) {
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++			"[PMF]: pPmfCfg=%p, wdev=%p\n", pPmfCfg, wdev);
++		return FALSE;
++	}
++
++	pPmfCfg->SAQueryTimeout = os_str_tol(arg, 0, 10);
++
++	MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, 
++			"[PMF]: ApCli%d SAQueryTimer=%d\n", 
++			staidx, pPmfCfg->SAQueryTimeout);
++	return TRUE;
++}
++
++INT Set_ApCliPMFSAQ_ConfTime_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING *arg)
++{
++	POS_COOKIE pObj;
++	PMF_CFG *pPmfCfg = NULL;
++	struct wifi_dev *wdev = NULL;
++	UINT32 staidx = 0;
++
++	if (strlen(arg) == 0)
++		return FALSE;
++
++	pObj = (POS_COOKIE) pAd->OS_Cookie;
++
++	if (pObj->ioctl_if >= pAd->MSTANum) {
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++			"pObj->ioctl_if is invalid value\n");
++		return FALSE;
++	}
++
++	staidx = pObj->ioctl_if;
++	pPmfCfg = &pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg;
++	wdev = &pAd->StaCfg[staidx].wdev;
++
++	if (!pPmfCfg || !wdev) {
++		MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_ERROR,
++			"[PMF]: pPmfCfg=%p, wdev=%p\n", pPmfCfg, wdev);
++		return FALSE;
++	}
++
++	pPmfCfg->SAQueryConfirmTimeout = os_str_tol(arg, 0, 10);
++
++	MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_PMF, DBG_LVL_INFO, 
++			"[PMF]: ApCli%d SAQueryConfirmTimer=%d\n", 
++			staidx, pPmfCfg->SAQueryConfirmTimeout);
++	return TRUE;
++}
++
+ INT Set_ApCli_BIP(RTMP_ADAPTER *pAd, INT staidx, RTMP_STRING *arg)
+ {
+ 	struct _SECURITY_CONFIG *pSecConfig = NULL;
+--- a/mt_wifi/ap/ap_cfg.c
++++ b/mt_wifi/ap/ap_cfg.c
+@@ -1504,6 +1504,8 @@
+ 	{"ApCliPMFMFPC",                                         Set_ApCliPMFMFPC_Proc},
+ 	{"ApCliPMFMFPR",                                         Set_ApCliPMFMFPR_Proc},
+ 	{"ApCliPMFSHA256",                                      Set_ApCliPMFSHA256_Proc},
++	{"ApCliPMFSAQ_Time",                                     Set_ApCliPMFSAQ_Time_Proc},
++	{"ApCliPMFSAQ_ConfTime",                                 Set_ApCliPMFSAQ_ConfTime_Proc},
+ #endif /* DOT11W_PMF_SUPPORT */
+ #ifdef ROAMING_ENHANCE_SUPPORT
+ 	{"RoamingEnhance",			Set_RoamingEnhance_Enable_Proc},
+@@ -1877,6 +1879,8 @@
+ 	{"PMFMFPR",                     Set_PMFMFPR_Proc},
+ 	{"PMFSHA256",                   Set_PMFSHA256_Proc},
+ 	{"PMFSA_Q",			Set_PMFSA_Q_Proc},
++	{"PMFSAQ_Time",                 Set_PMFSAQ_Time_Proc},
++	{"PMFSAQ_ConfTime",		Set_PMFSAQ_ConfTime_Proc},
+ #endif /* DOT11W_PMF_SUPPORT */
+ 
+ #ifdef MICROWAVE_OVEN_SUPPORT
+--- a/mt_wifi/include/ap/ap_apcli.h
++++ b/mt_wifi/include/ap/ap_apcli.h
+@@ -298,6 +298,14 @@
+ INT Set_ApCliPMFSHA256_Proc(
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN	RTMP_STRING * arg);
++
++INT Set_ApCliPMFSAQ_Time_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN	RTMP_STRING * arg);
++
++INT Set_ApCliPMFSAQ_ConfTime_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN	RTMP_STRING * arg);
+ #endif /* DOT11W_PMF_SUPPORT */
+ 
+ #ifdef DOT11_SAE_SUPPORT
+--- a/mt_wifi/include/common/security/pmf.h
++++ b/mt_wifi/include/common/security/pmf.h
+@@ -141,6 +141,14 @@
+ 	IN PRTMP_ADAPTER pAd,
+ 	IN RTMP_STRING * arg);
+ 
++INT Set_PMFSAQ_Time_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING * arg);
++
++INT Set_PMFSAQ_ConfTime_Proc(
++	IN PRTMP_ADAPTER pAd,
++	IN RTMP_STRING * arg);
++
+ INT Set_ApCli_BIP(
+ 	RTMP_ADAPTER *pAd,
+ 	INT staidx,
+--- a/mt_wifi/include/common/security/pmf_cmm.h
++++ b/mt_wifi/include/common/security/pmf_cmm.h
+@@ -90,6 +90,9 @@ typedef struct GNU_PACKED _PMF_CFG {
+ 	UCHAR SAQueryConfirmTimes;
+ 	UCHAR SAQueryStatus;
+ 	USHORT TransactionID;
++	/* Add Timeout Support By nanchuci */
++	UINT32 SAQueryTimeout;
++	UINT32 SAQueryConfirmTimeout;
+ } PMF_CFG, *PPMF_CFG;
+ 
+ struct deauth_pmf_arg_t {
+--- a/mt_wifi/profiles/cmm_profile.c
++++ b/mt_wifi/profiles/cmm_profile.c
+@@ -762,6 +762,8 @@ static void rtmp_read_ap_client_from_file
+ 		pAd->StaCfg[i].wdev.SecConfig.PmfCfg.Desired_MFPC = FALSE;
+ 		pAd->StaCfg[i].wdev.SecConfig.PmfCfg.Desired_MFPR = FALSE;
+ 		pAd->StaCfg[i].wdev.SecConfig.PmfCfg.Desired_PMFSHA256 = FALSE;
++		pAd->StaCfg[i].wdev.SecConfig.PmfCfg.SAQueryTimeout = DEFAULT_SAQUERY_TIMEOUT;
++		pAd->StaCfg[i].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout = DEFAULT_SAQUERY_CONFIRM_TIMEOUT;
+ #endif /* DOT11W_PMF_SUPPORT */
+ 
+ 		pAd->StaCfg[i].BssType = BSS_INFRA;
+@@ -762,6 +762,64 @@ static void rtmp_read_ap_client_from_file
+ 		}
+ 	}
+ 
++	/* SA Query Timeout for APCLI */
++	if (RTMPGetKeyParameter("ApCliPMFSAQ_Time", tmpbuf, 32, buffer, TRUE)) {
++		RTMP_STRING *orig_tmpbuf;
++
++		orig_tmpbuf = tmpbuf;
++
++		for (i = 0,
++			 macptr = rstrtok(tmpbuf, ";");
++			 (macptr && i < MAX_APCLI_NUM);
++			 macptr = rstrtok(NULL, ";"),
++			 i++) {
++			POS_COOKIE pObj;
++			INT backup_ioctl_if;
++			INT backup_ioctl_if_type;
++
++			if ((i == 0) && (macptr != orig_tmpbuf))
++				i = 1;
++
++			pObj = (POS_COOKIE) pAd->OS_Cookie;
++			backup_ioctl_if = pObj->ioctl_if;
++			backup_ioctl_if_type = pObj->ioctl_if_type;
++			pObj->ioctl_if = i;
++			pObj->ioctl_if_type = INT_APCLI;
++			Set_ApCliPMFSAQ_Time_Proc(pAd, macptr);
++			pObj->ioctl_if = backup_ioctl_if;
++			pObj->ioctl_if_type = backup_ioctl_if_type;
++		}
++	}
++
++	/* SA Query Confirm Timeout for APCLI */
++	if (RTMPGetKeyParameter("ApCliPMFSAQ_ConfTime", tmpbuf, 32, buffer, TRUE)) {
++		RTMP_STRING *orig_tmpbuf;
++
++		orig_tmpbuf = tmpbuf;
++
++		for (i = 0,
++			 macptr = rstrtok(tmpbuf, ";");
++			 (macptr && i < MAX_APCLI_NUM);
++			 macptr = rstrtok(NULL, ";"),
++			 i++) {
++			POS_COOKIE pObj;
++			INT backup_ioctl_if;
++			INT backup_ioctl_if_type;
++
++			if ((i == 0) && (macptr != orig_tmpbuf))
++				i = 1;
++
++			pObj = (POS_COOKIE) pAd->OS_Cookie;
++			backup_ioctl_if = pObj->ioctl_if;
++			backup_ioctl_if_type = pObj->ioctl_if_type;
++			pObj->ioctl_if = i;
++			pObj->ioctl_if_type = INT_APCLI;
++			Set_ApCliPMFSAQ_ConfTime_Proc(pAd, macptr);
++			pObj->ioctl_if = backup_ioctl_if;
++			pObj->ioctl_if_type = backup_ioctl_if_type;
++		}
++	}
++
+ #endif /* DOT11W_PMF_SUPPORT */
+ 
+ #ifdef DOT11_HE_AX
+--- a/mt_wifi/profiles/sec_profile.c
++++ b/mt_wifi/profiles/sec_profile.c
+@@ -1571,6 +1571,8 @@ void rtmp_read_pmf_parameters_from_file
+ 			pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.Desired_MFPC = FALSE;
+ 			pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.Desired_MFPR = FALSE;
+ 			pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.Desired_PMFSHA256 = FALSE;
++			pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryTimeout = DEFAULT_SAQUERY_TIMEOUT;
++			pAd->ApCfg.MBSSID[apidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout = DEFAULT_SAQUERY_CONFIRM_TIMEOUT;
+ 		}
+ 
+ 		/* Protection Management Frame Capable */
+@@ -1595,6 +1597,22 @@ void rtmp_read_pmf_parameters_from_file
+ 				Set_PMFSHA256_Proc(pAd, macptr);
+ 			}
+ 		}
++
++		/* SA Query Timeout */
++		if (RTMPGetKeyParameter("PMFSAQ_Time", tmpbuf, PER_BSS_SIZE_2(pAd), pBuffer, TRUE)) {
++			for (apidx = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && apidx < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), apidx++) {
++				pObj->ioctl_if = apidx;
++				Set_PMFSAQ_Time_Proc(pAd, macptr);
++			}
++		}
++
++		/* SA Query Confirm Timeout */
++		if (RTMPGetKeyParameter("PMFSAQ_ConfTime", tmpbuf, PER_BSS_SIZE_2(pAd), pBuffer, TRUE)) {
++			for (apidx = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && apidx < pAd->ApCfg.BssidNum); macptr = rstrtok(NULL, ";"), apidx++) {
++				pObj->ioctl_if = apidx;
++				Set_PMFSAQ_ConfTime_Proc(pAd, macptr);
++			}
++		}
+ 	}
+ #endif /* CONFIG_AP_SUPPORT */
+ #ifdef CONFIG_STA_SUPPORT
+@@ -1609,6 +1627,8 @@ void rtmp_read_pmf_parameters_from_file
+ 			pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.Desired_MFPC = FALSE;
+ 			pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.Desired_MFPR = FALSE;
+ 			pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.Desired_PMFSHA256 = FALSE;
++			pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryTimeout = DEFAULT_SAQUERY_TIMEOUT;
++			pAd->StaCfg[staidx].wdev.SecConfig.PmfCfg.SAQueryConfirmTimeout = DEFAULT_SAQUERY_CONFIRM_TIMEOUT;
+ 		}
+ 
+ 		/* Protection Management Frame Capable */
+@@ -1633,6 +1653,22 @@ void rtmp_read_pmf_parameters_from_file
+ 				Set_PMFSHA256_Proc(pAd, macptr);
+ 			}
+ 		}
++
++		/* SA Query Timeout */
++		if (RTMPGetKeyParameter("PMFSAQ_Time", tmpbuf, 32, pBuffer, TRUE)) {
++			for (staidx = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && staidx < MAX_MULTI_STA); macptr = rstrtok(NULL, ";"), staidx++) {
++				pObj->ioctl_if = staidx;
++				Set_PMFSAQ_Time_Proc(pAd, macptr);
++			}
++		}
++
++		/* SA Query Confirm Timeout */
++		if (RTMPGetKeyParameter("PMFSAQ_ConfTime", tmpbuf, 32, pBuffer, TRUE)) {
++			for (staidx = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && staidx < MAX_MULTI_STA); macptr = rstrtok(NULL, ";"), staidx++) {
++				pObj->ioctl_if = staidx;
++				Set_PMFSAQ_ConfTime_Proc(pAd, macptr);
++			}
++		}
+ 	}
+ #endif /* CONFIG_STA_SUPPORT */
+ }

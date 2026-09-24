@@ -1,0 +1,14 @@
+#!/bin/sh
+
+# fix isolate
+sed -i 's/multicast_to_unicast:-1/multicast_to_unicast:-0/g' /lib/netifd/netifd-wireless.sh
+
+#add HNAT display
+sed -i "s#const fd = popen('top.*')#const fd = popen('/sbin/cpuusage')#g" /usr/share/rpcd/ucode/luci
+
+# generate default wireless config
+[ ! -f /etc/config/wireless ] && {
+	/sbin/wifi config
+}
+
+exit 0

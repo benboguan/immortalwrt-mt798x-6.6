@@ -1,0 +1,95 @@
+From 46cedfabcf0716d61b38a20c5bb5d6a76aff232d Mon Sep 17 00:00:00 2001
+From: Michael Pfeifroth <michael.pfeifroth@westermo.com>
+Date: Thu, 25 Jun 2026 10:31:33 +0200
+Subject: [PATCH] nl80211: fix HE/EHT HT mode detection on big-endian platforms
+
+The HE and EHT PHY capability data is copied into a uint16_t array at
+byte offset 1 via memcpy. On little-endian systems, accessing the
+resulting uint16_t values and testing with BIT(9)-BIT(12) works
+correctly by coincidence of memory layout. On big-endian systems
+however, the uint16_t value read by the CPU has the data byte in the
+low 8 bits, making BIT(9) and above always evaluate to zero.
+
+This causes HE40, HE80, HE160, HE80+80 and all EHT HT modes to never
+be detected on big-endian platforms (e.g. PowerPC).
+
+Fix this by applying le16toh() to convert the values before testing
+capability bits. This is a no-op on little-endian and correctly
+byte-swaps on big-endian.
+
+Tested on NXP T1023 (PowerPC e5500, big-endian) with QCN9074:
+- Before: htmodes shows only HE20
+- After:  htmodes correctly shows HE20, HE40, HE80, HE80+80, HE160
+
+Signed-off-by: Michael Pfeifroth <michael.pfeifroth@westermo.com>
+---
+ iwinfo_nl80211.c | 26 +++++++++++++++-----------
+ 1 file changed, 15 insertions(+), 11 deletions(-)
+
+diff --git a/iwinfo_nl80211.c b/iwinfo_nl80211.c
+index 3be2970..7f96da3 100644
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -27,6 +27,7 @@
+ #include <glob.h>
+ #include <fnmatch.h>
+ #include <stdarg.h>
++#include <endian.h>
+ #include <stdlib.h>
+ 
+ #include "iwinfo_nl80211.h"
+@@ -3493,6 +3494,9 @@ struct nl80211_modes
+ 
+ static void nl80211_eval_modelist(struct nl80211_modes *m)
+ {
++	uint16_t he_cap = le16toh(m->he_phy_cap[0]);
++	uint16_t eht_cap = le16toh(m->eht_phy_cap[0]);
++
+ 	/* Treat any nonzero capability as 11n */
+ 	if (m->nl_ht > 0)
+ 	{
+@@ -3503,33 +3507,33 @@ static void nl80211_eval_modelist(struct nl80211_modes *m)
+ 			m->ht |= IWINFO_HTMODE_HT40;
+ 	}
+ 
+-	if (m->he_phy_cap[0] != 0) {
++	if (he_cap) {
+ 		m->hw |= IWINFO_80211_AX;
+ 		m->ht |= IWINFO_HTMODE_HE20;
+ 
+-		if (m->he_phy_cap[0] & BIT(9))
++		if (he_cap & BIT(9))
+ 			m->ht |= IWINFO_HTMODE_HE40;
+-		if (m->he_phy_cap[0] & BIT(10))
++		if (he_cap & BIT(10))
+ 			m->ht |= IWINFO_HTMODE_HE40 | IWINFO_HTMODE_HE80;
+-		if (m->he_phy_cap[0] & BIT(11))
++		if (he_cap & BIT(11))
+ 			m->ht |= IWINFO_HTMODE_HE160;
+-		if (m->he_phy_cap[0] & BIT(12))
++		if (he_cap & BIT(12))
+ 			m->ht |= IWINFO_HTMODE_HE160 | IWINFO_HTMODE_HE80_80;
+ 	}
+ 
+-	if (m->eht_phy_cap[0] != 0) {
++	if (eht_cap) {
+ 		m->hw |= IWINFO_80211_BE;
+ 		m->ht |= IWINFO_HTMODE_EHT20;
+ 
+-		if (m->he_phy_cap[0] & BIT(9))
++		if (he_cap & BIT(9))
+ 			m->ht |= IWINFO_HTMODE_EHT40;
+-		if (m->he_phy_cap[0] & BIT(10))
++		if (he_cap & BIT(10))
+ 			m->ht |= IWINFO_HTMODE_EHT40 | IWINFO_HTMODE_EHT80;
+-		if (m->he_phy_cap[0] & BIT(11))
++		if (he_cap & BIT(11))
+ 			m->ht |= IWINFO_HTMODE_EHT160;
+-		if (m->he_phy_cap[0] & BIT(12))
++		if (he_cap & BIT(12))
+ 			m->ht |= IWINFO_HTMODE_EHT160 | IWINFO_HTMODE_EHT80_80;
+-		if ((m->eht_phy_cap[0] & BIT(9)) && (m->bands & IWINFO_BAND_6))
++		if ((eht_cap & BIT(9)) && (m->bands & IWINFO_BAND_6))
+ 			m->ht |= IWINFO_HTMODE_EHT320;
+ 	}
+ 

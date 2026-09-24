@@ -1,0 +1,23 @@
+Index: mt_wifi7/mt_wifi/mk/config/config.mk
+===================================================================
+--- mt_wifi7/mt_wifi/mk/config/config.mk
++++ mt_wifi7/mt_wifi/mk/config/config.mk
+@@ -80,6 +80,18 @@
+ ifeq ($(CONFIG_RTMP_WLAN_HOOK_SUPPORT),y)
+ WFLAGS += -DRTMP_WLAN_HOOK_SUPPORT
+ endif
++
++ifeq ($(CONFIG_FAST_NAT_SUPPORT),y)
++WFLAGS += -DCONFIG_FAST_NAT_SUPPORT
++endif
++
++ifeq ($(CONFIG_WHNAT_SUPPORT),y)
++WFLAGS += -DWHNAT_SUPPORT
++else
++ifeq ($(CONFIG_WHNAT_SUPPORT),m)
++WFLAGS += -DWHNAT_SUPPORT
++endif
++endif
+ 
+ ifeq ($(CONFIG_HWIFI_SUPPORT),y)
+ WFLAGS += -DHWIFI_SUPPORT

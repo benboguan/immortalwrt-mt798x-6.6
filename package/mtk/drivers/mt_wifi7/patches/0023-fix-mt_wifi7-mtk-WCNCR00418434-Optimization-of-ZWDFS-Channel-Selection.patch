@@ -1,0 +1,14 @@
+Index: mt_wifi7/mt_wifi/common/cmm_rdm_mt.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/cmm_rdm_mt.c
++++ mt_wifi7/mt_wifi/common/cmm_rdm_mt.c
+@@ -1740,7 +1740,8 @@ VOID Adj_ZeroWait_Status_Update(
+ 	if (IS_CH_BETWEEN(*ch, 36, 64)
+ 	&& *new_bw == BW_160) {
+ 		pDfsParam->band_orich = *ch;
+-		*ch = 36;
++		if (IS_CH_BETWEEN(*ch, 52, 64))
++			*ch = 36;
+ 		pDfsParam->BW160ZeroWaitState = DFS_BW160_TX80RX160;
+ 		DfsAdjustOpBwSetting(pAd, wdev, BW_160, BW_80);
+ 		pDfsParam->band_bw = BW_80;

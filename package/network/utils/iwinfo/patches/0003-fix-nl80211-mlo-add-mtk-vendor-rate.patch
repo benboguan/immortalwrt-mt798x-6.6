@@ -1,0 +1,168 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -30,6 +30,7 @@
+ #include <stdlib.h>
+ 
+ #include "iwinfo_nl80211.h"
++#include "mtk_nl80211.h"
+ 
+ #define min(x, y) ((x) < (y)) ? (x) : (y)
+ 
+@@ -2145,6 +2146,146 @@ static int nl80211_get_phyname(const
+ }
+ 
+ 
++/* ---------- MediaTek mtwifi STA info vendor query ---------- */
++struct mtk_sta_reply {
++	struct mtk_station_information *si;
++	int found;
++};
++
++static int nl80211_mtk_sta_info_cb(struct nl_msg *msg, void *arg)
++{
++	struct mtk_sta_reply *rep = arg;
++	struct nlattr **attr = nl80211_parse(msg);
++	struct nlattr *data[MTK_NL80211_VENDOR_ATTR_STA_ATTR_MAX + 1];
++
++	if (!attr[NL80211_ATTR_VENDOR_DATA])
++		return NL_SKIP;
++
++	memset(data, 0, sizeof(data));
++	nla_parse_nested(data, MTK_NL80211_VENDOR_ATTR_STA_ATTR_MAX,
++	                 attr[NL80211_ATTR_VENDOR_DATA], NULL);
++
++	if (data[MTK_NL80211_VENDOR_ATTR_STA_INFO]) {
++		int l = nla_len(data[MTK_NL80211_VENDOR_ATTR_STA_INFO]);
++		if (l >= (int)sizeof(*rep->si)) {
++			memcpy(rep->si,
++			       nla_data(data[MTK_NL80211_VENDOR_ATTR_STA_INFO]),
++			       sizeof(*rep->si));
++			rep->found = 1;
++		}
++	}
++
++	return NL_SKIP;
++}
++
++static int nl80211_get_mtk_sta_info(const char *ifname,
++                                    const unsigned char mac[6],
++                                    struct mtk_station_information *si)
++{
++	struct nl80211_msg_conveyor *cv;
++	struct mtk_sta_reply rep = { .si = si, .found = 0 };
++	struct nlattr *d;
++	int err;
++
++	cv = nl80211_msg(ifname, NL80211_CMD_VENDOR, 0);
++	if (!cv)
++		return -1;
++
++	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_ID, MTK_NL80211_VENDOR_ID);
++	NLA_PUT_U32(cv->msg, NL80211_ATTR_VENDOR_SUBCMD,
++	            MTK_NL80211_VENDOR_SUBCMD_GET_STA);
++
++	d = nla_nest_start(cv->msg, NL80211_ATTR_VENDOR_DATA);
++	if (!d)
++		goto nla_put_failure;
++	NLA_PUT(cv->msg, MTK_NL80211_VENDOR_ATTR_STA_MAC, 6, mac);
++	nla_nest_end(cv->msg, d);
++
++	err = nl80211_send(cv, nl80211_mtk_sta_info_cb, &rep);
++	return (err || !rep.found) ? -1 : 0;
++
++nla_put_failure:
++	nl80211_free(cv);
++	return -1;
++}
++
++static void nl80211_mtk_fill_mlo(const char *ifname,
++                                 struct iwinfo_assoclist_entry *e)
++{
++	struct mtk_station_information si;
++	int i, j, first = -1, best_snr = 0;
++
++	memset(&si, 0, sizeof(si));
++	if (nl80211_get_mtk_sta_info(ifname, e->mac, &si))
++		return;
++
++	/* EHT DCM */
++	e->rx_rate.eht_dcm = si.rx_dcm;
++	e->tx_rate.eht_dcm = si.tx_dcm;
++
++	if (si.mlo_enable) {
++		e->mlo_enable = 1;
++		memcpy(e->mld_mac, si.mld_mac, 6);
++
++		for (j = 0; j < e->mlo_num_links && j < 3; j++) {
++			struct iwinfo_rate_entry *rx = &e->mlo_rx_rate[j];
++			struct iwinfo_rate_entry *tx = &e->mlo_tx_rate[j];
++
++			if (!si.mlo_link[j].valid)
++				continue;
++			if (first < 0)
++				first = j;
++
++			/* MTK is Mbps, iwinfo use kbps */
++			rx->rate = (uint32_t)(si.mlo_link[j].rx_rate * 1000);
++			tx->rate = (uint32_t)(si.mlo_link[j].tx_rate * 1000);
++
++			/* MLO => EHT */
++			rx->is_eht = 1;
++			tx->is_eht = 1;
++
++			rx->eht_dcm = si.rx_dcm;
++			tx->eht_dcm = si.tx_dcm;
++
++			if (!e->noise) {
++				for (i = 0; i < 4; i++) {
++					if (si.snr[i] > best_snr)
++						best_snr = si.snr[i];
++				}
++
++				if (best_snr)
++					e->noise = e->signal - best_snr;
++			}
++
++			if (rx->is_eht && !rx->eht_gi)
++				rx->eht_gi = e->rx_rate.eht_gi;
++			if (tx->is_eht && !tx->eht_gi)
++				tx->eht_gi = e->tx_rate.eht_gi;
++
++			if (e->mlo_num_links == 1) {
++				if (!rx->mhz && !rx->mhz_hi) {
++					rx->mhz      = e->rx_rate.mhz;
++					rx->mhz_hi   = e->rx_rate.mhz_hi;
++					rx->is_40mhz = e->rx_rate.is_40mhz;
++				}
++				if (!tx->mhz && !tx->mhz_hi) {
++					tx->mhz      = e->tx_rate.mhz;
++					tx->mhz_hi   = e->tx_rate.mhz_hi;
++					tx->is_40mhz = e->tx_rate.is_40mhz;
++				}
++				if (!rx->nss) rx->nss = e->rx_rate.nss;
++				if (!tx->nss) tx->nss = e->tx_rate.nss;
++				if (!rx->mcs) rx->mcs = e->rx_rate.mcs;
++				if (!tx->mcs) tx->mcs = e->tx_rate.mcs;
++			}
++
++			e->mlo_num_links++;
++		}
++
++		e->mlo_link_id = (first >= 0) ? (uint8_t)first : 0;
++	}
++}
++
+ static void nl80211_parse_rateinfo(struct nlattr **ri,
+                                    struct iwinfo_rate_entry *re)
+ {
+@@ -2521,6 +2662,10 @@ static int nl80211_get_assoclist(const 
+ 		if (!nl80211_get_noise(ifname, &noise))
+ 			for (i = 0, e = arr.buf; i < arr.count; i++, e++)
+ 				e->noise = noise;
++
++		/* mtwifi：MTK MLO */
++		for (i = 0, e = arr.buf; i < arr.count; i++, e++)
++			nl80211_mtk_fill_mlo(ifname, e);
+ 
+ 		*len = (arr.count * sizeof(struct iwinfo_assoclist_entry));
+ 		return 0;

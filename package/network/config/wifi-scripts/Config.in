@@ -1,6 +1,6 @@
 config WIFI_SCRIPTS_UCODE
 	bool "Use new ucode based scripts"
-	default y
+	default n
 
 config WIFI_SCRIPTS_WPS_BUTTON_DISABLED
 	bool

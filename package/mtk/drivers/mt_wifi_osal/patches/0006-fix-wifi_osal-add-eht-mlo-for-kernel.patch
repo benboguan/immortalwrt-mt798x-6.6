@@ -1,0 +1,30 @@
+--- a/inc/mt_osal_cfg80211.h
++++ b/inc/mt_osal_cfg80211.h
+@@ -441,6 +441,9 @@ struct mt_priv_ops_sta_info
+ 	struct mt_cfg80211_sta_bss_info bss_param;
+ 	signed char noise; /* From the hardware report, the kernel has no relevant fields, and new reservations are added. */
+ 	u32 expected_throughput;
++	bool mlo_params_valid;
++	u8 assoc_link_id;
++	u8 mld_addr[MT_MAC_ADDR_LEN] __aligned(2);
+ };
+ 
+ #define MTK_MAX_KEY_SIZE 50
+--- a/mt_osal_cfg80211.c
++++ b/mt_osal_cfg80211.c
+@@ -1611,6 +1611,15 @@ static int mt_cfg80211_sta_set_sinfo
+ 	/* fill inactive time */
+ 	pSinfo->inactive_time = pStaInfo->InactiveTime;
+ 	pSinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME);
++
++	/* fill mlo_params_valid */
++	pSinfo->mlo_params_valid = pStaInfo->mlo_params_valid;
++
++	/* fill assoc_link_id */
++	pSinfo->assoc_link_id = pStaInfo->assoc_link_id;
++
++	/* fill mld_addr */
++	memcpy(pSinfo->mld_addr, pStaInfo->mld_addr, MT_MAC_ADDR_LEN);
+ 
+ 	/* fill expected_throughput */
+ 	pSinfo->expected_throughput = pStaInfo->expected_throughput;

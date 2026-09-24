@@ -1,0 +1,2420 @@
+#!/bin/sh /etc/rc.common
+
+USE_PROCD=1
+START=95
+STOP=01
+
+CONFIGURATION='AdGuardHome'
+CRON_FILE='/etc/crontabs/root'
+DEFAULT_BINPATH='/etc/config/adGuardConfig/AdGuardHome'
+DEFAULT_CONFIGPATH='/etc/config/adGuardConfig/AdGuardHome.yaml'
+DEFAULT_WORKDIR='/etc/config/adGuardConfig/workspace'
+DEFAULT_REDIRECT='dnsmasq-upstream'
+START_GUARD_FILE='/var/run/AdGstartguard'
+# Prevents two concurrent start_service invocations from both calling
+# procd_open_instance, which would cause procd to SIGTERM the first AGH
+# process it started in favour of the second registration.
+PROCD_OPEN_GUARD_FILE='/var/run/AdGprocdopen'
+REDIRECT_EFFECTIVE_FILE='/var/run/AdGeffective'
+REDIRECT_CONFLICT_FILE='/var/run/AdGredirect_conflict'
+REDIRECT_COMPAT_FILE='/var/run/AdGredirect_compat'
+REDIRECT_COMPAT_UPSTREAM_FILE='/var/run/AdGredirect_compat_upstream'
+UPSTREAM_DNS_BACKUP_FILE='/var/run/AdGupstream_dns_backup'
+OLD_REDIRECT_FILE='/var/run/AdGold_redirect'
+OLD_PORT_FILE='/var/run/AdGold_port'
+PASSWALL_UPSTREAM_BEGIN='# agh-managed-passwall-upstream-begin'
+PASSWALL_UPSTREAM_END='# agh-managed-passwall-upstream-end'
+PASSWALL_UPSTREAM_RELOAD_FILE='/var/run/AdGpasswall_upstream_reload'
+PASSWALL_DNS_BYPASS_COMMENT='AGH_COMPAT_BYPASS'
+GFWSET='gfwlist'
+# Resolvers used when PassWall's DNS front-end is not running. AdGuard Home
+# keeps these in its managed upstream list so DNS interception never points at
+# a dead loopback port after PassWall stops or crashes.
+AGH_FALLBACK_DNS='223.5.5.5 119.29.29.29'
+
+EXTRA_COMMANDS='do_redirect testbackup test_crontab force_reload isrunning'
+EXTRA_HELP='do_redirect 0|1
+testbackup backup|restore
+test_crontab
+force_reload
+isrunning'
+
+get_opt() {
+	config_get "$1" "$CONFIGURATION" "$2" "$3"
+}
+
+resolve_binpath() {
+	local path="$1" parent
+	[ -n "$path" ] || path="$DEFAULT_BINPATH"
+	while [ "${path%/}" != "$path" ]; do
+		path="${path%/}"
+	done
+	[ -n "$path" ] || path="$DEFAULT_BINPATH"
+	parent="${path%/*}"
+	if [ "${path##*/}" = 'AdGuardHome' ] && [ "$parent" != "$path" ] && [ "${parent##*/}" = 'AdGuardHome' ] && [ -e "$parent" ] && [ ! -d "$parent" ]; then
+		path="$parent"
+	fi
+	if [ -d "$path" ]; then
+		printf '%s/AdGuardHome\n' "$path"
+	else
+		printf '%s\n' "$path"
+	fi
+}
+
+normalize_runtime_path() {
+	local path="$1" fallback="$2" binpath="$3" mode="$4" parent
+	[ -n "$path" ] || path="$fallback"
+	while [ "${path%/}" != "$path" ]; do
+		path="${path%/}"
+	done
+	[ -n "$path" ] || path="$fallback"
+	case "$path" in
+		"$binpath"|"$binpath"/*) path="$fallback" ;;
+	esac
+	if [ "$mode" = 'dir' ] && [ -e "$path" ] && [ ! -d "$path" ]; then
+		path="$fallback"
+	fi
+	parent="${path%/*}"
+	if [ "$parent" != "$path" ] && [ -e "$parent" ] && [ ! -d "$parent" ]; then
+		path="$fallback"
+	fi
+	printf '%s\n' "$path"
+}
+
+is_valid_port() {
+	case "$1" in
+		''|*[!0-9]*) return 1 ;;
+	esac
+	[ "$1" -ge 1 ] 2>/dev/null && [ "$1" -le 65535 ] 2>/dev/null
+}
+
+pick_non53_port() {
+	local port
+	for port in "$@"; do
+		is_valid_port "$port" || continue
+		[ "$port" = '53' ] && continue
+		printf '%s\n' "$port"
+		return 0
+	done
+	printf '5553\n'
+}
+
+normalize_redirect_mode() {
+	case "$1" in
+		none|dnsmasq-upstream|redirect|exchange) printf '%s\n' "$1" ;;
+		''|*) printf '%s\n' "$DEFAULT_REDIRECT" ;;
+	esac
+}
+
+_uci_bool_enabled() {
+	case "$1" in
+		1|on|true|yes|enabled) return 0 ;;
+	esac
+	return 1
+}
+
+passwall_cache_get() {
+	local key="$1"
+	[ -n "$key" ] || return 1
+	[ -s /tmp/etc/passwall/var ] || return 1
+	awk -F '=' -v key="$key" '$1 == key { value = $2 } END { gsub(/^"|"$/, "", value); if (value != "") print value }' /tmp/etc/passwall/var
+}
+
+passwall2_cache_get() {
+	local key="$1"
+	[ -n "$key" ] || return 1
+	[ -s /tmp/etc/passwall2/var ] || return 1
+	awk -F '=' -v key="$key" '$1 == key { value = $2 } END { gsub(/^"|"$/, "", value); if (value != "") print value }' /tmp/etc/passwall2/var
+}
+
+first_valid_port() {
+	local port
+	for port in "$@"; do
+		is_valid_port "$port" || continue
+		printf '%s\n' "$port"
+		return 0
+	done
+	return 1
+}
+
+scan_passwall_cache_dns_port() {
+	local file="$1"
+	[ -s "$file" ] || return 1
+	awk -F '=' '
+		{
+			key = tolower($1)
+		}
+		key ~ /dns/ && key ~ /port/ {
+			value = $2
+			gsub(/^"|"$/, "", value)
+			if (value ~ /^[0-9]+$/ && value >= 1 && value <= 65535 && value != 53) {
+				print value
+				exit
+			}
+		}' "$file"
+}
+
+scan_passwall_chain_redirect_port() {
+	local vendor="$1" text port
+	case "$vendor" in
+		passwall2)
+			if command -v nft >/dev/null 2>&1; then
+				text=$(nft list chain inet passwall2 PSW2_DNS 2>/dev/null)
+			fi
+			if [ -z "$text" ] && command -v iptables >/dev/null 2>&1; then
+				text=$(iptables -t nat -S PSW2_DNS 2>/dev/null)
+			fi
+			;;
+		*)
+			if command -v nft >/dev/null 2>&1; then
+				text=$(nft list chain inet passwall PSW_DNS 2>/dev/null)
+			fi
+			if [ -z "$text" ] && command -v iptables >/dev/null 2>&1; then
+				text=$(iptables -t nat -S PSW_DNS 2>/dev/null)
+			fi
+			;;
+	esac
+	port=$(printf '%s\n' "$text" | sed -n \
+		-e 's/.*redirect[[:space:]]\+to[[:space:]]*:\([0-9][0-9]*\).*/\1/p' \
+		-e 's/.*--to-ports[[:space:]]\+\([0-9][0-9]*\).*/\1/p' | head -n 1)
+	is_valid_port "$port" || return 1
+	printf '%s\n' "$port"
+}
+
+passwall_dns_redirect_enabled() {
+	local enabled dns_redirect
+	enabled=$(uci -q get passwall.@global[0].enabled 2>/dev/null)
+	_uci_bool_enabled "$enabled" || return 1
+	dns_redirect=$(uci -q get passwall.@global[0].dns_redirect 2>/dev/null)
+	[ "$dns_redirect" = '0' ] && return 1
+	return 0
+}
+
+passwall2_dns_redirect_enabled() {
+	local enabled dns_redirect
+	enabled=$(uci -q get passwall2.@global[0].enabled 2>/dev/null)
+	_uci_bool_enabled "$enabled" || return 1
+	dns_redirect=$(uci -q get passwall2.@global[0].dns_redirect 2>/dev/null)
+	[ "$dns_redirect" = '0' ] && return 1
+	return 0
+}
+
+resolve_passwall_dns_front_port() {
+	local port
+	port=$(first_valid_port \
+		"$(passwall_cache_get ACL_default_dns_port 2>/dev/null | tail -n 1)" \
+		"$(scan_passwall_cache_dns_port /tmp/etc/passwall/var 2>/dev/null)" \
+		"$(scan_passwall_chain_redirect_port passwall 2>/dev/null)" \
+		"$(uci -q get passwall.@global[0].dns_port 2>/dev/null)" \
+		"$(uci -q get passwall.@global[0].dns_forward_port 2>/dev/null)" \
+		2>/dev/null)
+	is_valid_port "$port" || return 1
+	printf '%s\n' "$port"
+}
+
+resolve_passwall2_dns_front_port() {
+	local port
+	port=$(first_valid_port \
+		"$(passwall2_cache_get ACL_default_dns_port 2>/dev/null | tail -n 1)" \
+		"$(scan_passwall_cache_dns_port /tmp/etc/passwall2/var 2>/dev/null)" \
+		"$(scan_passwall_chain_redirect_port passwall2 2>/dev/null)" \
+		"$(uci -q get passwall2.@global[0].dns_port 2>/dev/null)" \
+		"$(uci -q get passwall2.@global[0].dns_forward_port 2>/dev/null)" \
+		2>/dev/null)
+	is_valid_port "$port" || return 1
+	printf '%s\n' "$port"
+}
+
+passwall_dns_chain_ready() {
+	if command -v nft >/dev/null 2>&1 && nft list chain inet passwall PSW_DNS >/dev/null 2>&1; then
+		return 0
+	fi
+	command -v iptables >/dev/null 2>&1 && iptables -t nat -L PSW_DNS >/dev/null 2>&1
+}
+
+passwall2_dns_chain_ready() {
+	if command -v nft >/dev/null 2>&1 && nft list chain inet passwall2 PSW2_DNS >/dev/null 2>&1; then
+		return 0
+	fi
+	command -v iptables >/dev/null 2>&1 && iptables -t nat -L PSW2_DNS >/dev/null 2>&1
+}
+
+# PassWall serves LAN DNS in one of two layouts:
+#   1. dns_redirect=1: it starts a dedicated dnsmasq instance and caches its port
+#      as ACL_default_dns_port (the chain redirect target).
+#   2. dns_redirect=0: it runs no front-end and instead "stretches" the system
+#      dnsmasq, writing its shunt rules into a file inside the system dnsmasq
+#      conf-dir.  /tmp/etc/passwall/var then has no *_dns_port entry at all
+#      (only GLOBAL_DNSMASQ_CONF/GLOBAL_DNSMASQ_CONF_PATH), which used to make
+#      AdGuard Home treat a running PassWall as absent and replace it with
+#      public resolvers - poisoning every foreign lookup.
+# In layout 2 the resolver to query is the system dnsmasq itself.
+passwall_dnsmasq_shunt_conf() {
+	case "$1" in
+		passwall2) passwall2_cache_get GLOBAL_DNSMASQ_CONF 2>/dev/null | tail -n 1 ;;
+		*) passwall_cache_get GLOBAL_DNSMASQ_CONF 2>/dev/null | tail -n 1 ;;
+	esac
+}
+
+passwall_dnsmasq_shunt_active() {
+	local conf
+	conf=$(passwall_dnsmasq_shunt_conf "$1" 2>/dev/null)
+	case "$conf" in
+		''|/tmp/etc/passwall/*|/tmp/etc/passwall2/*) return 1 ;;
+	esac
+	# PassWall only stretches the system dnsmasq while its own "DNS 重定向" is
+	# off; with the redirect on, the shunt lives in its dedicated instance.
+	case "$1" in
+		passwall2) [ "$(uci -q get passwall2.@global[0].dns_redirect 2>/dev/null)" = '0' ] || return 1 ;;
+		*) [ "$(uci -q get passwall.@global[0].dns_redirect 2>/dev/null)" = '0' ] || return 1 ;;
+	esac
+	# Only meaningful while PassWall's firewall chains are actually loaded.
+	case "$1" in
+		passwall2) passwall2_dns_chain_ready ;;
+		*) passwall_dns_chain_ready ;;
+	esac
+}
+
+# Port of the system dnsmasq carrying PassWall's stretched shunt.  uci already
+# reports the port it was moved to (for example after the exchange mode swapped
+# it), so no guessing is needed.
+passwall_dnsmasq_shunt_port() {
+	local port
+	passwall_dnsmasq_shunt_active "$1" || return 1
+	port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	[ -n "$port" ] || port='53'
+	is_valid_port "$port" || return 1
+	port_is_listening "$port"
+	# rc=1 is a confirmed dead port, rc=2 means the state cannot be verified.
+	[ "$?" = '1' ] && return 1
+	printf '%s\n' "$port"
+	return 0
+}
+
+# Dedicated PassWall DNS front-end port.  It only exists while PassWall's own
+# "DNS redirect" is on: with it off PassWall runs no front-end at all and
+# stretches the system dnsmasq instead, so a port still cached in
+# /tmp/etc/passwall/var or left behind in its nft chain is a leftover and must
+# not be used as AdGuard Home's resolver.
+passwall_dns_front_port() {
+	local port
+	case "$1" in
+		passwall2)
+			passwall2_dns_redirect_enabled || return 1
+			passwall2_dns_chain_ready || return 1
+			port=$(resolve_passwall2_dns_front_port 2>/dev/null)
+			;;
+		*)
+			passwall_dns_redirect_enabled || return 1
+			passwall_dns_chain_ready || return 1
+			port=$(resolve_passwall_dns_front_port 2>/dev/null)
+			;;
+	esac
+	is_valid_port "$port" || return 1
+	port_listening_or_unknown "$port" || return 1
+	printf '%s\n' "$port"
+}
+
+# Resolver AdGuard Home must forward to when PassWall owns DNS.  $1 is AdGuard
+# Home's own interception mode, $2 its listening port (never query ourselves).
+# Interception mode only decides how LAN DNS traffic reaches AdGuard Home, so
+# the dedicated front-end is usable from every mode.  The stretched system
+# dnsmasq is only safe when AdGuard Home is not dnsmasq's upstream, otherwise the
+# query would loop (dnsmasq -> AdGuard Home -> dnsmasq).
+resolve_passwall_dns_upstream() {
+	local redirect agh_port vendor port
+	redirect=$(normalize_redirect_mode "$1")
+	agh_port="$2"
+	[ "$redirect" = 'none' ] && return 1
+	for vendor in passwall passwall2; do
+		port=$(passwall_dns_front_port "$vendor" 2>/dev/null) || continue
+		[ -n "$agh_port" ] && [ "$port" = "$agh_port" ] && continue
+		printf '%s\n' "$port"
+		return 0
+	done
+	case "$redirect" in
+		redirect|exchange) ;;
+		*) return 1 ;;
+	esac
+	for vendor in passwall passwall2; do
+		port=$(passwall_dnsmasq_shunt_port "$vendor" 2>/dev/null) || continue
+		[ -n "$agh_port" ] && [ "$port" = "$agh_port" ] && continue
+		printf '%s\n' "$port"
+		return 0
+	done
+	return 1
+}
+
+# One-line summary of how PassWall's DNS was resolved, so a field report can be
+# matched to a code path at a glance:
+#   front_port=11400     PassWall runs its own DNS front-end (DNS redirect on)
+#   dnsmasq_shunt=53     PassWall stretched the system dnsmasq (redirect off),
+#                        so the system dnsmasq carries its split-domain rules
+#   upstream=none        no PassWall resolver was found; public fallbacks may
+#                        replace it, which poisons every foreign lookup
+# Grep with: logread | grep 'passwall dns'
+log_passwall_dns_state() {
+	local redirect="$1" upstream="$2" sync="$3" vendor enabled dns_redirect chain front shunt
+	for vendor in passwall passwall2; do
+		case "$vendor" in
+			passwall2)
+				enabled=$(uci -q get passwall2.@global[0].enabled 2>/dev/null)
+				[ "$enabled" = '1' ] || continue
+				dns_redirect=$(uci -q get passwall2.@global[0].dns_redirect 2>/dev/null)
+				passwall2_dns_chain_ready && chain='yes' || chain='no'
+				front=$(passwall_dns_front_port passwall2 2>/dev/null)
+				shunt=$(passwall_dnsmasq_shunt_port passwall2 2>/dev/null)
+				;;
+			*)
+				enabled=$(uci -q get passwall.@global[0].enabled 2>/dev/null)
+				dns_redirect=$(uci -q get passwall.@global[0].dns_redirect 2>/dev/null)
+				passwall_dns_chain_ready && chain='yes' || chain='no'
+				front=$(passwall_dns_front_port passwall 2>/dev/null)
+				shunt=$(passwall_dnsmasq_shunt_port passwall 2>/dev/null)
+				;;
+		esac
+		shunt=${shunt:+dnsmasq:$shunt}
+		shunt=${shunt:-none}
+		logger -t AdGuardHome "passwall dns (${vendor}): mode=${redirect} enabled=${enabled:-0} dns_redirect=${dns_redirect:-unset} chain=${chain} front_port=${front:-none} dnsmasq_shunt=${shunt} upstream=${upstream:-none} sync=${sync:-0}"
+	done
+}
+
+resolve_redirect_compat_state() {
+	local redirect="$1" port
+	redirect=$(normalize_redirect_mode "$redirect")
+	[ "$redirect" = 'redirect' ] || return 1
+	# Only treat PassWall as active when its DNS front port is actually
+	# listening. A leftover UCI switch or nft chain after a crash/kill must
+	# not keep AdGuard Home pointing at a dead upstream port.
+	if passwall_dns_redirect_enabled && passwall_dns_chain_ready; then
+		port=$(resolve_passwall_dns_front_port 2>/dev/null)
+		if is_valid_port "$port" && port_listening_or_unknown "$port"; then
+			printf 'passwall-dns-redirect:%s\n' "$port"
+			return 0
+		fi
+	fi
+	if passwall2_dns_redirect_enabled && passwall2_dns_chain_ready; then
+		port=$(resolve_passwall2_dns_front_port 2>/dev/null)
+		if is_valid_port "$port" && port_listening_or_unknown "$port"; then
+			printf 'passwall2-dns-redirect:%s\n' "$port"
+			return 0
+		fi
+	fi
+	return 1
+}
+
+resolve_redirect_compat_reason() {
+	local state
+	state=$(resolve_redirect_compat_state "$1" 2>/dev/null) || return 1
+	printf '%s\n' "${state%%:*}"
+}
+
+resolve_redirect_compat_upstream_port() {
+	local state
+	state=$(resolve_redirect_compat_state "$1" 2>/dev/null) || return 1
+	state="${state#*:}"
+	is_valid_port "$state" || return 1
+	printf '%s\n' "$state"
+}
+
+resolve_redirect_conflict_reason() {
+	# PassWall/PassWall2 DNS redirect is handled as redirect compatibility:
+	# keep AdGuard Home interception active and bypass the PassWall DNS chain.
+	return 1
+}
+
+resolve_effective_redirect_mode() {
+	local redirect="$1"
+	redirect=$(normalize_redirect_mode "$redirect")
+	resolve_redirect_conflict_reason "$redirect" >/dev/null 2>&1 && {
+		printf 'dnsmasq-upstream\n'
+		return 0
+	}
+	printf '%s\n' "$redirect"
+}
+
+update_redirect_runtime_state() {
+	local active="$1" effective="$2" conflict_reason="$3" compat_reason="$4" compat_upstream="$5"
+	[ "$active" = '1' ] && printf 1 > /var/run/AdGredir || printf 0 > /var/run/AdGredir
+	if [ -n "$effective" ]; then
+		printf '%s\n' "$effective" > "$REDIRECT_EFFECTIVE_FILE"
+	else
+		rm -f "$REDIRECT_EFFECTIVE_FILE"
+	fi
+	if [ -n "$conflict_reason" ]; then
+		printf '%s\n' "$conflict_reason" > "$REDIRECT_CONFLICT_FILE"
+	else
+		rm -f "$REDIRECT_CONFLICT_FILE"
+	fi
+	if [ -n "$compat_reason" ]; then
+		printf '%s\n' "$compat_reason" > "$REDIRECT_COMPAT_FILE"
+	else
+		rm -f "$REDIRECT_COMPAT_FILE"
+	fi
+	if [ -n "$compat_upstream" ]; then
+		printf '%s\n' "$compat_upstream" > "$REDIRECT_COMPAT_UPSTREAM_FILE"
+	else
+		rm -f "$REDIRECT_COMPAT_UPSTREAM_FILE"
+	fi
+}
+
+resolve_configpath() {
+	normalize_runtime_path "$1" "$DEFAULT_CONFIGPATH" "$2" file
+}
+
+resolve_workdir() {
+	normalize_runtime_path "$1" "$DEFAULT_WORKDIR" "$2" dir
+}
+
+yaml_get() {
+	local key="$1" file="$2"
+	[ -r "$file" ] || return 1
+	awk -v key="$key" '
+	BEGIN { total = split(key, part, "."); depth = 1; indent = "" }
+	{
+		line = $0
+		if (line ~ /^[[:space:]]*#/ || line ~ /^[[:space:]]*$/) next
+		if (line ~ "^" indent part[depth] ":[[:space:]]*") {
+			if (depth == total) {
+				sub("^[[:space:]]*" part[depth] ":[[:space:]]*", "", line)
+				gsub(/^['\''"]|['\''"]$/, "", line)
+				print line
+				exit
+			}
+			indent = indent "  "
+			depth++
+		}
+	}' "$file"
+}
+
+yaml_set() {
+	local key="$1" value="$2" file="$3"
+	[ -f "$file" ] || return 1
+	awk -v key="$key" -v value="$value" '
+	BEGIN { total = split(key, part, "."); depth = 1; indent = ""; changed = 0 }
+	{
+		line = $0
+		if (line ~ "^" indent part[depth] ":[[:space:]]*") {
+			if (depth == total) {
+				sub(":.*$", ": " value, line)
+				changed = 1
+				print line
+				next
+			}
+			indent = indent "  "
+			depth++
+		}
+		print line
+	}
+	END { if (!changed) exit 2 }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+	rm -f "$file.tmp"
+}
+
+backup_compat_upstream_dns() {
+	rm -f "$UPSTREAM_DNS_BACKUP_FILE"
+	return 0
+}
+
+apply_compat_upstream_dns() {
+	rm -f "$UPSTREAM_DNS_BACKUP_FILE"
+	return 0
+}
+
+restore_compat_upstream_dns() {
+	rm -f "$UPSTREAM_DNS_BACKUP_FILE"
+	return 0
+}
+
+strip_managed_passwall_upstream_dns() {
+	local file="$1" status
+	[ -f "$file" ] || return 0
+	grep -qF "$PASSWALL_UPSTREAM_BEGIN" "$file" || return 0
+	awk -v begin="$PASSWALL_UPSTREAM_BEGIN" -v end="$PASSWALL_UPSTREAM_END" '
+		index($0, begin) { skip = 1; next }
+		skip && index($0, end) { skip = 0; next }
+		!skip { print }
+		END { if (skip) exit 2 }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+	status=$?
+	rm -f "$file.tmp"
+	[ "$status" = 0 ] && return 10
+	return "$status"
+}
+
+# ---------------------------------------------------------------------------
+# Managed upstream bookkeeping.
+#
+# AdGuard Home rewrites its own YAML from its internal configuration, which
+# drops our "# agh-managed-passwall-upstream-begin/end" comment markers while
+# keeping the entries themselves.  Once that happened the entries could never be
+# recognised again, so every PassWall layout switch left the previous resolver
+# behind and AdGuard Home load-balanced between a working and a dead upstream.
+#
+# The values we write are therefore also recorded next to the config file, and
+# entries are recycled by value instead of by marker.
+# ---------------------------------------------------------------------------
+MANAGED_UPSTREAM_FILE=''
+
+managed_upstream_state_file() {
+	local configpath="$1"
+	[ -n "$configpath" ] || return 1
+	printf '%s/.agh-managed-upstreams\n' "${configpath%/*}"
+}
+
+managed_upstream_values() {
+	[ -n "$MANAGED_UPSTREAM_FILE" ] || return 0
+	[ -s "$MANAGED_UPSTREAM_FILE" ] || return 0
+	cat "$MANAGED_UPSTREAM_FILE"
+}
+
+managed_upstream_has_value() {
+	[ -n "$1" ] || return 1
+	[ -n "$MANAGED_UPSTREAM_FILE" ] || return 1
+	grep -qxF -- "$1" "$MANAGED_UPSTREAM_FILE" 2>/dev/null
+}
+
+managed_upstream_remember() {
+	local value
+	[ -n "$1" ] || return 0
+	[ -n "$MANAGED_UPSTREAM_FILE" ] || return 0
+	mkdir -p "${MANAGED_UPSTREAM_FILE%/*}" 2>/dev/null
+	for value in $1; do
+		[ -n "$value" ] || continue
+		managed_upstream_has_value "$value" && continue
+		printf '%s\n' "$value" >> "$MANAGED_UPSTREAM_FILE"
+	done
+}
+
+managed_upstream_forget() {
+	local values="$1"
+	[ -n "$values" ] || return 0
+	[ -s "$MANAGED_UPSTREAM_FILE" ] || return 0
+	awk -v values="$values" '
+		BEGIN { n = split(values, drop, " ") }
+		{ for (i = 1; i <= n; i++) if ($0 == drop[i]) next; print }' \
+		"$MANAGED_UPSTREAM_FILE" > "$MANAGED_UPSTREAM_FILE.tmp" || return 1
+	mv "$MANAGED_UPSTREAM_FILE.tmp" "$MANAGED_UPSTREAM_FILE"
+}
+
+# Loopback endpoints currently listed in AdGuard Home's upstream_dns.
+upstream_dns_loopback_endpoints() {
+	local file="$1"
+	[ -f "$file" ] || return 0
+	awk '
+		function norm(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			gsub(/^["'\''\[]|["'\''\]]$/, "", s)
+			sub(/^(tcp|udp|tls|https):\/\//, "", s)
+			return s
+		}
+		/^[[:space:]]*upstream_dns:[[:space:]]*/ { in_up = 1; next }
+		in_up {
+			if ($0 ~ /^[[:space:]]*($|#)/) next
+			if ($0 ~ /^[[:space:]]*[A-Za-z0-9_][A-Za-z0-9_-]*:/) { in_up = 0; next }
+			if ($0 ~ /^[[:space:]]*-/) {
+				e = norm($0)
+				if (e ~ /^(127\.0\.0\.1|::1|localhost):[0-9]+$/) print e
+			}
+		}' "$file"
+}
+
+# Every endpoint currently listed in AdGuard Home's upstream_dns.
+upstream_dns_endpoints() {
+	local file="$1"
+	[ -f "$file" ] || return 0
+	awk '
+		function norm(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			gsub(/^["'\''\[]|["'\''\]]$/, "", s)
+			sub(/^(tcp|udp|tls|https):\/\//, "", s)
+			return s
+		}
+		/^[[:space:]]*upstream_dns:[[:space:]]*/ { in_up = 1; next }
+		in_up {
+			if ($0 ~ /^[[:space:]]*($|#)/) next
+			if ($0 ~ /^[[:space:]]*[A-Za-z0-9_][A-Za-z0-9_-]*:/) { in_up = 0; next }
+			if ($0 ~ /^[[:space:]]*-/) print norm($0)
+		}' "$file"
+}
+
+# First run after upgrading from a version that only used comment markers (or
+# after a hand-made list): adopt the loopback entries already present, plus the
+# ports PassWall may have written, so that the next layout switch can recycle
+# them.  Only done while the managed upstream feature is enabled, so that a
+# user-managed list is never touched.
+bootstrap_managed_upstreams() {
+	local file="$1" port
+	[ -n "$MANAGED_UPSTREAM_FILE" ] || return 0
+	[ -e "$MANAGED_UPSTREAM_FILE" ] && return 0
+	for port in \
+		"$(resolve_passwall_dns_front_port 2>/dev/null)" \
+		"$(resolve_passwall2_dns_front_port 2>/dev/null)" \
+		"$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)" ; do
+		is_valid_port "$port" || continue
+		managed_upstream_remember "127.0.0.1:$port"
+	done
+	managed_upstream_remember "$(upstream_dns_loopback_endpoints "$file")"
+	: >> "$MANAGED_UPSTREAM_FILE"
+}
+
+# Claim the public resolvers this package injects while PassWall is down (the
+# configured fallback_dns) when they are sitting in the list unclaimed.
+#
+# They are not loopback addresses, so bootstrap_managed_upstreams() cannot see
+# them, and that is how they become permanent orphans: the YAML is a package
+# conffile and survives a firmware upgrade, while the ledger is a runtime file
+# that does not - so after an upgrade the list still holds resolvers this
+# package wrote while nothing claims them any more.  Under AdGuard Home's
+# default load_balance they then keep answering foreign lookups behind
+# PassWall's back.
+#
+# Claiming is gated hard, because getting it wrong would delete a deliberate
+# choice: every entry in the list has to be either such a fallback or a loopback
+# endpoint, and at least one loopback endpoint has to be present (that is what
+# marks the list as this package's PassWall block rather than a hand-made one).
+adopt_stranded_fallback_upstreams() {
+	local file="$1" fallback entry foreign=0 saw_loopback=0
+	get_opt fallback fallback_dns "$AGH_FALLBACK_DNS"
+	[ -n "$fallback" ] || fallback="$AGH_FALLBACK_DNS"
+	[ -n "$fallback" ] || return 0
+	for entry in $(upstream_dns_endpoints "$file"); do
+		case "$entry" in
+			127.0.0.1:*|::1:*|localhost:*) saw_loopback=1; continue ;;
+		esac
+		case " $fallback " in
+			*" $entry "*) continue ;;
+		esac
+		foreign=1
+		break
+	done
+	[ "$foreign" = '0' ] && [ "$saw_loopback" = '1' ] || return 0
+	for entry in $(upstream_dns_endpoints "$file"); do
+		case " $fallback " in
+			*" $entry "*) ;;
+			*) continue ;;
+		esac
+		managed_upstream_has_value "$entry" && continue
+		logger -t AdGuardHome "adopting the stranded fallback resolver ${entry} (written by this package, no longer recorded; a firmware upgrade drops the ledger while the config survives)"
+		managed_upstream_remember "$entry"
+	done
+}
+
+# Remove the given endpoints from AdGuard Home's upstream_dns list.
+# Returns 10 when something was actually removed.
+remove_upstream_endpoints() {
+	local file="$1" endpoints="$2" status
+	[ -f "$file" ] || return 0
+	[ -n "$endpoints" ] || return 0
+	awk -v endpoints="$endpoints" '
+		function indent_len(s, n) {
+			n = match(s, /[^ ]/)
+			return n ? n - 1 : length(s)
+		}
+		function trim_scalar(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			sub(/^[[:space:]]+/, "", s)
+			sub(/[[:space:]]+$/, "", s)
+			gsub(/^["\047]|["\047]$/, "", s)
+			return s
+		}
+		BEGIN { n = split(endpoints, want, " ") }
+		{
+			# Everything outside the upstream_dns list is copied verbatim: this
+			# rewrites the whole YAML, so a missing fallback would truncate the
+			# config (and then dns.port could no longer be read).
+			if (!in_up) {
+				if ($0 ~ /^[[:space:]]*upstream_dns:[[:space:]]*/) {
+					in_up = 1
+					base = indent_len($0)
+				}
+				print
+				next
+			}
+			if ($0 ~ /^[[:space:]]*($|#)/) { print; next }
+			if (indent_len($0) <= base) { in_up = 0; print; next }
+			if ($0 ~ /^[[:space:]]*-/) {
+				value = trim_scalar($0)
+				for (i = 1; i <= n; i++) {
+					if (value == want[i]) {
+						removed = 1
+						next
+					}
+				}
+			}
+			print
+		}
+		END { exit(removed ? 10 : 0) }' "$file" > "$file.tmp"
+	status=$?
+	case "$status" in
+		0|10) mv "$file.tmp" "$file" ;;
+		*) rm -f "$file.tmp"; return "$status" ;;
+	esac
+	[ "$status" = '10' ] && return 10
+	return 0
+}
+
+upstream_dns_has_endpoint() {
+	local file="$1" endpoint="$2"
+	[ -f "$file" ] || return 1
+	[ -n "$endpoint" ] || return 1
+	awk -v endpoint="$endpoint" '
+		function indent_len(s, n) {
+			n = match(s, /[^ ]/)
+			return n ? n - 1 : length(s)
+		}
+		function trim_scalar(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			sub(/^[[:space:]]+/, "", s)
+			sub(/[[:space:]]+$/, "", s)
+			gsub(/^["\047]|["\047]$/, "", s)
+			return s
+		}
+		/^[[:space:]]*upstream_dns:[[:space:]]*/ {
+			in_upstream = 1
+			base_indent = indent_len($0)
+			next
+		}
+		in_upstream {
+			if ($0 ~ /^[[:space:]]*($|#)/) next
+			current_indent = indent_len($0)
+			if (current_indent <= base_indent) {
+				in_upstream = 0
+				next
+			}
+			if ($0 ~ /^[[:space:]]*-/ && trim_scalar($0) == endpoint) found = 1
+		}
+		END { exit(found ? 0 : 1) }' "$file"
+}
+
+upstream_dns_has_all() {
+	local file="$1" e
+	for e in $2; do
+		upstream_dns_has_endpoint "$file" "$e" || return 1
+	done
+	return 0
+}
+
+# Returns 0 when upstream_dns contains a loopback (127.0.0.1/::1) entry whose
+# port is not currently listening and is not dnsmasq (53). Such an entry is
+# almost always a dead PassWall DNS front-end left over after PassWall stops.
+upstream_dns_has_dead_loopback() {
+	local file="$1" found entry port
+	[ -f "$file" ] || return 1
+	found=$(awk '
+		function norm(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			gsub(/^["'\''\[]|["'\''\]]$/, "", s)
+			sub(/^(tcp|udp|tls|https):\/\//, "", s)
+			return s
+		}
+		/^[[:space:]]*upstream_dns:[[:space:]]*/ { in_up = 1; next }
+		in_up {
+			if ($0 ~ /^[[:space:]]*($|#)/) next
+			if ($0 ~ /^[[:space:]]*[A-Za-z0-9_][A-Za-z0-9_-]*:/) { in_up = 0; next }
+			if ($0 ~ /^[[:space:]]*-/) {
+				e = norm($0)
+				if (e ~ /^(127\.0\.0\.1|::1|localhost):[0-9]+$/) print e
+			}
+		}' "$file" | while read -r entry; do
+		port=${entry##*:}
+		is_valid_port "$port" || continue
+		[ "$port" = '53' ] && continue
+		port_is_listening "$port"
+		state=$?
+		# Only a *confirmed* dead port (rc=1) triggers the rescue; rc=2 means
+		# neither ss nor netstat exists so we cannot verify - do not inject
+		# fallbacks based on a guess.
+		[ "$state" = '0' ] && continue
+		[ "$state" = '2' ] && continue
+		printf 'dead\n'
+		break
+	done)
+	[ "$found" = 'dead' ]
+}
+
+managed_passwall_upstream_has_endpoint() {
+	local file="$1" endpoint="$2"
+	[ -f "$file" ] || return 1
+	[ -n "$endpoint" ] || return 1
+	awk -v begin="$PASSWALL_UPSTREAM_BEGIN" -v end="$PASSWALL_UPSTREAM_END" -v endpoint="$endpoint" '
+		function trim_scalar(s) {
+			sub(/^[[:space:]]*-[[:space:]]*/, "", s)
+			sub(/[[:space:]]+#.*$/, "", s)
+			sub(/^[[:space:]]+/, "", s)
+			sub(/[[:space:]]+$/, "", s)
+			gsub(/^["\047]|["\047]$/, "", s)
+			return s
+		}
+		index($0, begin) { in_block = 1; next }
+		in_block && index($0, end) { in_block = 0; next }
+		in_block && $0 ~ /^[[:space:]]*-/ && trim_scalar($0) == endpoint { found = 1 }
+		END { exit(found ? 0 : 1) }' "$file"
+}
+
+add_managed_passwall_upstream_dns() {
+	local file="$1" endpoints="$2" status
+	[ -f "$file" ] || return 0
+	[ -n "$endpoints" ] || return 0
+	# Skip endpoints the user already lists outside the managed block.
+	local filtered='' e
+	for e in $endpoints; do
+		upstream_dns_has_endpoint "$file" "$e" || filtered="$filtered $e"
+	done
+	[ -n "$filtered" ] || return 0
+	awk -v endpoints="$filtered" -v begin="$PASSWALL_UPSTREAM_BEGIN" -v end="$PASSWALL_UPSTREAM_END" '
+		function leading_ws(s) {
+			match(s, /^[ ]*/)
+			return substr(s, RSTART, RLENGTH)
+		}
+		BEGIN { n = split(endpoints, arr, " ") }
+		function print_block(indent) {
+			print indent "  " begin
+			for (i = 1; i <= n; i++) print indent "  - " arr[i]
+			print indent "  " end
+		}
+		!inserted && /^[[:space:]]*upstream_dns:[[:space:]]*\[\][[:space:]]*($|#)/ {
+			indent = leading_ws($0)
+			print indent "upstream_dns:"
+			print_block(indent)
+			inserted = 1
+			next
+		}
+		{
+			print
+			if (!inserted && $0 ~ /^[[:space:]]*upstream_dns:[[:space:]]*($|#)/) {
+				indent = leading_ws($0)
+				print_block(indent)
+				inserted = 1
+			}
+		}
+		END { if (!inserted) exit 2 }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"
+	status=$?
+	rm -f "$file.tmp"
+	[ "$status" = 0 ] && return 10
+	return 0
+}
+
+sync_passwall_upstream_dns() {
+	local configpath="$1" port="$2" enabled redirect fallback endpoint changed status value
+	[ -f "$configpath" ] || return 0
+	changed=0
+	get_opt enabled passwall_upstream_auto '0'
+	get_opt redirect redirect "$DEFAULT_REDIRECT"
+	redirect=$(normalize_redirect_mode "$redirect")
+	get_opt fallback fallback_dns "$AGH_FALLBACK_DNS"
+	[ -n "$fallback" ] || fallback="$AGH_FALLBACK_DNS"
+	MANAGED_UPSTREAM_FILE=$(managed_upstream_state_file "$configpath")
+	# Adopting entries that are already there is part of "we manage this"; with
+	# the flag off we only ever clean up values this package wrote itself.
+	if [ "$enabled" = '1' ]; then
+		bootstrap_managed_upstreams "$configpath"
+		# Runs on every pass, not just on the bootstrap: a ledger lost to a
+		# firmware upgrade was already re-created by the time we get here, so the
+		# bootstrap guard is gone and this is what heals the stranded values.
+		adopt_stranded_fallback_upstreams "$configpath"
+	fi
+
+	# 1) Which endpoint has to be present?  Empty means "none for now".
+	endpoint=''
+	if is_valid_port "$port"; then
+		# PassWall is up.  The managed entry is kept in every interception mode:
+		# the mode decides how LAN DNS traffic reaches AdGuard Home, not which
+		# resolver AdGuard Home must query for PassWall's split-domain routing
+		# (分流).  Without it AdGuard Home falls back to plain public DNS, which
+		# poisons A/AAAA answers for foreign domains.
+		if [ "$enabled" = '1' ] && [ "$redirect" != 'none' ]; then
+			endpoint="127.0.0.1:${port}"
+		fi
+	elif [ "$enabled" = '1' ] && [ "$redirect" = 'redirect' ]; then
+		# PassWall is down.  Managed mode: keep working public resolvers so DNS
+		# interception survives without PassWall.
+		endpoint="$fallback"
+	elif upstream_dns_has_dead_loopback "$configpath"; then
+		# Unmanaged (auto=0 / non-redirect) mode: rescue only when the user's own
+		# upstream list still points at a dead loopback port (a PassWall DNS
+		# front-end left behind), so manual configs survive PassWall stops too.
+		endpoint="$fallback"
+	fi
+
+	# 2) Recycle what we wrote before, including the resolver of the *other*
+	# PassWall layout - that is what makes switching layouts safe.  AdGuard
+	# Home's YAML no longer carries our comment markers after it rewrites the
+	# file itself, so the entries are matched by value.
+	# Recycling is part of the managed feature: with the flag off, leave whatever
+	# is in the list alone (the user owns it then) and only drop our own block.
+	# Handled one value at a time, and a value is only forgotten once it is
+	# really gone from the file: forgetting one whose removal did not match would
+	# strand it in the list forever, with nothing left knowing this package put
+	# it there (which is exactly how a fallback block survives a firmware
+	# upgrade that dropped the ledger and then bypasses the PassWall front-end
+	# for good).
+	if [ "$enabled" = '1' ]; then
+		for value in $(managed_upstream_values); do
+			case " $endpoint " in
+				*" $value "*) continue ;;
+			esac
+			remove_upstream_endpoints "$configpath" "$value"
+			[ "$?" = '10' ] && changed=1
+			upstream_dns_has_endpoint "$configpath" "$value" && continue
+			managed_upstream_forget "$value"
+		done
+	fi
+	# Old-style marked block.  Leave it untouched when it already holds exactly
+	# the endpoint we want: stripping and re-adding it would report a change on
+	# every pass, and a reported change schedules an AdGuard Home reload, so the
+	# service would restart for nothing (the "core frequently closing" symptom).
+	# Remove it only when it holds something else, or when no endpoint is wanted.
+	if [ -n "$endpoint" ] && managed_passwall_upstream_has_endpoint "$configpath" "$endpoint"; then
+		:
+	else
+		strip_managed_passwall_upstream_dns "$configpath"
+		status=$?
+		[ "$status" = '10' ] && changed=1
+	fi
+
+	# 3) Install the endpoint that has to be there, or adopt it when it is
+	# already listed (so that a later layout switch can recycle it).
+	if [ -n "$endpoint" ]; then
+		if upstream_dns_has_all "$configpath" "$endpoint"; then
+			for value in $endpoint; do
+				managed_upstream_has_value "$value" && continue
+				logger -t AdGuardHome "upstream ${value} is already in AdGuard Home's list; managing it from now on"
+			done
+		else
+			add_managed_passwall_upstream_dns "$configpath" "$endpoint"
+			status=$?
+			[ "$status" = '10' ] && changed=1
+		fi
+		managed_upstream_remember "$endpoint"
+	fi
+
+	[ "$changed" = '1' ] && return 10
+	return 0
+}
+
+schedule_passwall_upstream_reload() {
+	[ -e "$PASSWALL_UPSTREAM_RELOAD_FILE" ] && return 0
+	: > "$PASSWALL_UPSTREAM_RELOAD_FILE"
+	(
+		sleep 2
+		rm -f "$PASSWALL_UPSTREAM_RELOAD_FILE"
+		# AGH does not watch its config file (SIGHUP only refreshes ARP/TLS),
+		# so a managed upstream change only takes effect on restart. Use
+		# reload (stop+start) here; the reload guard file prevents loops.
+		AGH_SKIP_UPSTREAM_RELOAD=1 /etc/init.d/AdGuardHome reload >/dev/null 2>&1
+	) &
+}
+
+_nft_chain_exists() {
+	local family="$1" table="$2" chain="$3"
+	nft list chain "$family" "$table" "$chain" >/dev/null 2>&1
+}
+
+_nft_delete_rules_by_comment() {
+	local family="$1" table="$2" chain="$3" comment="$4" handle
+	nft --handle list chain "$family" "$table" "$chain" 2>/dev/null | \
+		grep -F "comment \"$comment\"" | \
+		sed 's/.*handle //' | \
+		while read -r handle; do
+			[ -n "$handle" ] && nft delete rule "$family" "$table" "$chain" handle "$handle" >/dev/null 2>&1 || true
+		done
+}
+
+add_nft_dns_bypass() {
+	local family="$1" table="$2" chain="$3" devices device added
+	_nft_chain_exists "$family" "$table" "$chain" || return 1
+	_nft_delete_rules_by_comment "$family" "$table" "$chain" "$PASSWALL_DNS_BYPASS_COMMENT"
+	devices=$(get_redirect_lan_devices 2>/dev/null) || return 1
+	added=0
+	for device in $devices; do
+		nft insert rule "$family" "$table" "$chain" iifname "$device" meta l4proto udp udp dport 53 counter return comment "$PASSWALL_DNS_BYPASS_COMMENT" >/dev/null 2>&1 || continue
+		nft insert rule "$family" "$table" "$chain" iifname "$device" meta l4proto tcp tcp dport 53 counter return comment "$PASSWALL_DNS_BYPASS_COMMENT" >/dev/null 2>&1 || continue
+		added=1
+	done
+	[ "$added" = '1' ]
+}
+
+clear_nft_dns_bypass() {
+	local family="$1" table="$2" chain="$3"
+	_nft_chain_exists "$family" "$table" "$chain" || return 0
+	_nft_delete_rules_by_comment "$family" "$table" "$chain" "$PASSWALL_DNS_BYPASS_COMMENT"
+}
+
+add_iptables_dns_bypass() {
+	local chain="$1" devices device added
+	devices=$(get_redirect_lan_devices 2>/dev/null) || return 1
+	added=0
+	if _has_cmd iptables; then
+		for device in $devices; do
+			iptables -t nat -C "$chain" -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || \
+				iptables -t nat -I "$chain" 1 -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+			iptables -t nat -C "$chain" -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || \
+				iptables -t nat -I "$chain" 1 -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+			added=1
+		done
+	fi
+	if _has_cmd ip6tables; then
+		for device in $devices; do
+			ip6tables -t nat -C "$chain" -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || \
+				ip6tables -t nat -I "$chain" 1 -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+			ip6tables -t nat -C "$chain" -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || \
+				ip6tables -t nat -I "$chain" 1 -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+			added=1
+		done
+	fi
+	[ "$added" = '1' ]
+}
+
+clear_iptables_dns_bypass() {
+	local chain="$1" line
+	if _has_cmd iptables; then
+		while :; do
+			line=$(iptables -t nat -L "$chain" --line-numbers 2>/dev/null | awk -v c="$PASSWALL_DNS_BYPASS_COMMENT" '$0 ~ c { print $1; exit }')
+			[ -n "$line" ] || break
+			iptables -t nat -D "$chain" "$line" >/dev/null 2>&1 || break
+		done
+	fi
+	if _has_cmd ip6tables; then
+		while :; do
+			line=$(ip6tables -t nat -L "$chain" --line-numbers 2>/dev/null | awk -v c="$PASSWALL_DNS_BYPASS_COMMENT" '$0 ~ c { print $1; exit }')
+			[ -n "$line" ] || break
+			ip6tables -t nat -D "$chain" "$line" >/dev/null 2>&1 || break
+		done
+	fi
+}
+
+passwall_dns_bypass_is_active() {
+	local reason="$1" devices device rules found
+	devices=$(get_redirect_lan_devices 2>/dev/null) || return 1
+	case "$reason" in
+		passwall-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall PSW_DNS; then
+				rules=$(nft list chain inet passwall PSW_DNS 2>/dev/null)
+				for device in $devices; do
+					printf '%s\n' "$rules" | grep -F "$PASSWALL_DNS_BYPASS_COMMENT" | grep -F "iifname \"$device\"" | grep -Fq 'udp dport 53' || continue
+					printf '%s\n' "$rules" | grep -F "$PASSWALL_DNS_BYPASS_COMMENT" | grep -F "iifname \"$device\"" | grep -Fq 'tcp dport 53' || continue
+					return 0
+				done
+				return 1
+			else
+				found=0
+				for device in $devices; do
+					iptables -t nat -C PSW_DNS -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+					iptables -t nat -C PSW_DNS -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+					found=1
+				done
+				[ "$found" = '1' ]
+			fi
+			;;
+		passwall2-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall2 PSW2_DNS; then
+				rules=$(nft list chain inet passwall2 PSW2_DNS 2>/dev/null)
+				for device in $devices; do
+					printf '%s\n' "$rules" | grep -F "$PASSWALL_DNS_BYPASS_COMMENT" | grep -F "iifname \"$device\"" | grep -Fq 'udp dport 53' || continue
+					printf '%s\n' "$rules" | grep -F "$PASSWALL_DNS_BYPASS_COMMENT" | grep -F "iifname \"$device\"" | grep -Fq 'tcp dport 53' || continue
+					return 0
+				done
+				return 1
+			else
+				found=0
+				for device in $devices; do
+					iptables -t nat -C PSW2_DNS -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p udp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+					iptables -t nat -C PSW2_DNS -i "$device" -m comment --comment "$PASSWALL_DNS_BYPASS_COMMENT" -p tcp --dport 53 -j RETURN >/dev/null 2>&1 || continue
+					found=1
+				done
+				[ "$found" = '1' ]
+			fi
+			;;
+		*) return 1 ;;
+	esac
+}
+
+apply_passwall_dns_bypass() {
+	local reason="$1"
+	case "$reason" in
+		passwall-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall PSW_DNS; then
+				add_nft_dns_bypass inet passwall PSW_DNS
+			else
+				add_iptables_dns_bypass PSW_DNS
+			fi
+			;;
+		passwall2-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall2 PSW2_DNS; then
+				add_nft_dns_bypass inet passwall2 PSW2_DNS
+			else
+				add_iptables_dns_bypass PSW2_DNS
+			fi
+			;;
+		*) return 1 ;;
+	esac
+}
+
+clear_passwall_dns_bypass() {
+	local reason="$1"
+	case "$reason" in
+		passwall-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall PSW_DNS; then
+				clear_nft_dns_bypass inet passwall PSW_DNS
+			fi
+			clear_iptables_dns_bypass PSW_DNS
+			;;
+		passwall2-dns-redirect)
+			if _has_cmd nft && _nft_chain_exists inet passwall2 PSW2_DNS; then
+				clear_nft_dns_bypass inet passwall2 PSW2_DNS
+			fi
+			clear_iptables_dns_bypass PSW2_DNS
+			;;
+		*)
+			clear_passwall_dns_bypass passwall-dns-redirect
+			clear_passwall_dns_bypass passwall2-dns-redirect
+			;;
+	esac
+}
+
+# Returns 0 when the AGH_COMPAT_BYPASS RETURN rules should be removed for the
+# given reason: only when the PassWall DNS chain no longer exists.  A
+# still-present chain means PassWall was killed/crashed and its leftover
+# redirect to the dead port would hijack LAN DNS the moment our RETURN rules
+# are gone, so they must stay; PassWall's next start recreates the chain and
+# wipes them anyway.
+passwall_bypass_should_clear() {
+	case "$1" in
+		passwall-dns-redirect) passwall_dns_chain_ready || return 0 ;;
+		passwall2-dns-redirect) passwall2_dns_chain_ready || return 0 ;;
+		*) return 0 ;;
+	esac
+	return 1
+}
+
+set_forward_dnsmasq() {
+	local port="$1" addr old_server server found first changed current_resolv current_noresolv current_strict
+	[ -n "$port" ] || return 0
+	addr="127.0.0.1#$port"
+	changed=0
+	# Check current server list order — our entry must be FIRST.
+	old_server=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null)
+	found=0
+	first=''
+	for server in $old_server; do
+		[ "$server" = "$addr" ] && found=1
+		[ -n "$first" ] || first="$server"
+	done
+	# Rebuild list: our entry first, then all others (dedup our own).
+	if [ "$found" = 0 ] || [ "$first" != "$addr" ]; then
+		uci -q delete dhcp.@dnsmasq[0].server
+		uci -q add_list dhcp.@dnsmasq[0].server="$addr"
+		for server in $old_server; do
+			[ "$server" = "$addr" ] || uci -q add_list dhcp.@dnsmasq[0].server="$server"
+		done
+		changed=1
+	fi
+	current_resolv=$(uci -q get dhcp.@dnsmasq[0].resolvfile 2>/dev/null)
+	if [ -n "$current_resolv" ]; then
+		uci -q delete dhcp.@dnsmasq[0].resolvfile
+		changed=1
+	fi
+	current_noresolv=$(uci -q get dhcp.@dnsmasq[0].noresolv 2>/dev/null)
+	if [ "$current_noresolv" != '1' ]; then
+		uci -q set dhcp.@dnsmasq[0].noresolv='1'
+		changed=1
+	fi
+	current_strict=$(uci -q get dhcp.@dnsmasq[0].strictorder 2>/dev/null)
+	if [ "$current_strict" != '1' ]; then
+		uci -q set dhcp.@dnsmasq[0].strictorder='1'
+		changed=1
+	fi
+	[ "$changed" = '1' ] || return 0
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+# AdGuard Home's own DNS port, read from its YAML.
+# The runtime state files (AdGold_port / AdGold_redirect) live on tmpfs and are
+# cleared by a reboot, while the dnsmasq entries AdGuard Home installed survive
+# in flash.  The YAML is therefore the only durable record of the port that has
+# to be cleaned up.
+resolve_agh_dns_port() {
+	local configpath binpath agh_port
+	get_opt configpath configpath "$DEFAULT_CONFIGPATH"
+	if [ ! -r "$configpath" ]; then
+		get_opt binpath binpath "$DEFAULT_BINPATH"
+		configpath=$(resolve_configpath "$configpath" "$(resolve_binpath "$binpath")")
+	fi
+	[ -r "$configpath" ] || return 1
+	agh_port=$(yaml_get 'dns.port' "$configpath" 2>/dev/null)
+	is_valid_port "$agh_port" || return 1
+	printf '%s\n' "$agh_port"
+}
+
+stop_forward_dnsmasq() {
+	local port="$1" addr servers resolvfile removed changed
+	changed=0
+	removed=0
+	# No recorded port means the tmpfs state was cleared (reboot) or AdGuard
+	# Home never got far enough to write it.  Fall back to the YAML port:
+	# otherwise a stopped AdGuard Home keeps dnsmasq pointed at a dead loopback
+	# port forever, and because set_forward_dnsmasq also sets noresolv=1 that
+	# takes the whole router's DNS down with it.
+	if [ -z "$port" ]; then
+		port=$(resolve_agh_dns_port 2>/dev/null)
+	fi
+	if [ -n "$port" ] && is_valid_port "$port"; then
+		addr="127.0.0.1#$port"
+		if dnsmasq_forward_is_active "$port"; then
+			uci -q del_list dhcp.@dnsmasq[0].server="$addr"
+			removed=1
+			changed=1
+		fi
+	fi
+	servers=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null)
+	if [ "$removed" = '1' ] && [ -z "$servers" ]; then
+		# We were the only upstream, so undo the rest of what
+		# set_forward_dnsmasq changed.
+		resolvfile='/tmp/resolv.conf.auto'
+		[ -e /tmp/resolv.conf.d/resolv.conf.auto ] && resolvfile='/tmp/resolv.conf.d/resolv.conf.auto'
+		uci -q set dhcp.@dnsmasq[0].resolvfile="$resolvfile"
+		uci -q delete dhcp.@dnsmasq[0].noresolv
+		# Also remove strictorder that set_forward_dnsmasq unconditionally
+		# enables; leaving it set after AGH stops changes dnsmasq query
+		# behaviour and may block fallback DNS from working correctly.
+		uci -q delete dhcp.@dnsmasq[0].strictorder
+	fi
+	# Only touch dnsmasq when something actually changed, so that a no-op call
+	# does not restart the resolver (and flap DNS) for nothing.
+	[ "$changed" = '1' ] || return 0
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+dnsmasq_forward_is_active() {
+	local port="$1" addr server
+	[ -n "$port" ] || return 1
+	addr="127.0.0.1#$port"
+	for server in $(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null); do
+		[ "$server" = "$addr" ] && return 0
+	done
+	return 1
+}
+
+_port_listen_regex() {
+	local port="$1"
+	is_valid_port "$port" || return 1
+	printf '[:.]%s([[:space:]]|$)\n' "$port"
+}
+
+port_is_listening() {
+	local port="$1" pattern checked
+	pattern=$(_port_listen_regex "$port") || return 1
+	checked=0
+	if _has_cmd ss; then
+		checked=1
+		ss -lntu 2>/dev/null | grep -Eq "$pattern" && return 0
+	fi
+	if _has_cmd netstat; then
+		checked=1
+		netstat -lntu 2>/dev/null | grep -Eq "$pattern" && return 0
+	fi
+	[ "$checked" = '1' ] || return 2
+	return 1
+}
+
+# Returns 0 when the port is confirmed listening, or when neither ss nor
+# netstat exists so the listening state cannot be verified (trust the other
+# state signals in that case).
+port_listening_or_unknown() {
+	local state
+	port_is_listening "$1"
+	state="$?"
+	[ "$state" = '0' ] || [ "$state" = '2' ]
+}
+
+wait_for_port_listening() {
+	local port="$1" timeout="${2:-10}" waited=0 state
+	is_valid_port "$port" || return 1
+	while [ "$waited" -lt "$timeout" ]; do
+		port_is_listening "$port"
+		state="$?"
+		[ "$state" = '0' ] && return 0
+		[ "$state" = '2' ] && return 0
+		sleep 1
+		waited=$((waited + 1))
+	done
+	return 1
+}
+
+network_route_ready() {
+	if command -v ip >/dev/null 2>&1 && ip route show default 2>/dev/null | grep -q .; then
+		return 0
+	fi
+	[ -r /proc/net/route ] && awk '$2 == "00000000" { found = 1 } END { exit(found ? 0 : 1) }' /proc/net/route
+}
+
+network_ping_ready() {
+	local target
+	for target in 223.5.5.5 119.29.29.29 1.1.1.1 8.8.8.8 202.108.22.5; do
+		ping -c 1 -W 1 -q "$target" >/dev/null 2>&1 && return 0
+	done
+	return 1
+}
+
+network_http_ready() {
+	local url
+	if command -v wget >/dev/null 2>&1; then
+		for url in \
+			http://connectivitycheck.gstatic.com/generate_204 \
+			http://www.gstatic.com/generate_204 \
+			http://detectportal.firefox.com/canonical.html
+		do
+			wget -q -T 2 -O /dev/null "$url" >/dev/null 2>&1 && return 0
+		done
+	fi
+	if command -v curl >/dev/null 2>&1; then
+		for url in \
+			http://connectivitycheck.gstatic.com/generate_204 \
+			http://www.gstatic.com/generate_204 \
+			http://detectportal.firefox.com/canonical.html
+		do
+			curl -fsS --connect-timeout 2 --max-time 3 -o /dev/null "$url" >/dev/null 2>&1 && return 0
+		done
+	fi
+	return 1
+}
+
+network_dns_ready() {
+	local server
+	command -v nslookup >/dev/null 2>&1 || return 1
+	command -v timeout >/dev/null 2>&1 || return 1
+	for server in 223.5.5.5 119.29.29.29 1.1.1.1 8.8.8.8; do
+		timeout 3 nslookup openwrt.org "$server" 2>/dev/null | grep -q '^Name:' && return 0
+	done
+	return 1
+}
+
+network_reachable() {
+	network_route_ready || return 1
+	network_ping_ready || network_http_ready || network_dns_ready
+}
+
+start_waitnet_guard() {
+	pgrep -f '/usr/share/AdGuardHome/waitnet.sh' >/dev/null 2>&1 && return 0
+	procd_open_instance waitnet
+	procd_set_param command /usr/share/AdGuardHome/waitnet.sh
+	procd_close_instance
+}
+
+append_unique_token() {
+	local var_name="$1" token="$2" current
+	[ -n "$token" ] || return 0
+	eval "current=\${$var_name}"
+	case " $current " in
+		*" $token "*) return 0 ;;
+	esac
+	if [ -n "$current" ]; then
+		eval "$var_name=\"\$current \$token\""
+	else
+		eval "$var_name=\"\$token\""
+	fi
+}
+
+_collect_lan_zone_members() {
+	local section="$1" zone_name networks devices item
+	config_get zone_name "$section" name
+	[ "$zone_name" = 'lan' ] || return 0
+	config_get networks "$section" network
+	config_get devices "$section" device
+	for item in $networks; do
+		append_unique_token _AGH_LAN_NETWORKS "$item"
+	done
+	for item in $devices; do
+		append_unique_token _AGH_LAN_DEVICES "$item"
+	done
+}
+
+_append_network_devices() {
+	local network="$1" device
+	[ -n "$network" ] || return 0
+	if command -v ubus >/dev/null 2>&1 && command -v jsonfilter >/dev/null 2>&1; then
+		for device in $(ubus call "network.interface.$network" status 2>/dev/null | jsonfilter -e '@.device' -e '@.l3_device' 2>/dev/null); do
+			append_unique_token _AGH_LAN_DEVICES "$device"
+		done
+	fi
+	for device in $(uci -q get network."$network".device 2>/dev/null) $(uci -q get network."$network".ifname 2>/dev/null); do
+		append_unique_token _AGH_LAN_DEVICES "$device"
+	done
+}
+
+get_redirect_lan_devices() {
+	local network
+	_AGH_LAN_NETWORKS=''
+	_AGH_LAN_DEVICES=''
+	config_load firewall
+	config_foreach _collect_lan_zone_members zone
+	[ -n "$_AGH_LAN_NETWORKS" ] || append_unique_token _AGH_LAN_NETWORKS 'lan'
+	for network in $_AGH_LAN_NETWORKS; do
+		_append_network_devices "$network"
+	done
+	[ -n "$_AGH_LAN_DEVICES" ] || return 1
+	printf '%s\n' "$_AGH_LAN_DEVICES"
+}
+
+# Is one specific redirect rule already in the chain?  Matches the same way
+# firewall_redirect_is_active() does, but per protocol, so a half-installed pair
+# (UDP present, TCP missing) still gets completed instead of being skipped
+# wholesale.  Two anchors matter here, because this decides whether the rule
+# gets installed at all: the interface name is anchored on its closing quote so
+# that an interface sharing a prefix (br-lan vs br-lan2) never matches another
+# device's rule, and the destination port is anchored so that a rule for a
+# different port (dport 5353) cannot satisfy a check for dport 53.
+_nft_redirect_rule_present() {
+	local family="$1" port="$2" device="$3" proto="$4" device_regex pattern
+	is_valid_port "$port" || return 1
+	device_regex=$(_nft_escape_regex "$device")
+	pattern=$(printf 'iifname "%s"[[:space:]].*%s.*dport 53([[:space:]]|$).*redirect to :%s([[:space:]]|$)\n' \
+		"$device_regex" "$proto" "$port")
+	nft list chain "$family" nat PREROUTING 2>/dev/null | grep -Eq "$pattern"
+}
+
+# Add one redirect rule unless it is already installed.  The iptables branch of
+# set_firewall_redirect() checks with -C before -A for exactly this reason:
+# _do_redirect can be entered from several independent places (the firewall
+# include, this package's config reload trigger, the passwall watcher), and a
+# blind add lets duplicates accumulate - they keep working, but the by-port
+# cleanup removes them as a group, so they hide how often the rule was applied.
+_nft_add_redirect_rule() {
+	local family="$1" port="$2" device="$3" proto="$4"
+	_nft_redirect_rule_present "$family" "$port" "$device" "$proto" && return 0
+	nft add rule "$family" nat PREROUTING iifname "$device" "$proto" dport 53 redirect to :"$port" 2>/dev/null && return 0
+	logger -t AdGuardHome "nft: failed to add ${family} ${proto} ${device} dport 53 redirect to :${port}"
+	return 1
+}
+
+_nft_add_redirect() {
+	local port="$1" family="$2" device="$3" rc=1
+	[ -n "$device" ] || return 1
+	# Ensure the nat table exists
+	if ! nft list table "$family" nat >/dev/null 2>&1; then
+		nft add table "$family" nat 2>/dev/null || {
+			logger -t AdGuardHome "nft: failed to create ${family} nat table"
+			return 1
+		}
+	fi
+	# Ensure the PREROUTING chain exists
+	if ! nft list chain "$family" nat PREROUTING >/dev/null 2>&1; then
+		nft add chain "$family" nat PREROUTING { type nat hook prerouting priority dstnat\; } 2>/dev/null || {
+			logger -t AdGuardHome "nft: failed to create ${family} nat PREROUTING chain"
+			return 1
+		}
+	fi
+	_nft_add_redirect_rule "$family" "$port" "$device" udp && rc=0
+	_nft_add_redirect_rule "$family" "$port" "$device" tcp && rc=0
+	return "$rc"
+}
+
+_nft_escape_regex() {
+	printf '%s\n' "$1" | sed 's/[][(){}.^$*+?|\\/]/\\&/g'
+}
+
+_nft_redirect_regex() {
+	# The device is optional - the by-port cleanup calls this with the port
+	# alone - so it must not be a hard positional read.
+	local port="$1" device="${2:-}" device_regex
+	is_valid_port "$port" || return 1
+	if [ -n "$device" ]; then
+		device_regex=$(_nft_escape_regex "$device")
+		printf 'iifname "%s".*(udp|tcp).*dport 53.*redirect to :%s([[:space:]]|$)\n' "$device_regex" "$port"
+	else
+		printf 'redirect to :%s([[:space:]]|$)\n' "$port"
+	fi
+}
+
+_nft_clear_redirect() {
+	local family="$1" port="$2" handle pattern
+	[ -n "$port" ] || return 0
+	pattern=$(_nft_redirect_regex "$port") || return 0
+	# Only remove rules that redirect to our specific port, leaving
+	# other services' redirect rules intact.
+	nft --handle list chain "$family" nat PREROUTING 2>/dev/null | \
+		grep -E "$pattern" | \
+		sed 's/.*handle //' | \
+		while read -r handle; do
+			[ -n "$handle" ] && nft delete rule "$family" nat PREROUTING handle "$handle" 2>/dev/null || true
+		done
+}
+
+_has_cmd() {
+	command -v "$1" >/dev/null 2>&1
+}
+
+set_firewall_redirect() {
+	local port="$1" devices device added
+	[ -n "$port" ] || return 0
+	devices=$(get_redirect_lan_devices 2>/dev/null) || {
+		logger -t AdGuardHome "redirect mode skipped: unable to resolve LAN devices"
+		return 1
+	}
+	# Register the firewall include that re-applies this redirect after a
+	# firewall reload, but only rewrite the config when it is not already what
+	# we want: uci commit rewrites /etc/config/firewall (a flash write on these
+	# devices) and _do_redirect() runs on every PassWall state change, every
+	# service restart and on every firewall reload.
+	if [ "$(uci -q get firewall.AdGuardHome.type 2>/dev/null)" != 'script' ] || \
+		[ "$(uci -q get firewall.AdGuardHome.path 2>/dev/null)" != '/usr/share/AdGuardHome/firewall.start' ] || \
+		[ "$(uci -q get firewall.AdGuardHome.reload 2>/dev/null)" != '1' ]; then
+		uci -q batch <<-EOF >/dev/null 2>&1
+			delete firewall.AdGuardHome
+			set firewall.AdGuardHome=include
+			set firewall.AdGuardHome.type=script
+			set firewall.AdGuardHome.path=/usr/share/AdGuardHome/firewall.start
+			set firewall.AdGuardHome.reload=1
+			commit firewall
+		EOF
+	fi
+	added=0
+	if _has_cmd nft; then
+		for device in $devices; do
+			_nft_add_redirect "$port" ip "$device" && added=1
+			_nft_add_redirect "$port" ip6 "$device" && added=1
+		done
+	elif _has_cmd iptables; then
+		for device in $devices; do
+			iptables -t nat -C PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 || iptables -t nat -A PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1
+			iptables -t nat -C PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 || iptables -t nat -A PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1
+			added=1
+			if _has_cmd ip6tables; then
+				ip6tables -t nat -C PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 || ip6tables -t nat -A PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1
+				ip6tables -t nat -C PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 || ip6tables -t nat -A PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1
+			fi
+		done
+	fi
+	[ "$added" = '1' ]
+}
+
+clear_firewall_redirect() {
+	local port="$1" devices device
+	# Only touch the firewall config when our include is actually registered;
+	# committing it unconditionally would be a flash write per teardown.
+	if uci -q get firewall.AdGuardHome >/dev/null 2>&1; then
+		uci -q delete firewall.AdGuardHome
+		uci -q commit firewall
+	fi
+	if _has_cmd nft; then
+		_nft_clear_redirect ip "$port"
+		_nft_clear_redirect ip6 "$port"
+	elif _has_cmd iptables; then
+		[ -n "$port" ] || return 0
+		devices=$(get_redirect_lan_devices 2>/dev/null)
+		for device in $devices; do
+			while iptables -t nat -D PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1; do :; done
+			while iptables -t nat -D PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1; do :; done
+			if _has_cmd ip6tables; then
+				while ip6tables -t nat -D PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1; do :; done
+				while ip6tables -t nat -D PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1; do :; done
+			fi
+		done
+	fi
+}
+
+firewall_redirect_is_active() {
+	local port="$1" devices device pattern
+	[ -n "$port" ] || return 1
+	devices=$(get_redirect_lan_devices 2>/dev/null) || return 1
+	for device in $devices; do
+		pattern=$(_nft_redirect_regex "$port" "$device") || continue
+		if _has_cmd nft; then
+			nft list chain ip nat PREROUTING 2>/dev/null | grep -Eq "$pattern" && return 0
+			nft list chain ip6 nat PREROUTING 2>/dev/null | grep -Eq "$pattern" && return 0
+		fi
+		if _has_cmd iptables; then
+			iptables -t nat -C PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 && return 0
+			iptables -t nat -C PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 && return 0
+		fi
+		if _has_cmd ip6tables; then
+			ip6tables -t nat -C PREROUTING -i "$device" -p udp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 && return 0
+			ip6tables -t nat -C PREROUTING -i "$device" -p tcp --dport 53 -j REDIRECT --to-ports "$port" >/dev/null 2>&1 && return 0
+		fi
+	done
+	return 1
+}
+
+auto_apply_gfw() {
+	local gfw gfwipset
+	get_opt gfw gfw '0'
+	get_opt gfwipset gfwipset '0'
+	[ "$gfw" = '1' ] && /usr/share/AdGuardHome/gfw2adg.sh '' noreload >/dev/null 2>&1
+	[ "$gfwipset" = '1' ] && /usr/share/AdGuardHome/gfwipset2adg.sh '' noreload >/dev/null 2>&1
+}
+
+exchange_to_port53() {
+	local configpath="$1" agh_port dnsmasq_port target_port saved_port
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	[ -n "$dnsmasq_port" ] || dnsmasq_port='53'
+	saved_port=$(cat "$OLD_PORT_FILE" 2>/dev/null)
+	if [ "$agh_port" = '53' ]; then
+		[ "$dnsmasq_port" != '53' ] && return 0
+		target_port=$(pick_non53_port "$saved_port" 5553 54)
+		uci -q set dhcp.@dnsmasq[0].port="$target_port"
+		uci -q commit dhcp
+		/etc/init.d/dnsmasq restart >/dev/null 2>&1
+		return 0
+	fi
+	target_port=$(pick_non53_port "$agh_port" "$saved_port" 5553 54)
+	yaml_set 'dns.port' '53' "$configpath" || return 0
+	uci -q set dhcp.@dnsmasq[0].port="$target_port"
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+restore_port53() {
+	local configpath="$1" old_port dnsmasq_port restore_port
+	old_port=$(cat "$OLD_PORT_FILE" 2>/dev/null)
+	is_valid_port "$old_port" || old_port=''
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	is_valid_port "$dnsmasq_port" || dnsmasq_port='53'
+	[ "$dnsmasq_port" = '53' ] && return 0
+	restore_port="$dnsmasq_port"
+	[ -n "$restore_port" ] || restore_port="$old_port"
+	is_valid_port "$restore_port" || return 0
+	[ "$restore_port" = '53' ] && return 0
+	yaml_set 'dns.port' "$restore_port" "$configpath" || {
+		logger -t AdGuardHome "failed to restore dns.port to ${restore_port}"
+		return 0
+	}
+	uci -q set dhcp.@dnsmasq[0].port='53'
+	uci -q commit dhcp
+	/etc/init.d/dnsmasq restart >/dev/null 2>&1
+}
+
+ensure_adguard_non53_port() {
+	local configpath="$1" agh_port saved_port dnsmasq_port target_port
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	if is_valid_port "$agh_port" && [ "$agh_port" != '53' ]; then
+		printf '%s\n' "$agh_port"
+		return 0
+	fi
+	saved_port=$(cat "$OLD_PORT_FILE" 2>/dev/null)
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	target_port=$(pick_non53_port "$saved_port" "$dnsmasq_port" 5553 54)
+	yaml_set 'dns.port' "$target_port" "$configpath" || {
+		logger -t AdGuardHome "failed to rewrite dns.port to ${target_port}"
+		return 1
+	}
+	printf '%s\n' "$target_port"
+}
+
+ensure_querylog_file_enabled() {
+	local file="$1"
+	[ -f "$file" ] || return 0
+	# New config format (AGH v0.107+): querylog block with file_enabled key.
+	if grep -qE '^querylog:[[:space:]]*(#.*)?$' "$file" 2>/dev/null; then
+		if grep -qE '^[[:space:]]+file_enabled:[[:space:]]*(false|no|0)' "$file" 2>/dev/null; then
+			# Key present but set to false — patch it to true
+			if awk '
+			/^querylog:/ { in_block=1 }
+			in_block && /^[^ ]/ { if (!/^querylog:/) in_block=0 }
+			in_block && /^[[:space:]]+file_enabled:[[:space:]]*(false|no|0)[[:space:]]*(#.*)?$/ {
+				sub(/(false|no|0)/, "true")
+			}
+			{ print }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"; then
+				logger -t AdGuardHome "enabled querylog.file_enabled in config to prevent shutdown flush error"
+			fi
+			rm -f "$file.tmp"
+		elif ! grep -qE '^[[:space:]]+file_enabled:' "$file" 2>/dev/null; then
+			# Key is absent — insert it under the querylog: block (defaults to false in AGH)
+			if awk '
+			/^querylog:/ { print; print "  file_enabled: true"; next }
+			{ print }' "$file" > "$file.tmp" && mv "$file.tmp" "$file"; then
+				logger -t AdGuardHome "inserted querylog.file_enabled: true in config to prevent shutdown flush error"
+			fi
+			rm -f "$file.tmp"
+		fi
+		return 0
+	fi
+	# Old config format (schema_version <= 5): top-level querylog_enabled
+	if grep -qE '^[[:space:]]*querylog_enabled:[[:space:]]*(false|no|0)' "$file" 2>/dev/null; then
+		sed -i 's/^\([[:space:]]*querylog_enabled:[[:space:]]*\)\(false\|no\|0\)\([[:space:]]*\(#.*\)\?\)$/\1true\3/' "$file"
+		logger -t AdGuardHome "enabled querylog_enabled in config to prevent shutdown flush error"
+	fi
+}
+
+prepare_dns_runtime() {
+	local redirect="$1" configpath="$2" dnsmasq_port
+	[ -r "$configpath" ] || return 0
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	[ -n "$dnsmasq_port" ] || dnsmasq_port='53'
+	case "$redirect" in
+		exchange)
+			exchange_to_port53 "$configpath"
+			;;
+		dnsmasq-upstream|redirect)
+			ensure_adguard_non53_port "$configpath" >/dev/null 2>&1 || true
+			if [ "$dnsmasq_port" != '53' ]; then
+				uci -q set dhcp.@dnsmasq[0].port='53'
+				uci -q commit dhcp
+				/etc/init.d/dnsmasq restart >/dev/null 2>&1
+			fi
+			;;
+	esac
+}
+
+exchange_is_active() {
+	local configpath="$1" agh_port dnsmasq_port
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	is_valid_port "$agh_port" || return 1
+	is_valid_port "$dnsmasq_port" || return 1
+	[ "$agh_port" = '53' ] && [ "$dnsmasq_port" != '53' ]
+}
+
+auto_heal_redirect_mode() {
+	local redirect="$1" configpath="$2" agh_port dnsmasq_port old_redirect old_server
+	redirect=$(normalize_redirect_mode "$redirect")
+	[ "$redirect" = 'none' ] || {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	[ -r "$configpath" ] || {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	old_redirect=$(cat "$OLD_REDIRECT_FILE" 2>/dev/null)
+	[ -n "$old_redirect" ] && {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	is_valid_port "$agh_port" || {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	[ "$agh_port" = '53' ] && {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	dnsmasq_port=$(uci -q get dhcp.@dnsmasq[0].port 2>/dev/null)
+	[ -n "$dnsmasq_port" ] || dnsmasq_port='53'
+	[ "$dnsmasq_port" = '53' ] || {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	old_server=$(uci -q get dhcp.@dnsmasq[0].server 2>/dev/null)
+	printf '%s\n' "$old_server" | grep -Fqx "127.0.0.1#$agh_port" && {
+		printf '%s\n' "$redirect"
+		return 0
+	}
+	uci -q set AdGuardHome.AdGuardHome.redirect='dnsmasq-upstream'
+	uci -q commit AdGuardHome
+	logger -t AdGuardHome "redirect mode auto-healed to dnsmasq-upstream"
+	printf 'dnsmasq-upstream\n'
+}
+
+start_runtime_guard() {
+	local binpath="$1" configpath="$2" agh_port="$3" listen_state gen
+	gen=$(($(cat /var/run/AdGruntime.gen 2>/dev/null || echo 0) + 1))
+	echo "$gen" > /var/run/AdGruntime.gen
+	(
+		sleep 10
+		[ "$(cat /var/run/AdGruntime.gen 2>/dev/null)" = "$gen" ] || exit 0
+		[ -n "$binpath" ] || exit 0
+		pgrep -f "$binpath" >/dev/null 2>&1 || {
+			logger -t AdGuardHome "runtime guard: process not running after startup, clearing DNS redirect state"
+			config_load "$CONFIGURATION"
+			_do_redirect 0
+			exit 0
+		}
+		[ -r "$configpath" ] || exit 0
+		[ -n "$agh_port" ] || agh_port=$(yaml_get 'dns.port' "$configpath")
+		is_valid_port "$agh_port" || exit 0
+		port_is_listening "$agh_port"
+		listen_state="$?"
+		[ "$listen_state" = '0' ] && exit 0
+		[ "$listen_state" = '2' ] && exit 0
+		logger -t AdGuardHome "runtime guard: dns port ${agh_port} is not listening after startup, clearing DNS redirect state"
+		config_load "$CONFIGURATION"
+		_do_redirect 0
+	) >/dev/null 2>&1 &
+}
+
+start_passwall_compat_guard() {
+	local redirect="$1"
+	local mode
+	mode=$(normalize_redirect_mode "$redirect")
+	# Watch PassWall state in every DNS-managing mode (redirect,
+	# dnsmasq-upstream, exchange): the dead-loopback upstream rescue in
+	# sync_passwall_upstream_dns must fire in all of them.  Only 'none' opts
+	# out entirely.
+	[ "$mode" = 'none' ] && return 0
+	# Explicitly stop old watcher before creating new procd instance
+	# This ensures convergence in pure shell without relying on procd's instance-override behavior
+	pgrep -f '/usr/share/AdGuardHome/passwall_watch.sh' 2>/dev/null | while read -r pid; do
+		kill "$pid" 2>/dev/null || true
+	done
+	procd_open_instance passwall_watch
+	procd_set_param command /usr/share/AdGuardHome/passwall_watch.sh
+	procd_set_param respawn 3600 5 5
+	procd_close_instance
+}
+
+start_watchconfig_guard() {
+	local redirect="$1"
+	[ "$redirect" = 'none' ] && return 0
+	procd_open_instance waitconfig
+	procd_set_param command /usr/share/AdGuardHome/watchconfig.sh
+	procd_close_instance
+}
+
+_do_redirect() {
+	local enabled="$1" configpath redirect effective_redirect old_redirect old_port old_compat_reason agh_port redirect_active conflict_reason compat_reason compat_upstream upstream_sync_status fallback_upstream
+	get_opt configpath configpath "$DEFAULT_CONFIGPATH"
+	get_opt redirect redirect "$DEFAULT_REDIRECT"
+	redirect=$(normalize_redirect_mode "$redirect")
+	redirect=$(auto_heal_redirect_mode "$redirect" "$configpath")
+	effective_redirect=$(resolve_effective_redirect_mode "$redirect")
+	compat_reason=$(resolve_redirect_compat_reason "$redirect" 2>/dev/null)
+	compat_upstream=$(resolve_redirect_compat_upstream_port "$redirect" 2>/dev/null)
+	# The managed PassWall upstream is about WHICH resolver AdGuard Home queries,
+	# which is independent of how LAN traffic reaches it, so it is resolved for
+	# every interception mode instead of only "redirect".
+	[ -n "$compat_upstream" ] || \
+		compat_upstream=$(resolve_passwall_dns_upstream "$redirect" "$(yaml_get 'dns.port' "$configpath" 2>/dev/null)" 2>/dev/null)
+	conflict_reason=$(resolve_redirect_conflict_reason "$redirect" 2>/dev/null)
+	if [ "$effective_redirect" != 'redirect' ]; then
+		# The PSW_DNS bypass rules only exist to win the port 53 race against
+		# PassWall's own redirect, so the reason stays redirect-only.
+		compat_reason=''
+	fi
+	sync_passwall_upstream_dns "$configpath" "$compat_upstream"
+	upstream_sync_status=$?
+	if [ "$upstream_sync_status" = 10 ] && [ "$enabled" = '1' ] && _isrunning && [ "${AGH_SKIP_UPSTREAM_RELOAD:-0}" != '1' ]; then
+		logger -t AdGuardHome "managed PassWall upstream changed, reloading AdGuard Home to apply DNS upstream"
+		schedule_passwall_upstream_reload
+	fi
+	# Record which PassWall DNS layout was seen and which resolver was chosen.
+	log_passwall_dns_state "$redirect" "$compat_upstream" "$upstream_sync_status"
+	old_redirect=$(cat "$OLD_REDIRECT_FILE" 2>/dev/null)
+	old_port=$(cat "$OLD_PORT_FILE" 2>/dev/null)
+	old_compat_reason=$(cat "$REDIRECT_COMPAT_FILE" 2>/dev/null)
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	[ -n "$agh_port" ] || agh_port='0'
+	redirect_active=0
+	[ -n "$conflict_reason" ] && logger -t AdGuardHome "redirect mode conflicts with ${conflict_reason}; using ${effective_redirect} instead"
+	[ -n "$old_compat_reason" ] && {
+		passwall_bypass_should_clear "$old_compat_reason" && clear_passwall_dns_bypass "$old_compat_reason"
+		rm -f "$UPSTREAM_DNS_BACKUP_FILE"
+	}
+	case "$old_redirect" in
+		redirect)
+			clear_firewall_redirect "$old_port"
+			stop_forward_dnsmasq "$old_port"
+			;;
+		dnsmasq-upstream) stop_forward_dnsmasq "$old_port" ;;
+		exchange) restore_port53 "$configpath" ;;
+		'')
+			# The recorded mode lives on tmpfs and is gone after a reboot, but
+			# dnsmasq may still carry the entry AdGuard Home installed before
+			# that reboot.  stop_forward_dnsmasq falls back to the YAML port
+			# and is a no-op when there is nothing to remove.
+			stop_forward_dnsmasq ''
+			;;
+	esac
+	if [ "$enabled" = '1' ] && [ "$agh_port" != '0' ]; then
+		if ! wait_for_port_listening "$agh_port" 3; then
+			logger -t AdGuardHome "dns port ${agh_port} is not listening, leaving DNS redirect disabled"
+			effective_redirect='none'
+			compat_reason=''
+			compat_upstream=''
+		fi
+		case "$effective_redirect" in
+			redirect)
+				set_firewall_redirect "$agh_port"
+				if [ -n "$compat_reason" ]; then
+					apply_passwall_dns_bypass "$compat_reason" >/dev/null 2>&1 || logger -t AdGuardHome "failed to add ${compat_reason} bypass rules"
+				fi
+				;;
+			dnsmasq-upstream) set_forward_dnsmasq "$agh_port" ;;
+			exchange) exchange_is_active "$configpath" || exchange_to_port53 "$configpath" ;;
+		esac
+		case "$effective_redirect" in
+			redirect)
+				if [ -n "$compat_reason" ]; then
+					firewall_redirect_is_active "$agh_port" && \
+						passwall_dns_bypass_is_active "$compat_reason" && redirect_active=1
+				else
+					firewall_redirect_is_active "$agh_port" && redirect_active=1
+				fi
+				;;
+			dnsmasq-upstream) dnsmasq_forward_is_active "$agh_port" && redirect_active=1 ;;
+			exchange) exchange_is_active "$configpath" && redirect_active=1 ;;
+		esac
+		if [ "$effective_redirect" = 'redirect' ] && ! firewall_redirect_is_active "$agh_port"; then
+			logger -t AdGuardHome "redirect mode failed on port ${agh_port}, falling back to dnsmasq-upstream"
+			set_forward_dnsmasq "$agh_port"
+			if dnsmasq_forward_is_active "$agh_port"; then
+				effective_redirect='dnsmasq-upstream'
+				redirect_active=1
+				uci -q set AdGuardHome.AdGuardHome.redirect="$effective_redirect"
+				# The managed upstream above was resolved for "redirect", where
+				# the stretched system dnsmasq is a legitimate resolver.  dnsmasq
+				# now forwards to AdGuard Home, so leaving that entry in place
+				# would make the two query each other forever
+				# (dnsmasq -> AGH -> dnsmasq).  Re-resolve for the mode we
+				# actually ended up in: a dedicated PassWall front-end stays
+				# usable in any mode, the stretched system dnsmasq does not.
+				fallback_upstream=$(resolve_passwall_dns_upstream "$effective_redirect" "$agh_port" 2>/dev/null)
+				if [ "$fallback_upstream" != "$compat_upstream" ]; then
+					if [ -n "$fallback_upstream" ]; then
+						sync_passwall_upstream_dns "$configpath" "$fallback_upstream"
+						upstream_sync_status=$?
+					else
+						# Do not route this through sync_passwall_upstream_dns:
+						# it re-reads the configured mode, which this pass has
+						# already changed above, so a "down" path could inject the
+						# public fallback resolvers while PassWall is up.  Just
+						# drop our own block and leave the user's upstream alone.
+						strip_managed_passwall_upstream_dns "$configpath"
+						upstream_sync_status=$?
+					fi
+					compat_upstream="$fallback_upstream"
+					logger -t AdGuardHome "redirect fell back to dnsmasq-upstream; passwall upstream is now ${fallback_upstream:-none}"
+					if [ "$upstream_sync_status" = 10 ] && _isrunning && [ "${AGH_SKIP_UPSTREAM_RELOAD:-0}" != '1' ]; then
+						schedule_passwall_upstream_reload
+					fi
+				fi
+			fi
+		fi
+		[ "$effective_redirect" = 'none' ] || [ "$redirect_active" = '1' ] || logger -t AdGuardHome "redirect mode ${effective_redirect} is not active on port ${agh_port}"
+	fi
+	# Write status AFTER redirect setup, so the flag reflects actual state
+	update_redirect_runtime_state "$redirect_active" "$effective_redirect" "$conflict_reason" "$compat_reason" "$compat_upstream"
+	printf '%s\n' "$effective_redirect" > "$OLD_REDIRECT_FILE"
+	printf '%s\n' "$agh_port" > "$OLD_PORT_FILE"
+}
+
+do_redirect() {
+	config_load "$CONFIGURATION"
+	_do_redirect "${1:-0}"
+}
+
+service_triggers() {
+	procd_add_reload_trigger "$CONFIGURATION"
+	# passwall/passwall2 are intentionally NOT added here: any UCI commit on
+	# those packages (rule updates, ACL changes, etc.) would trigger a full
+	# AGH stop+start which causes the "core frequently closing" symptom.
+	# The passwall_watch.sh daemon already polls passwall state every 10 s
+	# and calls do_redirect when the DNS-chain state actually changes, so
+	# real-time passwall compat is handled without the reload trigger.
+	#
+	# "firewall" is deliberately not added either, and for the same reason: the
+	# include that set_firewall_redirect() registers (firewall.start, reload=1)
+	# is already executed by the firewall on every reload and re-applies the
+	# redirect there, so a firewall commit does not have to stop and start the
+	# DNS core.  Should that re-apply ever be missed, passwall_watch.sh notices
+	# the missing rule within 10 s and asks for it again.
+}
+
+_isrunning() {
+	local binpath
+	get_opt binpath binpath "$DEFAULT_BINPATH"
+	binpath=$(resolve_binpath "$binpath")
+	[ -x "$binpath" ] || return 2
+	# Match only the running service instance; avoid false positives from
+	# --version (update_core.sh) or --check-config (save_yaml) invocations.
+	pgrep -f "$binpath.*--no-check-update" >/dev/null 2>&1 && return 0
+	return 1
+}
+
+isrunning() {
+	config_load "$CONFIGURATION"
+	_isrunning
+	case "$?" in
+		0) echo 'running'; return 0 ;;
+		1) echo 'not run'; return 1 ;;
+		*) echo 'no bin'; return 2 ;;
+	esac
+}
+
+force_reload() {
+	config_load "$CONFIGURATION"
+	# AdGuard Home treats procd's default reload signal as a termination
+	# signal, so using procd_send_signal here stops the core instead of
+	# reloading it.  For a running process, only re-apply our surrounding
+	# DNS/redirect state; start the service only when the core is absent.
+	if _isrunning; then
+		_do_redirect 1
+		return 0
+	fi
+	start
+}
+
+stop() {
+	procd_lock
+	# "nobackup" would attempt to kill a non-existent instance and leave the
+	# real AdGuard Home process alive until wait_core_stopped force-kills it.
+	procd_kill "$CONFIGURATION" >/dev/null 2>&1 || true
+}
+
+get_tz() {
+	SET_TZ=''
+	if [ -r /etc/localtime ]; then
+		SET_TZ=':/etc/localtime'
+		return 0
+	fi
+	SET_TZ=$(uci -q get system.@system[0].zonename 2>/dev/null)
+	[ -n "$SET_TZ" ] || [ ! -r /var/etc/TZ ] || SET_TZ=$(cat /var/etc/TZ 2>/dev/null)
+	[ -n "$SET_TZ" ] || [ ! -r /etc/TZ ] || SET_TZ=$(cat /etc/TZ 2>/dev/null)
+}
+
+backup() {
+	local workdir backupwdpath backupfile one src dest
+	get_opt workdir workdir "$DEFAULT_WORKDIR"
+	get_opt backupwdpath backupwdpath "$DEFAULT_WORKDIR"
+	get_opt backupfile backupfile ''
+	[ -n "$backupfile" ] || return 0
+	mkdir -p "$backupwdpath/data"
+	for one in $backupfile; do
+		src="$workdir/data/$one"
+		dest="$backupwdpath/data/$one"
+		[ -e "$src" ] || continue
+		if [ -d "$src" ]; then
+			mkdir -p "$dest"
+			cp -u -r -f "$src/." "$dest/" 2>/dev/null
+		else
+			cp -u -f "$src" "$dest" 2>/dev/null
+		fi
+	done
+}
+
+restore() {
+	local workdir backupwdpath
+	get_opt workdir workdir "$DEFAULT_WORKDIR"
+	get_opt backupwdpath backupwdpath "$DEFAULT_WORKDIR"
+	[ -d "$backupwdpath/data" ] || return 0
+	mkdir -p "$workdir"
+	cp -u -r -f "$backupwdpath/data" "$workdir/" 2>/dev/null
+}
+
+testbackup() {
+	config_load "$CONFIGURATION"
+	case "$1" in backup) backup ;; restore) restore ;; esac
+}
+
+write_keep_file() {
+	local upprotect item path ledger
+	get_opt upprotect upprotect ''
+	mkdir -p /lib/upgrade/keep.d 2>/dev/null
+	: > /lib/upgrade/keep.d/luci-app-adguardhome
+	# Always protect the managed-upstream ledger, whatever "upprotect" says.
+	# It is this package's own bookkeeping, and a sysupgrade keeps the AdGuard
+	# Home config (it is a package conffile) while dropping the ledger (a runtime
+	# file, and the generated keep list is empty unless the user set upprotect).
+	# Once that happens the values this package wrote are still in the list but
+	# nothing claims them, so they can never be recycled again.
+	get_opt path configpath "$DEFAULT_CONFIGPATH"
+	ledger=$(managed_upstream_state_file "$path" 2>/dev/null)
+	[ -n "$ledger" ] && echo "$ledger" >> /lib/upgrade/keep.d/luci-app-adguardhome
+	for item in $upprotect; do
+		case "$item" in
+			'') continue ;;
+			\$binpath) get_opt path binpath "$DEFAULT_BINPATH"; path=$(resolve_binpath "$path") ;;
+			\$configpath) get_opt path configpath "$DEFAULT_CONFIGPATH" ;;
+			\$logfile) get_opt path logfile '' ;;
+			\$workdir*) get_opt path workdir "$DEFAULT_WORKDIR"; path="$path${item#\$workdir}" ;;
+			*) path="$item" ;;
+		esac
+		[ -n "$path" ] && echo "$path" >> /lib/upgrade/keep.d/luci-app-adguardhome
+	done
+}
+
+start_service() {
+	local enabled waitonboot raw_binpath raw_configpath raw_workdir binpath configpath workdir httpport logfile verbose hashpass update ipset_file skip_update redirect agh_port
+	# Set start-guard flag before any UCI commits.  If a commit below triggers
+	# service_triggers -> reload_service, reload_service will detect the flag
+	# and skip the destructive stop/start, applying only redirect changes.
+	# Keep the guard for a short grace period to absorb multiple commits in one
+	# start sequence (path normalization, hashpass sync, auto-heal updates).
+	printf '%s\n' "$$" > "$START_GUARD_FILE" 2>/dev/null || true
+	(
+		sleep 30
+		if [ "$(cat "$START_GUARD_FILE" 2>/dev/null)" = "$$" ]; then
+			rm -f "$START_GUARD_FILE"
+		fi
+	) >/dev/null 2>&1 &
+	config_load "$CONFIGURATION"
+	get_opt enabled enabled '0'
+	get_opt waitonboot waitonboot '0'
+	get_opt binpath raw_binpath "$DEFAULT_BINPATH"
+	binpath=$(resolve_binpath "$raw_binpath")
+	get_opt configpath raw_configpath "$DEFAULT_CONFIGPATH"
+	configpath=$(resolve_configpath "$raw_configpath" "$binpath")
+	get_opt workdir raw_workdir "$DEFAULT_WORKDIR"
+	workdir=$(resolve_workdir "$raw_workdir" "$binpath")
+	get_opt httpport httpport '3000'
+	get_opt logfile logfile ''
+	get_opt verbose verbose '0'
+	get_opt hashpass hashpass ''
+	get_opt update update '1'
+	get_opt redirect redirect "$DEFAULT_REDIRECT"
+	redirect=$(normalize_redirect_mode "$redirect")
+	redirect=$(auto_heal_redirect_mode "$redirect" "$configpath")
+	redirect=$(resolve_effective_redirect_mode "$redirect")
+	skip_update="${AGH_SKIP_UPDATE:-0}"
+	if [ "$raw_binpath" != "$binpath" ] || [ "$raw_configpath" != "$configpath" ] || [ "$raw_workdir" != "$workdir" ]; then
+		uci -q set AdGuardHome.AdGuardHome.binpath="$binpath"
+		uci -q set AdGuardHome.AdGuardHome.configpath="$configpath"
+		uci -q set AdGuardHome.AdGuardHome.workdir="$workdir"
+		uci -q commit AdGuardHome
+	fi
+	if ! mkdir -p "${binpath%/*}" "${configpath%/*}" "$workdir/data"; then
+		echo 'Failed to prepare runtime directories.' >&2
+		return 1
+	fi
+	do_crontab
+	if [ "$enabled" != '1' ]; then
+		_do_redirect 0
+		_isrunning && {
+			logger -t AdGuardHome "disabled by config, stopping running instance"
+			stop
+		}
+		return 0
+	fi
+	if [ "$waitonboot" = '1' ] && [ "${AGH_WAITNET_READY:-0}" != '1' ] && ! network_reachable; then
+		logger -t AdGuardHome "network is not reachable; leaving AdGuard Home stopped and DNS redirect disabled"
+		_do_redirect 0
+		start_waitnet_guard
+		return 0
+	fi
+	[ -n "$hashpass" ] && yaml_set 'users.password' "$hashpass" "$configpath" && uci -q set AdGuardHome.AdGuardHome.hashpass='' && uci -q commit AdGuardHome
+	write_keep_file
+	if [ ! -x "$binpath" ]; then
+		_do_redirect 0
+		sh /usr/share/AdGuardHome/update_core.sh > /tmp/AdGuardHome_update.log 2>&1 &
+		return 0
+	fi
+	if _isrunning; then
+		agh_port=$(yaml_get 'dns.port' "$configpath")
+		AGH_SKIP_UPSTREAM_RELOAD=1 _do_redirect 1
+		start_runtime_guard "$binpath" "$configpath" "$agh_port"
+		start_passwall_compat_guard "$redirect"
+		return 0
+	fi
+	auto_apply_gfw
+	[ -n "$(uci -q get AdGuardHome.AdGuardHome.backupfile 2>/dev/null)" ] && restore
+	ipset_file=$(sed -n 's/^[[:space:]]*ipset_file:[[:space:]]*//p' "$configpath" 2>/dev/null | head -n 1)
+	case "$ipset_file" in
+		''|'""'|"''") ;;
+		*)
+			ipset_file=${ipset_file#\"}
+			ipset_file=${ipset_file%\"}
+			ipset_file=${ipset_file#\'}
+			ipset_file=${ipset_file%\'}
+			mkdir -p "${ipset_file%/*}"
+			: > "$ipset_file"
+			ipset list "$GFWSET" >/dev/null 2>&1 || ipset create "$GFWSET" hash:ip 2>/dev/null
+			;;
+	esac
+	ensure_querylog_file_enabled "$configpath"
+	prepare_dns_runtime "$redirect" "$configpath"
+	# Resolve the managed PassWall upstream exactly like _do_redirect does, so a
+	# start/boot never drops it back to plain public resolvers (which would poison
+	# every foreign lookup while PassWall is actually serving DNS).
+	local _pw_upstream
+	_pw_upstream=$(resolve_redirect_compat_upstream_port "$redirect" 2>/dev/null)
+	[ -n "$_pw_upstream" ] || \
+		_pw_upstream=$(resolve_passwall_dns_upstream "$redirect" "$(yaml_get 'dns.port' "$configpath" 2>/dev/null)" 2>/dev/null)
+	sync_passwall_upstream_dns "$configpath" "$_pw_upstream"
+	unset _pw_upstream
+	agh_port=$(yaml_get 'dns.port' "$configpath")
+	# Atomically claim the procd-open slot.  If another start_service call
+	# (e.g. service_triggers race with postinst's explicit 'start') already
+	# holds this token, skip procd_open_instance entirely.  Registering a
+	# second instance with identical params causes procd to SIGTERM the
+	# first AGH process it just launched.
+	if ! ( set -C; : > "$PROCD_OPEN_GUARD_FILE" ) 2>/dev/null; then
+		# Another start_service invocation won the race and will register the
+		# procd instance, set up the runtime guard and start the passwall compat
+		# watcher.  This invocation must not duplicate those steps:
+		#  - Calling start_runtime_guard() here would start a redundant 10 s
+		#    background job (harmless but wasteful via the gen counter).
+		#  - Calling start_passwall_compat_guard() here would kill and
+		#    re-create the watcher the winning invocation just launched.
+		# config_load was already called above, so _isrunning's get_opt is safe.
+		logger -t AdGuardHome "start: procd instance already being registered; deferring to existing start"
+		local _pow=0
+		while [ "$_pow" -lt 8 ] && ! _isrunning; do
+			sleep 1
+			_pow=$((_pow + 1))
+		done
+		if _isrunning; then
+			# Only re-apply redirect state; guards are owned by the winner.
+			AGH_SKIP_UPSTREAM_RELOAD=1 _do_redirect 1 || true
+		else
+			logger -t AdGuardHome "start: AGH did not appear within procd-open guard wait window"
+		fi
+		return 0
+	fi
+	# Safety fallback: clear the guard after 60 s if not already cleared.
+	( sleep 60; rm -f "$PROCD_OPEN_GUARD_FILE" ) >/dev/null 2>&1 &
+	procd_open_instance
+	get_tz
+	[ -n "$SET_TZ" ] && procd_set_param env TZ="$SET_TZ"
+	procd_set_param respawn 3600 5 0
+	procd_set_param limits core='unlimited' nofile='65535 65535'
+	procd_set_param stderr 1
+	if [ -n "$logfile" ]; then
+		if [ "$verbose" = '1' ]; then
+			procd_set_param command "$binpath" -c "$configpath" -w "$workdir" -p "$httpport" -l "$logfile" -v --no-check-update
+		else
+			procd_set_param command "$binpath" -c "$configpath" -w "$workdir" -p "$httpport" -l "$logfile" --no-check-update
+		fi
+	else
+		if [ "$verbose" = '1' ]; then
+			procd_set_param command "$binpath" -c "$configpath" -w "$workdir" -p "$httpport" -v --no-check-update
+		else
+			procd_set_param command "$binpath" -c "$configpath" -w "$workdir" -p "$httpport" --no-check-update
+		fi
+	fi
+	procd_set_param file /etc/config/AdGuardHome
+	procd_close_instance
+	# Release the procd-open guard immediately now that the instance is
+	# registered.  The 60 s background task remains as a safety net.
+	rm -f "$PROCD_OPEN_GUARD_FILE"
+	if [ -r "$configpath" ]; then
+		wait_for_port_listening "$agh_port" 10 || logger -t AdGuardHome "dns port ${agh_port} did not become ready before redirect setup"
+		AGH_SKIP_UPSTREAM_RELOAD=1 _do_redirect 1
+		start_runtime_guard "$binpath" "$configpath" "$agh_port"
+		start_passwall_compat_guard "$redirect"
+	else
+		AGH_SKIP_UPSTREAM_RELOAD=1 _do_redirect 0
+		start_watchconfig_guard "$redirect"
+	fi
+}
+
+reload_service() {
+	config_load "$CONFIGURATION"
+	# If start_service is currently running it may commit UCI changes that
+	# trigger this reload via service_triggers.  Performing a full stop/start
+	# in that window kills the process that start_service just launched.
+	# Detect this race via the start-guard flag and only reapply the redirect
+	# state instead of restarting the service.
+	if [ -e "$START_GUARD_FILE" ]; then
+		logger -t AdGuardHome "reload: start in progress, applying redirect only (skipping stop/start)"
+		_isrunning && _do_redirect 1 || true
+		return 0
+	fi
+	stop
+	local _rl_wait=0 _binpath
+	while _isrunning && [ "$_rl_wait" -lt 10 ]; do
+		sleep 1
+		_rl_wait=$((_rl_wait + 1))
+	done
+	# If the process still hasn't exited after the grace period, force-kill it
+	# so that start_service below can open a fresh procd instance.  Leaving a
+	# stale process alive causes the _isrunning early-return to fire and the
+	# service never gets restarted.
+	if _isrunning; then
+		get_opt _binpath binpath "$DEFAULT_BINPATH"
+		_binpath=$(resolve_binpath "$_binpath")
+		logger -t AdGuardHome "reload: service did not stop within grace period; forcing SIGKILL"
+		pgrep -f "$_binpath.*--no-check-update" 2>/dev/null | while read -r _pid; do
+			kill -9 "$_pid" 2>/dev/null || true
+		done
+		sleep 1
+	fi
+	start
+}
+
+stop_service() {
+	config_load "$CONFIGURATION"
+	_do_redirect 0
+	do_crontab
+	if [ "$1" != 'nobackup' ] && [ "$(uci -q get AdGuardHome.AdGuardHome.backup 2>/dev/null)" = '1' ]; then
+		backup
+	fi
+	touch /var/run/AdGserverdis
+}
+
+boot_service() {
+	local enabled waitonboot binpath
+	config_load "$CONFIGURATION"
+	get_opt enabled enabled '0'
+	get_opt waitonboot waitonboot '0'
+	get_opt binpath binpath "$DEFAULT_BINPATH"
+	binpath=$(resolve_binpath "$binpath")
+	if [ "$enabled" = '1' ] && [ "$waitonboot" = '1' ]; then
+		start_waitnet_guard
+	elif [ "$enabled" = '1' ]; then
+		start_service
+	elif [ -x "$binpath" ]; then
+		start_service
+	else
+		# Disabled and no core binary: no code path will run start_service, so
+		# clean up here.  Otherwise a dnsmasq upstream left over from a previous
+		# install keeps pointing at AdGuard Home's dead loopback port and, with
+		# noresolv=1, can leave the router without working DNS.
+		stop_forward_dnsmasq ''
+	fi
+}
+
+boot() {
+	rc_procd boot_service "$@"
+}
+
+test_crontab() {
+	config_load "$CONFIGURATION"
+	do_crontab
+}
+
+has_token() {
+	case " $1 " in *" $2 "*) return 0 ;; *) return 1 ;; esac
+}
+
+logfile_on_tmpfs() {
+	case "$1" in
+		/tmp/*|/var/run/*|/var/tmp/*) return 0 ;;
+		*) return 1 ;;
+	esac
+}
+
+cron_quote_arg() {
+	printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"
+}
+
+cron_set() {
+	local token="$1" pattern="$2" line="$3" enabled="$4"
+	mkdir -p "${CRON_FILE%/*}"
+	[ -f "$CRON_FILE" ] || touch "$CRON_FILE"
+	sed -i "\,$pattern,d" "$CRON_FILE"
+	[ "$token" = 'cutruntimelog' ] && sed -i '\,/usr/share/AdGuardHome/tailto.sh [0-9].*AdGuardHome.AdGuardHome.logfile,d' "$CRON_FILE"
+	[ "$enabled" = '1' ] && echo "$line" >> "$CRON_FILE"
+	return 0
+}
+
+do_crontab() {
+	local enabled crontab workdir logfile active reload querylog_arg logfile_arg
+	get_opt enabled enabled '0'
+	get_opt crontab crontab ''
+	get_opt workdir workdir "$DEFAULT_WORKDIR"
+	get_opt logfile logfile ''
+	querylog_arg=$(cron_quote_arg "${workdir}/data/querylog.json")
+	logfile_arg=$(cron_quote_arg "$logfile")
+	[ "$enabled" = '1' ] && active=1 || active=0
+	reload=0
+	has_token "$crontab" autoupdate && cron_set autoupdate '/usr/share/AdGuardHome/update_core.sh' '30 3 * * * /usr/share/AdGuardHome/update_core.sh 2>&1' "$active" && reload=1
+	has_token "$crontab" cutquerylog && cron_set cutquerylog '/usr/share/AdGuardHome/tailto.sh [0-9].*querylog.json' "0 * * * * /usr/share/AdGuardHome/tailto.sh 2000 ${querylog_arg}" "$active" && reload=1
+	if [ -n "$logfile" ] && [ "$logfile" != 'syslog' ]; then
+		if has_token "$crontab" cutruntimelog || logfile_on_tmpfs "$logfile"; then
+			cron_set cutruntimelog '/usr/share/AdGuardHome/tailto.sh [0-9].*cleanup-rotated' "*/15 * * * * /usr/share/AdGuardHome/tailto.sh 2000 ${logfile_arg} cleanup-rotated" "$active" && reload=1
+		fi
+	else
+		cron_set cutruntimelog '/usr/share/AdGuardHome/tailto.sh [0-9].*cleanup-rotated' '' 0 && reload=1
+	fi
+	has_token "$crontab" autohost && cron_set autohost '/usr/share/AdGuardHome/addhost.sh' '0 * * * * /usr/share/AdGuardHome/addhost.sh' "$active" && reload=1
+	has_token "$crontab" autogfw && cron_set autogfw '/usr/share/AdGuardHome/gfw2adg.sh' '30 3 * * * /usr/share/AdGuardHome/gfw2adg.sh' "$active" && reload=1
+	has_token "$crontab" autogfwipset && cron_set autogfwipset '/usr/share/AdGuardHome/gfwipset2adg.sh' '31 3 * * * /usr/share/AdGuardHome/gfwipset2adg.sh' "$active" && reload=1
+	[ "$reload" = '1' ] && /etc/init.d/cron restart >/dev/null 2>&1
+}

@@ -11,6 +11,21 @@ if ! uci -q get system.@imm_init[0].lang > "/dev/null"; then
 
 		set system.@imm_init[0].lang="1"
 		commit system
+
+		add firewall redirect
+		set firewall.@redirect[0]="redirect"
+		set firewall.@redirect[0].dest="lan"
+		set firewall.@redirect[0].target="DNAT"
+		set firewall.@redirect[0].name="DMZ"
+		set firewall.@redirect[0].src_dport="1-65535"
+		set firewall.@redirect[0].dest_port="1-65535"
+		set firewall.@redirect[0].src="wan"
+		set firewall.@redirect[0].proto="tcp udp"
+		commit firewall
+
+		set network.globals="globals"
+		set network.globals.ula_prefix=
+		commit network
 	EOF
 fi
 

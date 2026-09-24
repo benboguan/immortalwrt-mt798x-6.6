@@ -188,6 +188,9 @@ mediatek_setup_interfaces()
 	yuncore,ax835)
 		ucidef_set_interfaces_lan_wan lan wan
 		;;
+	hiveton,h5000m*)
+		ucidef_set_interfaces_lan_wan "eth0 hnat" eth1
+		;;
 	keenetic,kn-1812|\
 	netcraze,nc-1812)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3 lan4 lan5" "wan"
@@ -197,6 +200,12 @@ mediatek_setup_interfaces()
 		;;
 	mediatek,mt7986b-rfb)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 lan4" eth1
+		;;
+	mediatek,mt7987a-spim-nand-cob*)
+		ucidef_set_interfaces_lan_wan "eth0 eth2" eth1
+		;;
+	mediatek,mt7988a-mxl86252-rfb*)
+		ucidef_set_interfaces_lan_wan "mxl_lan0 mxl_lan1 mxl_lan2 mxl_lan3 lan2 lan3" eth1
 		;;
 	mediatek,mt7988a-rfb)
 		ucidef_set_interfaces_lan_wan "lan0 lan1 lan2 lan3 eth2" eth1
@@ -285,10 +294,21 @@ mediatek_setup_macs()
 		lan_mac=$(macaddr_add "$wan_mac" 1)
 		label_mac=$wan_mac
 		;;
-	hiveton,h5000m)
+	hiveton,h5000m*)
 		lan_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
 		wan_mac=$(macaddr_add "$lan_mac" 1)
-		label_mac=$wan_mac
+		label_mac=$lan_mac
+		wifi_mac=$(macaddr_add "$lan_mac" 2)
+		#echo "$wifi_mac" > /sys/class/net/ra0/address
+		sed -i "s/^MacAddress_Default=.*/MacAddress_Default=$wifi_mac/" /etc/wireless/mediatek/mt7992.b0.dat
+		wifi_mac=$(macaddr_add_first_byte "$wifi_mac" 2)
+		#echo "$wifi_mac" > /sys/class/net/rai0/address
+		sed -i "s/^MacAddress_Default=.*/MacAddress_Default=$wifi_mac/" /etc/wireless/mediatek/mt7992.b1.dat
+		;;
+	mediatek,mt7987*|\
+	mediatek,mt7988*)
+		lan_mac=$(mtd_get_mac_binary "Factory" "0xFFFF4")
+		wan_mac=$(mtd_get_mac_binary "Factory" "0xFFFFA")
 		;;
 	jiorouter,ax6000-jidu6101)
 		label_mac=$(mtd_get_mac_ascii u-boot-env mac)

@@ -1,0 +1,160 @@
+From 8ec79378a3191427566084e76e8ecbd624ae9689 Mon Sep 17 00:00:00 2001
+From: Michael Pfeifroth <michael.pfeifroth@westermo.com>
+Date: Thu, 25 Jun 2026 13:28:32 +0200
+Subject: [PATCH 1/2] nl80211: bounds-check array_buf callbacks against buffer
+ capacity
+
+The nl80211 get_survey, get_assoclist and get_freqlist callbacks append
+entries to a caller-provided IWINFO_BUFSIZE (24 KiB) stack buffer
+without verifying that the buffer can still hold another entry. With
+struct iwinfo_assoclist_entry at ~176 bytes the buffer overflows once
+more than ~139 stations are associated, corrupting the caller's stack
+and crashing libiwinfo consumers (luci, ubus, the iwinfo CLI).
+
+Add an explicit max_count to struct nl80211_array_buf, set it from
+IWINFO_BUFSIZE / sizeof(entry) in the three call sites and skip appends
+once the limit is reached. The result is truncated instead of corrupted
+output on very busy APs or unusually large wiphy dumps.
+
+Signed-off-by: Michael Pfeifroth <michael.pfeifroth@westermo.com>
+---
+ iwinfo_nl80211.c | 27 ++++++++++++++++++++++++---
+ iwinfo_nl80211.h |  1 +
+ 2 files changed, 25 insertions(+), 3 deletions(-)
+
+diff --git a/iwinfo_nl80211.c b/iwinfo_nl80211.c
+index 3be2970..cdef43d 100644
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -2379,6 +2379,9 @@ static int nl80211_get_survey_cb(struct nl_msg *msg, void *arg)
+ 	if (rc)
+ 		return NL_SKIP;
+ 
++	if (arr->count >= arr->max_count)
++		return NL_SKIP;
++
+ 	/* advance to end of array */
+ 	e += arr->count;
+ 	memset(e, 0, sizeof(*e));
+@@ -2504,6 +2507,9 @@ static int nl80211_get_assoclist_cb(struct nl_msg *msg, void *arg)
+ 		[NL80211_RATE_INFO_SHORT_GI]     = { .type = NLA_FLAG   },
+ 	};
+ 
++	if (arr->count >= arr->max_count)
++		return NL_SKIP;
++
+ 	/* advance to end of array */
+ 	e += arr->count;
+ 	memset(e, 0, sizeof(*e));
+@@ -2626,7 +2632,11 @@ static int nl80211_get_assoclist_cb(struct nl_msg *msg, void *arg)
+ 
+ static int nl80211_get_survey(const char *ifname, char *buf, int *len)
+ {
+-	struct nl80211_array_buf arr = { .buf = buf, .count = 0 };
++	struct nl80211_array_buf arr = {
++		.buf = buf,
++		.count = 0,
++		.max_count = IWINFO_BUFSIZE / sizeof(struct iwinfo_survey_entry),
++	};
+ 	int rc;
+ 
+ 	rc = nl80211_request(ifname, NL80211_CMD_GET_SURVEY,
+@@ -2644,7 +2654,11 @@ static int nl80211_get_assoclist(const char *ifname, char *buf, int *len)
+ 	DIR *d;
+ 	int i, noise = 0;
+ 	struct dirent *de;
+-	struct nl80211_array_buf arr = { .buf = buf, .count = 0 };
++	struct nl80211_array_buf arr = {
++		.buf = buf,
++		.count = 0,
++		.max_count = IWINFO_BUFSIZE / sizeof(struct iwinfo_assoclist_entry),
++	};
+ 	struct iwinfo_assoclist_entry *e;
+ 
+ 	if ((d = opendir("/sys/class/net")) != NULL)
+@@ -3369,6 +3383,9 @@ static int nl80211_get_freqlist_cb(struct nl_msg *msg, void *arg)
+ 					    freqs[NL80211_FREQUENCY_ATTR_DISABLED])
+ 						continue;
+ 
++					if (arr->count >= arr->max_count)
++						return NL_SKIP;
++
+ 					e->band = nl80211_get_band(band->nla_type);
+ 					e->mhz = nla_get_u32(freqs[NL80211_FREQUENCY_ATTR_FREQ]);
+ 					e->channel = nl80211_freq2channel(e->mhz);
+@@ -3413,7 +3430,11 @@ static int nl80211_get_freqlist_cb(struct nl_msg *msg, void *arg)
+ static int nl80211_get_freqlist(const char *ifname, char *buf, int *len)
+ {
+ 	struct nl80211_msg_conveyor *cv;
+-	struct nl80211_array_buf arr = { .buf = buf, .count = 0 };
++	struct nl80211_array_buf arr = {
++		.buf = buf,
++		.count = 0,
++		.max_count = IWINFO_BUFSIZE / sizeof(struct iwinfo_freqlist_entry),
++	};
+ 	uint32_t features = nl80211_get_protocol_features(ifname);
+ 	int flags;
+ 
+diff --git a/iwinfo_nl80211.h b/iwinfo_nl80211.h
+index 2dff08b..afa2f2e 100644
+--- a/iwinfo_nl80211.h
++++ b/iwinfo_nl80211.h
+@@ -67,6 +67,7 @@ struct nl80211_rssi_rate {
+ struct nl80211_array_buf {
+ 	void *buf;
+ 	int count;
++	int max_count;
+ };
+ 
+ #endif
+diff --git a/include/iwinfo.h b/include/iwinfo.h
+index 2625fbd..e6c9883 100644
+--- a/include/iwinfo.h
++++ b/include/iwinfo.h
+@@ -21,6 +21,7 @@
+ 
+ 
+ #define IWINFO_BUFSIZE	24 * 1024
++#define IWINFO_ASSOCLIST_BUFSIZE	96 * 1024
+ #define IWINFO_ESSID_MAX_SIZE	32
+ 
+ enum iwinfo_80211 {
+diff --git a/iwinfo_cli.c b/iwinfo_cli.c
+index 84a9833..7b4a104 100644
+--- a/iwinfo_cli.c
++++ b/iwinfo_cli.c
+@@ -820,7 +820,7 @@ static void print_freqlist(const struct iwinfo_ops *iw, const char *ifname)
+ static void print_assoclist(const struct iwinfo_ops *iw, const char *ifname)
+ {
+ 	int i, len;
+-	char buf[IWINFO_BUFSIZE];
++	char buf[IWINFO_ASSOCLIST_BUFSIZE];
+ 	int j;
+ 	char mld_mac[18];
+  	struct iwinfo_assoclist_entry *e;
+diff --git a/iwinfo_lua.c b/iwinfo_lua.c
+index fbe8c7c..d789fc8 100644
+--- a/iwinfo_lua.c
++++ b/iwinfo_lua.c
+@@ -3246,7 +346,7 @@ static void set_rateinfo(lua_State *L, struct iwinfo_rate_entry *r, bool rx)
+ static int iwinfo_L_assoclist(lua_State *L, int (*func)(const char *, char *, int *))
+ {
+ 	int i, len;
+-	char rv[IWINFO_BUFSIZE];
++	char rv[IWINFO_ASSOCLIST_BUFSIZE];
+ 	char macstr[18];
+ 	const char *ifname = luaL_checkstring(L, 1);
+ 	struct iwinfo_assoclist_entry *e;
+diff --git a/iwinfo_nl80211.c b/iwinfo_nl80211.c
+index cdef43d..400dfd7 100644
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -2657,7 +2657,7 @@ static int nl80211_get_assoclist(const char *ifname, char *buf, int *len)
+ 	struct nl80211_array_buf arr = {
+ 		.buf = buf,
+ 		.count = 0,
+-		.max_count = IWINFO_BUFSIZE / sizeof(struct iwinfo_assoclist_entry),
++		.max_count = IWINFO_ASSOCLIST_BUFSIZE / sizeof(struct iwinfo_assoclist_entry),
+ 	};
+ 	struct iwinfo_assoclist_entry *e;
+ 

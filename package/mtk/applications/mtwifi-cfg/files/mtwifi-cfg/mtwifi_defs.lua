@@ -1,0 +1,315 @@
+#!/usr/bin/lua
+--[[
+ *
+ * Copyright (C) 2023 hanwckf <hanwckf@vip.qq.com>
+ * Copyright (C) 2025-2026 nanchuci <nanchuci023@gmail.com>
+ *
+ * 	This program is free software; you can redistribute it and/or modify
+ * 	it under the terms of the GNU General Public License as published by
+ * 	The Free Software Foundation; either version 2 of the License, or
+ * 	(at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * Functional enhancements and DOT11_EHT_BE support Modify by Nanchuci and padavanonly.
+ *
+]]
+
+local mtwifi_defs = {}
+
+mtwifi_defs.max_mbssid = 16
+mtwifi_defs.max_acl_entry = 129
+
+mtwifi_defs.vif_cfgs = {
+    -- dat cfg = default val
+    ["AuthMode"] = "OPEN",
+    ["EncrypType"] = "NONE",
+    ["PMFMFPC"] = "0",
+    ["PMFMFPR"] = "0",
+    ["PMFSHA256"] = "0",
+    ["PweMethod"] = "0",
+    ["SAQueryTimer"] = "1000",
+    ["SAQueryConfirmTimer"] = "200",
+    ["OCVSupport"] = "0",
+    ["RekeyInterval"] = "3600",
+    ["DefaultKeyID"] = "1",
+    ["IEEE8021X"] = "0",
+    ["Key1Type"] = "0",
+    ["Key2Type"] = "0",
+    ["Key3Type"] = "0",
+    ["Key4Type"] = "0",
+    ["PMKCachePeriod"] = "10",
+    ["own_ip_addr"] = "",
+    ["own_radius_port"] = "",
+    ["PreAuth"] = "0",
+    ["RADIUS_Port"] = "1812",
+    ["RADIUS_Server"] = "0",
+    ["RADIUS_Acct_Server"] = "0",
+    ["RADIUS_Acct_Port"] = "1813",
+    ["RADIUS_Acct_Key"] = "",
+    ["RekeyMethod"] = "DISABLE",
+    ["session_timeout_interval"] = "0",
+    ["Wapiifname"] = "",
+    ["MldGroup"] = "0",
+    ["ApMWDS"] = "0",
+    ["HideSSID"] = "0",
+    ["WirelessMode"] = "",
+    ["NoForwarding"] = "0",
+    ["APSDCapable"] = "0",
+    ["WmmCapable"] = "1",
+    ["FragThreshold"] = "2346",
+    ["RTSThreshold"] = "2347",
+    ["HT_AMSDU"] = "1",
+    ["HT_AutoBA"] = "1",
+    ["HT_BAWinSize"] = "1024",
+    ["HT_GI"] = "1",
+    ["HT_LDPC"] = "1",
+    ["HT_OpMode"] = "0",
+    ["HT_PROTECT"] = "1",
+    ["HT_STBC"] = "1",
+    ["IgmpSnEnable"] = "0",
+    ["VHT_BW_SIGNAL"] = "0",
+    ["VHT_LDPC"] = "1",
+    ["VHT_SGI"] = "1",
+    ["VHT_STBC"] = "1",
+    ["EDCCARegion"] = "0",
+    ["MuMimoDlEnable"] = "0",
+    ["MuMimoUlEnable"] = "0",
+    ["MuOfdmaDlEnable"] = "1",
+    ["MuOfdmaUlEnable"] = "1",
+    ["PpMuMimoDlEnable"] = "0",
+    ["PpMuMimoUlEnable"] = "0",
+    ["PpOfdmaDlEnable"] = "1",
+    ["PpOfdmaUlEnable"] = "1",
+    ["DLSCapable"] = "0",
+    ["WdsEnable"] = "0",
+    ["WscConfMode"] = "0",
+    ["WscConfStatus"] = "1",
+    ["WscV2Support"] = "1",
+    ["Wsc4digitPinCode"] = "0",
+    ["WscVendorPinCode"] = "",
+    ["TxRate"] = "0",
+    ["DtimPeriod"] = "1",
+    ["RRMEnable"] = "0",
+    ["RRMNeighbor"] = "0",
+    ["WNMEnable"] = "0",
+    ["WNMNotifyEnable"] = "0",
+    ["ProxyARPEnable"] = "0",
+    ["FtSupport"] = "0",
+    ["FtOnly"] = "0",
+    ["FtOtd"] = "0",
+}
+
+mtwifi_defs.vif_cfgs_idx = {
+    ["WPAPSK"] = "12345678",
+    ["SSID"] = "",
+    ["RADIUS_Key"] = "",
+    ["NasId"] = "",
+    ["FtR0khId"] = "",
+    ["FtR1khId"] = "",
+    ["FtMdId"] = "",
+    ["R0KeyLifeTime"] = "",
+    ["AssocDeadLine"] = "",
+}
+
+mtwifi_defs.vif_mac = {
+    ["MacAddress"] = "",
+    ["MldAddr"] = "",
+}
+
+mtwifi_defs.vif_acl = {
+    ["AccessPolicy"] = "0",
+    ["AccessControlList"] = "",
+}
+
+mtwifi_defs.chip_cfgs = {
+    -- uci config = dat config, default value
+    ["beacon_int"] = { "BeaconPeriod", "100"},
+    ["whnat"] = { "WHNAT", "1"},
+    ["vendor_vht"] = { "G_BAND_256QAM", "1"},
+}
+
+mtwifi_defs.reinstall_cfgs = {
+    "BssidNum", "WHNAT", "E2pAccessMode",
+    "HT_RxStream", "HT_TxStream", "WdsEnable",
+    "MldGroup", "ApcliMloDisable"
+}
+
+mtwifi_defs.cfg80211_tool_ap_cfgs = {
+    -- uci config = cfg80211_tool set cmd , default value
+    ["kicklow"] = {"KickStaRssiLow", "0"},
+    ["assocthres"] = {"AssocReqRssiThres", "0"},
+    ["mwds"] = {"mwds enable", "0"},
+}
+
+mtwifi_defs.enc2dat = {
+    -- enc = AuthMode, EncrypType
+    ["none"] = {"OPEN", "NONE"},
+    ["sae-ext-mixed"] = {"WPA2PSKWPA3PSKWPA3PSK-EXT", "CCMP128,GCMP256"},
+    ["sae_sae-ext"] = {"WPA3PSKWPA3PSK-EXT", "CCMP128,GCMP256"},
+    ["sae-ext"] = {"WPA3PSK_EXT", "GCMP256"},
+    ["sae-ext+ccmp"] = {"WPA3PSK_EXT", "CCMP128"},
+    ["sae-ext+gcmp"] = {"WPA3PSK_EXT", "GCMP128"},
+    ["sae-ext+ccmp256"] = {"WPA3PSK_EXT", "CCMP256"},
+    ["sae-ext+gcmp256"] = {"WPA3PSK_EXT", "GCMP256"},
+    ["sae-ext+ccmp+gcmp256"] = {"WPA3PSK_EXT", "CCMP128,GCMP256"},
+    ["sae"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
+    ["sae+ccmp"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128"},
+    ["sae+gcmp"] = {"WPA3PSK,WPA3PSK_EXT", "GCMP128"},
+    ["sae+ccmp256"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP256"},
+    ["sae+gcmp256"] = {"WPA3PSK,WPA3PSK_EXT", "GCMP256"},
+    ["sae+ccmp+gcmp256"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
+    ["sae-mixed"] = {"WPA2PSKWPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
+    ["wpa3-192"] = {"WPA3-192", "GCMP256"},
+    ["wpa3-mixed"] = {"WPA3WPA2", "AES"},
+    ["wpa3"] = {"WPA3", "AES"},
+    ["psk2+tkip+ccmp"] = {"WPA2PSK", "TKIPAES"},
+    ["psk2+tkip"] = {"WPA2PSK", "TKIP"},
+    ["psk2+ccmp"] = {"WPA2PSK", "AES"},
+    ["psk2"] = {"WPA2PSK", "AES"},
+    ["wpa2+tkip+ccmp"] = {"WPA2", "TKIPAES"},
+    ["wpa2+tkip"] = {"WPA2", "TKIP"},
+    ["wpa2+ccmp"] = {"WPA2", "AES"},
+    ["wpa2"] = {"WPA2", "AES"},
+    ["psk+tkip+ccmp"] = {"WPAPSK", "TKIPAES"},
+    ["psk+tkip"] = {"WPAPSK", "TKIP"},
+    ["psk+ccmp"] = {"WPAPSK", "AES"},
+    ["psk"] = {"WPAPSK", "AES"},
+    ["wpa+tkip+ccmp"] = {"WPA", "TKIPAES"},
+    ["wpa+tkip"] = {"WPA", "TKIP"},
+    ["wpa+ccmp"] = {"WPA", "AES"},
+    ["wpa"] = {"WPA", "AES"},
+    ["psk-mixed+tkip+ccmp"] = {"WPAPSK,WPA2PSK", "TKIPAES"},
+    ["psk-mixed+tkip"] = {"WPAPSK,WPA2PSK", "TKIP"},
+    ["psk-mixed+ccmp"] = {"WPAPSK,WPA2PSK", "AES"},
+    ["psk-mixed"] = {"WPAPSK,WPA2PSK", "AES"},
+    ["wpa-mixed+tkip+ccmp"] = {"WPA1WPA2", "TKIPAES"},
+    ["wpa-mixed+tkip"] = {"WPA1WPA2", "TKIP"},
+    ["wpa-mixed+ccmp"] = {"WPA1WPA2", "AES"},
+    ["wpa-mixed"] = {"WPA1WPA2", "AES"},
+    ["wep-open"] = {"OPEN", "WEP"},
+    ["wep-shared"] = {"SHARED", "WEP"},
+    ["wep-auto"] = {"WEPAUTO", "WEP"},
+    ["owe"] = {"OWE", "AES"},
+}
+
+mtwifi_defs.apclienc2dat = {
+    -- enc = AuthMode, EncrypType
+    ["sae"] = {"WPA3PSK", "CCMP128"},
+    ["sae+ccmp"] = {"WPA3PSK", "CCMP128"},
+    ["sae+gcmp"] = {"WPA3PSK", "GCMP128"},
+    ["sae+ccmp256"] = {"WPA3PSK", "CCMP256"},
+    ["sae+gcmp256"] = {"WPA3PSK", "GCMP256"},
+    ["sae+ccmp+gcmp256"] = {"WPA3PSK", "CCMP128,GCMP256"},
+}
+
+mtwifi_defs.countryRegions = {
+    -- CountryCode = 2g region, 5g region, 6g region
+    ["00"] = { 5, 26, 0 },
+    ["DB"] = { 5, 7, 0 },
+    ["AE"] = { 1, 0, 1 },
+    ["AL"] = { 1, 0, 1 },
+    ["AM"] = { 1, 2, 1 },
+    ["AR"] = { 1, 3, 1 },
+    ["AT"] = { 1, 1, 1 },
+    ["AU"] = { 1, 0, 0 },
+    ["AZ"] = { 1, 2, 1 },
+    ["BE"] = { 1, 1, 1 },
+    ["BG"] = { 1, 1, 1 },
+    ["BH"] = { 1, 0, 1 },
+    ["BN"] = { 1, 4, 1 },
+    ["BO"] = { 1, 4, 1 },
+    ["BR"] = { 1, 1, 0 },
+    ["BY"] = { 1, 0, 1 },
+    ["BZ"] = { 1, 4, 1 },
+    ["CA"] = { 0, 0, 0 },
+    ["CH"] = { 1, 1, 1 },
+    ["CL"] = { 1, 0, 1 },
+    ["CN"] = { 1, 0, 1 },
+    ["CO"] = { 0, 0, 0 },
+    ["CR"] = { 1, 0, 0 },
+    ["CY"] = { 1, 1, 1 },
+    ["CZ"] = { 1, 2, 1 },
+    ["DE"] = { 1, 1, 1 },
+    ["DK"] = { 1, 1, 1 },
+    ["DO"] = { 0, 0, 0 },
+    ["DZ"] = { 1, 0, 1 },
+    ["EC"] = { 1, 0, 1 },
+    ["EE"] = { 1, 1, 1 },
+    ["EG"] = { 1, 2, 1 },
+    ["ES"] = { 1, 1, 1 },
+    ["FI"] = { 1, 1, 1 },
+    ["FR"] = { 1, 2, 1 },
+    ["GB"] = { 1, 1, 0 },
+    ["GE"] = { 1, 2, 1 },
+    ["GR"] = { 1, 1, 1 },
+    ["GT"] = { 0, 0, 0 },
+    ["HK"] = { 1, 0, 1 },
+    ["HN"] = { 1, 0, 0 },
+    ["HR"] = { 1, 2, 0 },
+    ["HU"] = { 1, 1, 1 },
+    ["ID"] = { 1, 4, 1 },
+    ["IE"] = { 1, 1, 1 },
+    ["IL"] = { 1, 0, 1 },
+    ["IN"] = { 1, 0, 1 },
+    ["IR"] = { 1, 4, 1 },
+    ["IS"] = { 1, 1, 1 },
+    ["IT"] = { 1, 1, 1 },
+    ["JO"] = { 1, 0, 1 },
+    ["JP"] = { 1, 9, 0 },
+    ["KP"] = { 1, 5, 0 },
+    ["KR"] = { 1, 5, 0 },
+    ["KW"] = { 1, 0, 0 },
+    ["KZ"] = { 1, 0, 1 },
+    ["LB"] = { 1, 0, 0 },
+    ["LI"] = { 1, 1, 1 },
+    ["LT"] = { 1, 1, 1 },
+    ["LU"] = { 1, 1, 1 },
+    ["LV"] = { 1, 1, 1 },
+    ["MA"] = { 1, 0, 1 },
+    ["MC"] = { 1, 2, 1 },
+    ["MK"] = { 1, 0, 1 },
+    ["MO"] = { 1, 0, 1 },
+    ["MX"] = { 0, 0, 0 },
+    ["MY"] = { 1, 0, 1 },
+    ["NL"] = { 1, 1, 1 },
+    ["NO"] = { 0, 0, 1 },
+    ["NZ"] = { 1, 0, 1 },
+    ["OM"] = { 1, 0, 1 },
+    ["PA"] = { 0, 0, 1 },
+    ["PE"] = { 1, 4, 0 },
+    ["PH"] = { 1, 4, 1 },
+    ["PK"] = { 1, 0, 1 },
+    ["PL"] = { 1, 1, 1 },
+    ["PR"] = { 0, 0, 0 },
+    ["PT"] = { 1, 1, 1 },
+    ["QA"] = { 1, 0, 0 },
+    ["RO"] = { 1, 0, 1 },
+    ["RU"] = { 1, 0, 1 },
+    ["SA"] = { 1, 0, 0 },
+    ["SE"] = { 1, 1, 1 },
+    ["SG"] = { 1, 0, 1 },
+    ["SI"] = { 1, 1, 1 },
+    ["SK"] = { 1, 1, 1 },
+    ["SV"] = { 1, 0, 1 },
+    ["SY"] = { 1, 0, 1 },
+    ["TH"] = { 1, 0, 1 },
+    ["TN"] = { 1, 2, 1 },
+    ["TR"] = { 1, 2, 1 },
+    ["TT"] = { 1, 2, 1 },
+    ["TW"] = { 0, 3, 1 },
+    ["UA"] = { 1, 0, 1 },
+    ["US"] = { 1, 26, 0 },
+    ["UY"] = { 1, 5, 1 },
+    ["UZ"] = { 0, 1, 1 },
+    ["VE"] = { 1, 5, 1 },
+    ["VN"] = { 1, 0, 1 },
+    ["YE"] = { 1, 0, 1 },
+    ["ZA"] = { 1, 1, 1 },
+    ["ZW"] = { 1, 0, 1 },
+}
+
+return mtwifi_defs

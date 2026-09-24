@@ -13,7 +13,10 @@ PKG_RELEASE:=1
 PKG_LICENSE:=GPL-2.0
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
-PKG_CONFIG_DEPENDS:=CONFIG_WIFI_SCRIPTS_UCODE
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_PACKAGE_wifi-profile \
+	CONFIG_WIFI_SCRIPT_SUPPORT \
+	CONFIG_WIFI_SCRIPTS_UCODE
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -45,6 +48,8 @@ endef
 define Package/wifi-scripts/install
 	$(INSTALL_DIR) $(1)
 	$(CP) ./files/* $(1)/
+	$(if $(or $(CONFIG_PACKAGE_wifi-profile),$(CONFIG_WIFI_SCRIPT_SUPPORT)), \
+		rm -f $(1)/sbin/wifi)
 ifeq ($(CONFIG_WIFI_SCRIPTS_UCODE),y)
 	$(CP) ./files-ucode/* $(1)/
 endif

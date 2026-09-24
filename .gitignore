@@ -2,7 +2,7 @@
 .DS_Store
 .*.swp
 /env
-/dl
+/dl/*
 /.config
 /.config.old
 /.toolchain_build_ver
@@ -11,7 +11,7 @@
 /staging_dir
 /tmp
 /logs
-/feeds
+/feeds/*
 /feeds.conf
 /files
 /target/linux/feeds
@@ -35,3 +35,6 @@ git-src
 .cproject
 .ccache
 .vscode*
+
+!/feeds/*
+!/dl/*

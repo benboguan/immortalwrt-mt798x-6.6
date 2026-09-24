@@ -1,0 +1,13 @@
+Index: mwctl/scan.c
+===================================================================
+--- mwctl.orig/scan.c
++++ mwctl/scan.c
+@@ -45,7 +45,7 @@
+ #define MAX_ACS_PARAM_LEN 64
+ #define MAX_SCAN_PARAM_LEN 64
+ #define MAX_LEN_OF_SSID 32
+-#define MAX_SCAN_DUMP_LEN 4096
++#define MAX_SCAN_DUMP_LEN 15872
+ #define MAX_6G_CH 233
+ 
+ 
