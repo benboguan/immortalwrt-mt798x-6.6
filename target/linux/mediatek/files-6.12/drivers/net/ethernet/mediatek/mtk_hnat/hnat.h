@@ -265,10 +265,11 @@
 #define MAX_PPE_CACHE_NUM	(32)
 #endif
 
-/* If the user wants to set skb->mark to prevent hardware acceleration
- * for the packet flow.
+/* The user prevents hardware acceleration for a packet flow by setting
+ * HNAT_EXCEPTION_BIT in skb->mark. The rest of the mark is left alone, so
+ * it can still carry the QDMA queue id in the lower bits.
  */
-#define HNAT_EXCEPTION_TAG	0x99
+#define HNAT_EXCEPTION_BIT	BIT(7)
 
 /*--------------------------------------------------------------------------*/
 /* Descriptor Structure */
