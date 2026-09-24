@@ -1,52 +1,57 @@
 ---
-[v1] mtk_eth_soc: Add SKB headroom copy support
+[v2] mtk_eth_soc: Add SKB headroom copy support for ip fragmentation
 
-Support IPv4 network stack to preserve SKB headroom data during packet
-fragmentation and GSO (Generic Segmentation Offload) processing. The implementation
-adds mtk_skb_headroom_copy hook to ensure tunnel descriptor information is
-correctly copied to new SKB fragments, maintaining hardware offload metadata
-for MediaTek tunnel and encryption features.
-
-Ethernet driver implements mtk_hnat_skb_headroom_copy to preserve tunnel descriptor
-information in the SKB headroom during packet processing, ensuring correct handling
-of TOPS and CDRT fields for tunnel offload features.
+SKB headroom copy support is missing in ip fragmentation, we add it
+in this patch, ensuring PPE binding of the flows of large UDP packets
+that are IP fragmented before tunnel encapsulation.
 
 ---
+v2: Add SKB headroom copy support for ip fragmentation
 v1: Add SKB headroom copy support for tunnel packets
 ---
 --- a/include/linux/netdevice.h
 +++ b/include/linux/netdevice.h
-@@ -5378,4 +5378,5 @@ extern struct net_device *blackhole_netd
+@@ -5363,4 +5363,5 @@ extern struct net_device *blackhole_netd
  		atomic_long_add((VAL), &(DEV)->stats.__##FIELD)
  #define DEV_STATS_READ(DEV, FIELD) atomic_long_read(&(DEV)->stats.__##FIELD)
  
-+extern int (*mtk_skb_headroom_copy)(struct sk_buff *new, struct sk_buff *old);
++extern int (*mtk_gso_skb_copy_head)(struct sk_buff *new, struct sk_buff *old);
  #endif	/* _LINUX_NETDEVICE_H */
 --- a/net/core/dev.c
 +++ b/net/core/dev.c
-@@ -185,6 +185,9 @@ static DEFINE_READ_MOSTLY_HASHTABLE(napi
+@@ -182,6 +182,9 @@ static DEFINE_READ_MOSTLY_HASHTABLE(napi
  
  static DECLARE_RWSEM(devnet_rename_sem);
  
-+int (*mtk_skb_headroom_copy)(struct sk_buff *new, struct sk_buff *old) = NULL;
-+EXPORT_SYMBOL(mtk_skb_headroom_copy);
++int (*mtk_gso_skb_copy_head)(struct sk_buff *new, struct sk_buff *old) = NULL;
++EXPORT_SYMBOL(mtk_gso_skb_copy_head);
 +
  static inline void dev_base_seq_inc(struct net *net)
  {
  	unsigned int val = net->dev_base_seq + 1;
-@@ -3800,6 +3803,9 @@ static struct sk_buff *validate_xmit_skb
+@@ -3792,6 +3795,9 @@ static struct sk_buff *validate_xmit_skb
  		if (IS_ERR(segs)) {
  			goto out_kfree_skb;
  		} else if (segs) {
-+			if (mtk_skb_headroom_copy)
-+				mtk_skb_headroom_copy(segs, skb);
++			if (mtk_gso_skb_copy_head)
++				mtk_gso_skb_copy_head(segs, skb);
 +
  			consume_skb(skb);
  			skb = segs;
  		}
 --- a/net/ipv4/ip_output.c
 +++ b/net/ipv4/ip_output.c
-@@ -698,7 +698,7 @@ struct sk_buff *ip_frag_next(struct sk_b
+@@ -85,6 +85,9 @@
+ #include <linux/netlink.h>
+ #include <linux/tcp.h>
+ 
++int (*mtk_ip_frag_skb_copy_head)(struct sk_buff *new, struct sk_buff *old) = NULL;
++EXPORT_SYMBOL(mtk_ip_frag_skb_copy_head);
++
+ static int
+ ip_fragment(struct net *net, struct sock *sk, struct sk_buff *skb,
+ 	    unsigned int mtu,
+@@ -698,7 +701,7 @@ struct sk_buff *ip_frag_next(struct sk_b
  	}
  
  	/* Allocate buffer */
@@ -55,7 +60,7 @@ v1: Add SKB headroom copy support for tunnel packets
  	if (!skb2)
  		return ERR_PTR(-ENOMEM);
  
-@@ -707,7 +707,7 @@ struct sk_buff *ip_frag_next(struct sk_b
+@@ -707,7 +710,7 @@ struct sk_buff *ip_frag_next(struct sk_b
  	 */
  
  	ip_copy_metadata(skb2, skb);
@@ -64,34 +69,45 @@ v1: Add SKB headroom copy support for tunnel packets
  	skb_put(skb2, len + state->hlen);
  	skb_reset_network_header(skb2);
  	skb2->transport_header = skb2->network_header + state->hlen;
+@@ -754,6 +757,9 @@ struct sk_buff *ip_frag_next(struct sk_b
+ 
+ 	ip_send_check(iph);
+ 
++	if (mtk_ip_frag_skb_copy_head)
++		mtk_ip_frag_skb_copy_head(skb2, skb);
++
+ 	return skb2;
+ }
+ EXPORT_SYMBOL(ip_frag_next);
 --- a/drivers/net/ethernet/mediatek/mtk_eth_soc.c
 +++ b/drivers/net/ethernet/mediatek/mtk_eth_soc.c
-@@ -7662,6 +7662,8 @@ static int mtk_probe(struct platform_dev
+@@ -7431,6 +7431,9 @@ static int mtk_probe(struct platform_dev
  	schedule_delayed_work(&eth->reset.monitor_work,
  			      MTK_DMA_MONITOR_TIMEOUT);
  
-+	mtk_skb_headroom_copy = mtk_hnat_skb_headroom_copy;
++	mtk_gso_skb_copy_head = mtk_skb_copy_head;
++	mtk_ip_frag_skb_copy_head = mtk_skb_copy_head;
 +
  	return 0;
  
  err_unreg_netdev:
-@@ -7690,6 +7692,8 @@ static void mtk_remove(struct platform_d
+@@ -7459,6 +7462,9 @@ static void mtk_remove(struct platform_d
  	struct mtk_mac *mac;
  	int i;
  
-+	mtk_skb_headroom_copy = NULL;
++	mtk_gso_skb_copy_head = NULL;
++	mtk_ip_frag_skb_copy_head = NULL;
 +
  	if (eth->esw_base)
  		iounmap(eth->esw_base);
  
 --- a/drivers/net/ethernet/mediatek/mtk_tnl.h
 +++ b/drivers/net/ethernet/mediatek/mtk_tnl.h
-@@ -43,4 +43,36 @@ struct mtk_tnl_desc {
+@@ -45,4 +45,34 @@ struct mtk_tnl_desc {
  #define is_tnl_tag_valid(skb) (skb_tnl_magic_tag(skb) == TNL_MAGIC_TAG)
  #define skb_tnl_is_pppoe(skb) (((struct mtk_tnl_desc *)((skb)->head))->is_pppoe)
  
-+static inline int
-+mtk_hnat_skb_headroom_copy(struct sk_buff *new, struct sk_buff *old)
++static inline int mtk_skb_copy_head(struct sk_buff *new, struct sk_buff *old)
 +{
 +	struct sk_buff *temp = new;
 +	int need_copy = 0;
@@ -121,5 +137,12 @@ v1: Add SKB headroom copy support for tunnel packets
 +
 +	return 0;
 +}
-+
  #endif /* MTK_TNL_H */
+--- a/include/net/ip.h
++++ b/include/net/ip.h
+@@ -842,4 +842,5 @@ void ip_sock_set_recverr(struct sock *sk
+ void ip_sock_set_tos(struct sock *sk, int val);
+ void  __ip_sock_set_tos(struct sock *sk, int val);
+ 
++extern int (*mtk_ip_frag_skb_copy_head)(struct sk_buff *new, struct sk_buff *old);
+ #endif	/* _IP_H */
