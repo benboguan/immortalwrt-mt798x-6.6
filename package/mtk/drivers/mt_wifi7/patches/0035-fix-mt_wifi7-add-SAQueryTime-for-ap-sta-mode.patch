@@ -1,6 +1,6 @@
 --- a/mt_wifi/common/security/pmf/pmf.c
 +++ b/mt_wifi/common/security/pmf/pmf.c
-@@ -137,12 +137,15 @@ VOID PMF_MlmeSAQueryReq
+@@ -137,13 +137,16 @@ VOID PMF_MlmeSAQueryReq
  						  END_OF_ARGS);
  		if (wpa3_test_ctrl != 12) {
  			if (pPmfCfg->SAQueryStatus == SAQ_IDLE) {
@@ -135,7 +135,7 @@
  
  INT Set_PMFSA_Q_Proc(
  	IN PRTMP_ADAPTER pAd,
-@@ -2611,6 +2723,82 @@ INT Set_ApCliPMFSHA256_Proc(
+@@ -2611,6 +2722,82 @@ INT Set_ApCliPMFSHA256_Proc(
  	return TRUE;
  }
  
