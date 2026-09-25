@@ -1012,8 +1012,8 @@ function mtwifi_cfg_setup(argv)
     dats.ApCliPMFMFPR = 0
     dats.ApCliPMFSHA256 = 0
     dats.ApCliPweMethod = 0
-    dats.ApCliSAQueryTimer = 1000
-    dats.ApCliSAQueryConfirmTimer = 200
+    dats.ApCliPMFSAQ_Time = 1000
+    dats.ApCliPMFSAQ_ConfTime = 200
     dats.ApCliOCVSupport = 0
     dats.ApCliMuMimoDlEnable = 0
     dats.ApCliMuMimoUlEnable = 0
@@ -1084,8 +1084,8 @@ function mtwifi_cfg_setup(argv)
                     dats.ApCliPMFMFPC, dats.ApCliPMFMFPR = 1, 1
                     dats.ApCliPMFSHA256 = (dats.ApCliAuthMode == "WPA3") and 1 or 0
                 end
-                dats.ApCliSAQueryTimer = v.config.ieee80211w_max_timeout
-                dats.ApCliSAQueryConfirmTimer = v.config.ieee80211w_retry_timeout
+                dats.ApCliPMFSAQ_Time = v.config.ieee80211w_max_timeout
+                dats.ApCliPMFSAQ_ConfTime = v.config.ieee80211w_retry_timeout
                 dats.ApCliOCVSupport = v.config.ocv
             else
                 dats.ApCliPMFMFPC, dats.ApCliPMFMFPR, dats.ApCliPMFSHA256 = 0, 0, 0
@@ -1368,8 +1368,8 @@ function mtwifi_cfg_setup(argv)
                     set_dat(dats, apidx, "PMFMFPR", 1)
                     set_dat(dats, apidx, "PMFSHA256", (authmode == "WPA3") and 1 or 0)
                 end
-                set_dat(dats, apidx, "SAQueryTimer", v.config.ieee80211w_max_timeout)
-                set_dat(dats, apidx, "SAQueryConfirmTimer", v.config.ieee80211w_retry_timeout)
+                set_dat(dats, apidx, "PMFSAQ_Time", v.config.ieee80211w_max_timeout)
+                set_dat(dats, apidx, "PMFSAQ_ConfTime", v.config.ieee80211w_retry_timeout)
                 set_dat(dats, apidx, "OCVSupport",v.config.ocv)
             else
                 set_dat(dats, apidx, "PMFMFPC", 0)
