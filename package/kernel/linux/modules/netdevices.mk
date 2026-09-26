@@ -2373,7 +2373,6 @@ define KernelPackage/mediatek_hnat
 	CONFIG_NET_MEDIATEK_HNAT
   FILES:= \
         $(LINUX_DIR)/drivers/net/ethernet/mediatek/mtk_hnat/mtkhnat.ko
-  AUTOLOAD:=$(call AutoLoad,20,mtkhnat)
 endef
 
 define KernelPackage/mediatek_hnat/description

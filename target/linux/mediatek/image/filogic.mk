@@ -1908,6 +1908,25 @@ define Device/h3c_magic-nx30-pro
 endef
 TARGET_DEVICES += h3c_magic-nx30-pro
 
+define Device/hiveton_h5000m
+  DEVICE_VENDOR := Hiveton
+  DEVICE_MODEL := H5000M
+  DEVICE_ALT0_VENDOR := Airpi
+  DEVICE_ALT0_MODEL := H5000M
+  DEVICE_DTS := mt7987a-hiveton-h5000m
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt798x-2p5g-phy blkid e2fsprogs f2fsck mkf2fs \
+	kmod-hwmon-pwmfan kmod-usb3 kmod-fs-ext4 kmod-mmc kmod-fs-f2fs kmod-fs-vfat
+  KERNEL_LOADADDR := 0x40000000
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+endef
+TARGET_DEVICES += hiveton_h5000m
+
 define Device/huasifei_wh3000-emmc
   DEVICE_VENDOR := Huasifei
   DEVICE_MODEL := WH3000 eMMC
@@ -2507,29 +2526,30 @@ define Device/mediatek_mt7987a-rfb
   KERNEL := kernel-bin | gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
 	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
+  IMAGES := sysupgrade.itb
+  KERNEL_INITRAMFS_SUFFIX := .itb
+  KERNEL_IN_UBI := 1
+  IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
+  IMAGES := sysupgrade.itb
+  IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
+  ARTIFACTS := \
+	snand-preloader.bin \
+	snand-bl31-uboot.fip \
+	sdcard.img.gz
+  ARTIFACT/snand-preloader.bin	:= mt7987-bl2 spim-nand0-ubi-comb
+  ARTIFACT/snand-bl31-uboot.fip	:= mt7987-bl31-uboot rfb-spim-nand
+  ARTIFACT/sdcard.img.gz	:= mt798x-gpt sdmmc |\
+				   pad-to 17k | mt7987-bl2 sdmmc-comb |\
+				   pad-to 6656k | mt7987-bl31-uboot rfb-sd |\
+				$(if $(CONFIG_TARGET_ROOTFS_INITRAMFS),\
+				  pad-to 12M | append-image-stage initramfs.itb | check-size 44m |\
+				) \
+				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
+				  pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
+				) \
+				  gzip
 endef
 TARGET_DEVICES += mediatek_mt7987a-rfb
-
-define Device/hiveton_h5000m
-  DEVICE_VENDOR := Hiveton
-  DEVICE_MODEL := H5000M
-  DEVICE_DTS := mt7987a-hiveton-h5000m
-  DEVICE_DTS_DIR := $(DTS_DIR)/
-  DEVICE_DTC_FLAGS := --pad 4096
-  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt798x-2p5g-phy blkid e2fsprogs f2fsck mkf2fs \
-	kmod-hwmon-pwmfan kmod-usb3 kmod-fs-ext4 kmod-mmc kmod-fs-f2fs kmod-fs-vfat
-  KERNEL_LOADADDR := 0x40080000
-  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
-  KERNEL_INITRAMFS := kernel-bin | lzma | \
-	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
-  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
-  IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
-  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
-  BOARD_NAME := hiveton,h5000m
-  SUPPORTED_DEVICES := hiveton,h5000m hiveton-h5000m
-endef
-TARGET_DEVICES += hiveton_h5000m
 
 define Device/mediatek_mt7988a-rfb
   DEVICE_VENDOR := MediaTek

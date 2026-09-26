@@ -1,14 +1,8 @@
 // SPDX-License-Identifier: (GPL-2.0 OR MIT)
-/*
- * Copyright (C) 2025 MediaTek Inc.
- * Author: Sam.Shih <sam.shih@mediatek.com>
- */
 
 /dts-v1/;
-#include <dt-bindings/input/input.h>
-#include <dt-bindings/leds/common.h>
-
 #include "mt7987a.dtsi"
+#include <dt-bindings/input/input.h>
 
 / {
 	model = "Hiveton H5000M";
@@ -22,24 +16,22 @@
 	};
 
 	chosen {
-		bootargs = "console=ttyS0,115200n1 loglevel=8  \
-			    earlycon=uart8250,mmio32,0x11000000 \
-			    pci=pcie_bus_perf \
-			    root=PARTLABEL=rootfs rootwait \
-			    rootfstype=squashfs,f2fs";
+		bootargs = "earlycon=uart8250,mmio32,0x11000000 \
+			    root=PARTLABEL=rootfs rootwait pci=pcie_bus_perf";
+		stdout-path = "serial0:115200n8";
 	};
 
 	gpio-keys {
 		compatible = "gpio-keys";
 
-		reset {
+		button-reset {
 			label = "reset";
 			linux,code = <KEY_RESTART>;
 			gpios = <&pio 1 GPIO_ACTIVE_LOW>;
 			debounce-interval = <10>;
 		};
 
-		wps {
+		button-wps {
 			label = "wps";
 			linux,code = <KEY_WPS_BUTTON>;
 			gpios = <&pio 0 GPIO_ACTIVE_LOW>;
@@ -87,71 +79,18 @@
 		regulator-boot-on;
 		regulator-always-on;
 	};
-
-	reg_usb_5v: regulator-usb-5v {
-		compatible = "regulator-fixed";
-		regulator-name = "usb-5v";
-		regulator-max-microvolt = <5000000>;
-		regulator-min-microvolt = <5000000>;
-		regulator-boot-on;
-		regulator-always-on;
-	};
 };
 
-/* eMMC shares pins with spi1 on MT7987; disable spi1. */
-&spi1 {
-	status = "disabled";
-};
-
-&mmc0 {
-	pinctrl-names = "default", "state_uhs";
-	pinctrl-0 = <&mmc_pins_default>;
-	pinctrl-1 = <&mmc_pins_uhs>;
-	bus-width = <8>;
-	max-frequency = <48000000>;
-	cap-mmc-highspeed;
-	vmmc-supply = <&reg_3p3v>;
-	non-removable;
+&eth {
+	mediatek,wed = <&wed0>;
 	status = "okay";
+};
 
-	card@0 {
-		compatible = "mmc-card";
-		reg = <0>;
-
-		block {
-			compatible = "block-device";
-
-			partitions {
-				block-partition-env {
-					partname = "ubootenv";
-
-					nvmem-layout {
-						compatible = "u-boot,env";
-					};
-				};
-
-				block-partition-factory {
-					partname = "factory";
-
-					nvmem-layout {
-						compatible = "fixed-layout";
-						#address-cells = <1>;
-						#size-cells = <1>;
-
-						eeprom_factory_0: eeprom@0 {
-							reg = <0x0 0x1e00>;
-						};
-
-						macaddr_factory_4: macaddr@4 {
-							compatible = "mac-base";
-							reg = <0x4 0x6>;
-							#nvmem-cell-cells = <1>;
-						};
-					};
-				};
-			};
-		};
-	};
+&fan {
+	//cooling-levels = <0 10 20 30 40 50 60 70 80 90 100 110 120
+	//		  130 140 150 160 170 180 190 200 210 220 240 255>;
+	pwms = <&pwm 1 50000 0>;
+	status = "okay";
 };
 
 /*
@@ -186,21 +125,21 @@
 
 &mdio {
 	phy1: phy@1 {
+		reset-gpios = <&pio 42 GPIO_ACTIVE_LOW>;
+		reset-assert-us = <100000>;
+		reset-deassert-us = <100000>;
 		compatible = "ethernet-phy-ieee802.3-c45";
 		reg = <1>;
 		interrupt-parent = <&pio>;
 		interrupts = <41 IRQ_TYPE_LEVEL_LOW>;
-		reset-assert-us = <100000>;
-		reset-deassert-us = <100000>;
-		reset-gpios = <&pio 42 GPIO_ACTIVE_LOW>;
 		realtek,aldps-enable;
 	};
 
 	phy15: phy@15 {
-		compatible = "ethernet-phy-ieee802.3-c45";
-		reg = <15>;
 		pinctrl-names = "i2p5gbe-led";
 		pinctrl-0 = <&i2p5gbe_led0_pins>;
+		compatible = "ethernet-phy-ieee802.3-c45";
+		reg = <15>;
 		phy-mode = "internal";
 
 		leds {
@@ -216,40 +155,56 @@
 	};
 };
 
-&pciephy {
-	mediatek,1port-2lane;
+&mmc0 {
+	pinctrl-names = "default", "state_uhs";
+	pinctrl-0 = <&mmc_pins_default>;
+	pinctrl-1 = <&mmc_pins_uhs>;
+	bus-width = <8>;
+	max-frequency = <48000000>;
+	cap-mmc-highspeed;
+	vmmc-supply = <&reg_3p3v>;
+	non-removable;
+	status = "okay";
+
+	card@0 {
+		compatible = "mmc-card";
+		reg = <0>;
+
+		block {
+			compatible = "block-device";
+
+			partitions {
+				block-partition-factory {
+					partname = "factory";
+
+					nvmem-layout {
+						compatible = "fixed-layout";
+						#address-cells = <1>;
+						#size-cells = <1>;
+
+						eeprom_factory_0: eeprom@0 {
+							reg = <0x0 0x1e00>;
+						};
+					};
+				};
+			};
+		};
+	};
 };
 
 &pcie0 {
+	pinctrl-names = "default";
+	pinctrl-0 = <&pcie0_pins>;
+	reset-gpios = <&pio 36 GPIO_ACTIVE_HIGH>;
 	wifi-reset-gpios = <&pio 38 GPIO_ACTIVE_LOW>;
 	wifi-reset-msleep = <100>;
 	wifi-deassert-msleep = <500>;
+	//max-link-width = <2>;
 	status = "okay";
 };
 
 &pcie1 {
 	status = "disabled";
-};
-
-&wed0 {
-	compatible = "mediatek,wed0", "syscon";
-};
-
-&hnat {
-	mtketh-wan = "eth1";
-	mtketh-lan = "eth0";
-	mtketh-lan2 = "hnat";
-	mtketh-ppd = "hnat";
-	/* This board has no bonding. hnat-bond-* are left unset;
-	 * the mtk_hnat driver falls back to defaults (bond0/bond1),
-	 * which simply never match any device here.
-	 */
-	/* hnat-bond-wan  = "bond1"; */
-	/* hnat-bond-lan  = "bond0"; */
-	mtketh-max-gmac = <2>;
-	mtketh-ppe-num = <2>;
-	ext-devices-prefix = "usb","wwan","rmnet","eth2","eth3";
-	status = "okay";
 };
 
 &pio {
@@ -261,15 +216,6 @@
 	};
 };
 
-&fan {
-	compatible = "pwm-fan";
-	#cooling-cells = <2>;
-	cooling-levels = <0 10 20 30 40 50 60 70 80 90 100 110 120
-			  130 140 150 160 170 180 190 200 210 220 240 255>;
-	pwms = <&pwm 1 50000 0>;
-	status = "okay";
-};
-
 &pwm {
 	status = "okay";
 	pinctrl-names = "default";
@@ -279,13 +225,38 @@
 &ssusb {
 	status = "okay";
 	vusb33-supply = <&reg_3p3v>;
-	vbus-supply = <&reg_usb_5v>;
 };
 
 &tphyu3port0 {
 	status = "okay";
 };
 
-&lvts {
+&hnat {
+	mtketh-wan = "eth1";
+	mtketh-lan = "eth0";
+	mtketh-lan2 = "hnat";
+	mtketh-ppd = "hnat";
+	mtketh-max-gmac = <2>;
+	mtketh-ppe-num = <2>;
+	/* This board has no bonding. hnat-bond-* are left unset;
+	 * the mtk_hnat driver falls back to defaults (bond0/bond1),
+	 * which simply never match any device here.
+	 */
+	/* hnat-bond-wan  = "bond1"; */
+	/* hnat-bond-lan  = "bond0"; */
+	ext-devices-prefix = "usb","wwan","rmnet","eth2","eth3";
+	status = "okay";
+};
+
+&wed {
+	status = "okay";
+};
+
+&wed0 {
+	pci_slot_map = <0x0>;
+	status = "okay";
+};
+
+&wdma {
 	status = "okay";
 };
