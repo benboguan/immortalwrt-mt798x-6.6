@@ -1,0 +1,70 @@
+--- a/drivers/net/bonding/bond_main.c	2025-05-22 20:12:26.000000000 +0800
++++ b/drivers/net/bonding/bond_main.c	2025-06-16 00:33:48.071002753 +0800
+@@ -93,7 +93,10 @@
+ #include <net/xdp.h>
+ 
+ #include "bonding_priv.h"
+-
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++#include <linux/netfilter.h>
++#include <net/netfilter/nf_flow_table.h>
++#endif
+ /*---------------------------- Module parameters ----------------------------*/
+ 
+ /* monitor all links that often (in milliseconds). <=0 disables monitoring */
+@@ -5872,6 +5875,35 @@
+ 	return ret;
+ }
+ 
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++static int bond_dev_flow_offload_check(struct flow_offload_hw_path *path)
++{
++       struct net_device *master_dev = path->dev;
++       struct net_device *slave_dev[10];
++       struct list_head *iter;
++       int i = 0;
++       netdev_for_each_lower_dev(master_dev, slave_dev[i], iter) {
++               /* Check the link status of the slave device */
++       if (!(slave_dev[i]->flags & IFF_UP) ||
++               !netif_carrier_ok(slave_dev[i]))
++               continue;
++                       i++;
++       if (i >= ARRAY_SIZE(slave_dev))
++                       break;
++       }
++       if (i > 0) {
++               i = ((path->skb_hash) >> 1) % i;
++                       if (i >= 0 && i < ARRAY_SIZE(slave_dev)) {
++                       /* Choose a subordinate device by hash index */
++                       path->dev = slave_dev[i];
++                       }
++       }
++       if (path->dev->netdev_ops->ndo_flow_offload_check)
++               return path->dev->netdev_ops->ndo_flow_offload_check(path);
++       return 0;
++}
++#endif /* CONFIG_NF_FLOW_TABLE */
++
+ static const struct ethtool_ops bond_ethtool_ops = {
+ 	.get_drvinfo		= bond_ethtool_get_drvinfo,
+ 	.get_link		= ethtool_op_get_link,
+@@ -5913,6 +5945,9 @@
+ 	.ndo_xdp_get_xmit_slave = bond_xdp_get_xmit_slave,
+ 	.ndo_hwtstamp_get	= bond_hwtstamp_get,
+ 	.ndo_hwtstamp_set	= bond_hwtstamp_set,
++#if IS_ENABLED(CONFIG_NF_FLOW_TABLE)
++       .ndo_flow_offload_check = bond_dev_flow_offload_check,
++#endif
+ };
+ 
+ static const struct device_type bond_type = {
+--- a/include/net/netfilter/nf_flow_table.h	2024-09-13 16:35:08.862364500 +0800
++++ b/include/net/netfilter/nf_flow_table.h	2024-09-14 10:28:23.716107006 +0800
+@@ -109,6 +109,7 @@
+ 	u16 vlan_id;
+ 	u16 pppoe_sid;
+ 	u16 dsa_port;
++	u32 skb_hash;
+ };
+ 
+ #define NF_FLOW_TIMEOUT (30 * HZ)
