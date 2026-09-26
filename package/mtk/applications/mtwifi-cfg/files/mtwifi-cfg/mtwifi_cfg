@@ -2,7 +2,7 @@
 --[[
  *
  * Copyright (C) 2023 hanwckf <hanwckf@vip.qq.com>
- * Copyright (C) 2025 nanchuci <nanchuci023@gmail.com>
+ * Copyright (C) 2025-2026 nanchuci <nanchuci023@gmail.com>
  *
  * 	This program is free software; you can redistribute it and/or modify
  * 	it under the terms of the GNU General Public License as published by
@@ -163,12 +163,13 @@ end
 -- from gl.inet
 -- ============================================================
 function mtwifi_create_ext_vif(cfg)
+    if not cfg then return end
     local dev = l1dat.devname_ridx[cfg.device]
     if not dev or not dev.ext_ifname then return end
 
     local phyname = get_phy_name(dev.main_ifname)
     if not phyname then
-        nixio.syslog("warn", "mtwifi-cfg: cannot find phy for "..dev.main_ifname..", skip ext vif")
+        nixio.syslog("warning", "mtwifi-cfg: cannot find phy for "..dev.main_ifname..", skip ext vif")
         return
     end
 
@@ -191,8 +192,9 @@ function mtwifi_create_ext_vif(cfg)
     os.execute("mwctl "..ifname_ext.." set no_bcn 1")
 end
 
-function mtwifi_release_ext_vif(cfg)
-    local dev = l1dat.devname_ridx[cfg.device]
+function mtwifi_release_ext_vif(devname)
+    if not devname then return end
+    local dev = l1dat.devname_ridx[devname]
     if not dev or not dev.ext_ifname then return end
 
     local ifname_ext = dev.ext_ifname..tostring(15)
@@ -253,7 +255,7 @@ function mtwifi_set_mld_bcn(cfg, value)
     if not cfg or not cfg.interfaces then return end
     for _, v in pairs(cfg.interfaces) do
         if v.config and v.mtwifi_ifname then
-            local n = tonumber(tostring(v.config.mlo or "0"))
+            local n = tonumber(tostring(v.config.mldgroup or "0"))
             if n and n ~= 0 and n < 17 then
                 os.execute("mwctl "..v.mtwifi_ifname.." set no_bcn "..value)
                 nixio.syslog("info", "mtwifi-cfg: set no_bcn "..value.." for "..v.mtwifi_ifname)
@@ -354,49 +356,84 @@ end
 -- hostapd MBSS
 -- ============================================================
 function start_hostapd_group(vifs, cfg)
-    if not vifs or #vifs == 0 then return end
-
-    local first_ifname = vifs[1].mtwifi_ifname
-    if not is_cfg80211_enabled(first_ifname) then
-        for _, v in ipairs(vifs) do
-            if v.mtwifi_ifname then
-                os.execute("ip link set " .. v.mtwifi_ifname .. " up")
-            end
-        end
+    if not vifs or #vifs == 0 then
+        nixio.syslog("warning", "mtwifi-cfg: start_hostapd_group: no vifs")
         return
     end
 
+    nixio.syslog("info", "mtwifi-cfg: start_hostapd_group ENTER, vifs="..#vifs)
+
+    -- 1. 强制将所有 AP 接口 up
+    for _, v in ipairs(vifs) do
+        if v.mtwifi_ifname then
+            os.execute("ip link set " .. v.mtwifi_ifname .. " up")
+        end
+    end
+
+    local first_ifname = vifs[1].mtwifi_ifname
+    if not first_ifname then
+        nixio.syslog("err", "mtwifi-cfg: start_hostapd_group: first vif has no ifname")
+        return
+    end
+
+    -- 2. 等待 phy80211 就绪，最多 5 秒
+    local retry = 0
+    local max_retry = 50
+    while retry < max_retry do
+        if is_cfg80211_enabled(first_ifname) then
+            break
+        end
+        utils.sleep(0.1)
+        retry = retry + 1
+    end
+
+    if not is_cfg80211_enabled(first_ifname) then
+        nixio.syslog("warning", "mtwifi-cfg: phy80211 not found for "..first_ifname..", continuing anyway")
+    else
+        nixio.syslog("info", "mtwifi-cfg: phy80211 ready for "..first_ifname.." after "..retry.." tries")
+    end
+
+    -- 3. 分离主/子 VIF
     local main_vif, sub_vifs = nil, {}
     for _, v in ipairs(vifs) do
-        if v.config and v.config.mlo and not main_vif then
+        if v.config and v.config.mldgroup and not main_vif then
             main_vif = v
         else
             table.insert(sub_vifs, v)
         end
     end
     if not main_vif then main_vif = table.remove(sub_vifs, 1) end
-    if not main_vif then return end
+    if not main_vif then
+        nixio.syslog("err", "mtwifi-cfg: start_hostapd_group: no main vif")
+        return
+    end
 
     local main_ifname = main_vif.mtwifi_ifname
+    nixio.syslog("info", "mtwifi-cfg: main_ifname="..tostring(main_ifname)..", sub_vifs="..#sub_vifs)
 
-    -- PHY 级 hairpin（一个 PHY 设一次）
+    -- 4. PHY 级 hairpin（一个 PHY 设一次）
     mtwifi_set_hairpin_phy(vifs, main_ifname)
+
+    -- 5. 生成主 BSS 配置并启动 hostapd
     mtk_hostapd.hostapd_setup_vif(cfg, main_vif)
     mtk_hostapd.hostapd_start_main(cfg, main_vif)
 
-    local retry = 0
-    local max_retry = 50 -- 5s total, MLO/multi-bss can be slow
-    while retry < max_retry do
-        if utils.exists(HOSTAPD_CTRL_DIR .. "/" .. main_ifname) then
+    -- 6. 等待主 BSS ctrl socket 就绪（用 -S 测试，不要用 utils.exists）
+    local retry2 = 0
+    while retry2 < max_retry do
+        if os.execute("[ -S " .. HOSTAPD_CTRL_DIR .. "/" .. main_ifname .. " ] 2>/dev/null") == 0 then
             break
         end
         utils.sleep(0.1)
-        retry = retry + 1
+        retry2 = retry2 + 1
     end
-    if retry >= max_retry then
-        nixio.syslog("warn", "mtwifi-cfg: hostapd ctrl socket timeout for "
-            .. main_ifname .. ", sub-BSS may fail")
+    if retry2 >= max_retry then
+        nixio.syslog("warning", "mtwifi-cfg: hostapd ctrl socket timeout for "..main_ifname)
+    else
+        nixio.syslog("info", "mtwifi-cfg: hostapd ctrl socket ready for "..main_ifname)
     end
+
+    -- 7. 生成并添加子 BSS
     for _, v in ipairs(sub_vifs) do
         mtk_hostapd.hostapd_setup_vif(cfg, v)
         mtk_hostapd.hostapd_enable_vif(main_ifname, cfg, v)
@@ -436,10 +473,28 @@ function stop_hostapd_group(ifnames)
         end
         os.execute("ip link set " .. ifname .. " down")
     end
+
+    -- 直接 kill 我们启动的 hostapd 实例
+    for _, ifname in ipairs(ifnames) do
+        local pid_file = HOSTAPD_CTRL_DIR .. "/hostapd-" .. ifname .. ".pid"
+        if os.execute("[ -f " .. pid_file .. " ] 2>/dev/null") == 0 then
+            local f = io.popen("cat " .. pid_file)
+            local pid = f:read("*a"):gsub("%s+$", "")
+            f:close()
+            if pid and #pid > 0 then
+                os.execute("kill " .. pid .. " 2>/dev/null")
+                nixio.syslog("info", "mtwifi-cfg: killed hostapd pid " .. pid .. " for " .. ifname)
+            end
+            os.remove(pid_file)
+        end
+    end
 end
 
 function start_all_ap_bss(vifs, cfg)
-    if not vifs or #vifs == 0 then return end
+    if not vifs or #vifs == 0 then
+        nixio.syslog("warning", "mtwifi-cfg: start_all_ap_bss: no vifs")
+        return
+    end
 
     local phy_groups = {}
     for _, v in ipairs(vifs) do
@@ -584,10 +639,15 @@ end
 function mtwifi_cfg_foreach_vif(cfg, mode, func)
     if cfg == nil or func == nil then return end
 
-    local vif_num,_,_ = vif_count(cfg)
-    for idx=0,vif_num-1 do
-        local v = cfg.interfaces[string.format("%02d", idx)]
-        if v.config and v.config.mode and v.config.mode == mode then
+    local keys = {}
+    for k, _ in pairs(cfg.interfaces) do
+        table.insert(keys, k)
+    end
+    table.sort(keys)
+
+    for _, k in ipairs(keys) do
+        local v = cfg.interfaces[k]
+        if v and v.config and v.config.mode == mode then
             func(v)
         end
     end
@@ -648,7 +708,7 @@ function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
     end
 
     -- ext vif（ra15/rai15）
-    mtwifi_create_ext_vif(cfg)
+    --mtwifi_create_ext_vif(cfg)
 
     local ap_vifs, sta_vifs = {}, {}
     mtwifi_cfg_foreach_vif(cfg, "ap", function(v)
@@ -661,6 +721,8 @@ function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
             table.insert(sta_vifs, v)
         end
     end)
+
+    nixio.syslog("info", "mtwifi-cfg: ap_vifs="..#ap_vifs..", sta_vifs="..#sta_vifs)
 
     start_all_ap_bss(ap_vifs, cfg)
 
@@ -692,7 +754,6 @@ function mtwifi_down(devname, cfg)
 
     -- down
     mtwifi_service_misc_clean()
-    mtwifi_set_mgmt_rx_accept_beacon_probrsp(devname)
 
     local dev = l1dat.devname_ridx[devname]
     local reset_vifs = {}
@@ -721,9 +782,10 @@ function mtwifi_down(devname, cfg)
     if #ap_ifnames > 0 then
         stop_hostapd_group(ap_ifnames)
     end
+    mtwifi_set_mgmt_rx_accept_beacon_probrsp(devname)
 
     -- ext vif
-    mtwifi_release_ext_vif(cfg)
+    mtwifi_release_ext_vif(devname)
 
     return reset_vifs
 end
@@ -745,11 +807,10 @@ function mtwifi_reinstall()
 end
 
 function cfg80211_tool()
-    if utils.exists("/usr/sbin/iwpriv") then
-        return "iwpriv"
-    end
     if utils.exists("/usr/sbin/mwctl") then
         return "mwctl"
+    elseif utils.exists("/usr/sbin/iwpriv") then
+        return "iwpriv"
     end
     return nil
 end
@@ -760,7 +821,6 @@ function __exec_cfg80211_tool(ifname, key, val)
         if type(val) == "boolean" then
             val = val and "1" or "0"
         end
-        -- quote arguments to reduce shell injection surface
         local cmd = string.format("%s %q set %q=%q", tool, ifname, key, tostring(val))
         nixio.syslog("info", "mtwifi-cfg: cfg80211_tool cmd: "..cmd)
         os.execute(cmd)
@@ -776,13 +836,12 @@ function mtwifi_cfg_cfg80211_tool_hook(cfg)
             for k, j in pairs(defs.cfg80211_tool_ap_cfgs) do
                 local val
                 if k == "mwds" then
-                    val = (v.config.mwds == nil or v.config.mwds == "1") and "1" or "0"
+                    val = (v.config.mwds == "1") and "1" or "0"
                 else
                     val = v.config[k] or j[2]
                 end
                 __exec_cfg80211_tool(vif, j[1], val)
             end
-            -- multi_ap: backhaul bss must not run with client isolation.
             if v.config.multi_ap == "1" or v.config.multi_ap == "2" then
                 if v.config.isolate == "1" then
                     nixio.syslog("err", "mtwifi-cfg: multi_ap backhaul cannot combine with isolate_clients; ignoring multi_ap for "..vif)
@@ -796,7 +855,6 @@ function mtwifi_cfg_cfg80211_tool_hook(cfg)
     local apcli_hook = function(v)
         if (not v.config.disabled) and v.mtwifi_ifname then
             local vif = v.mtwifi_ifname
-            -- apcli mwds preinit
             if v.config.mwds ~= nil then
                 __exec_cfg80211_tool(vif, "mwds enable",
                     v.config.mwds ~= "0" and "1" or "0")
@@ -820,14 +878,11 @@ function set_chip_cfg(cfg, dats)
         uci = k
         dat_key = v[1]
 
-        -- reset chip cfgs to default
         dats[dat_key] = v[2]
 
-        -- setup current dev cfg
         set_dev_dat(dats, dat_key, cfg.config[uci])
     end
 
-    -- setup other dev cfg
     for k,v in pairs(l1dat.devname_ridx) do
         if k ~= cfg.device and
         v.INDEX == l1dat.devname_ridx[cfg.device].INDEX and
@@ -867,9 +922,8 @@ local function get_basic_rate(band, cell_density, legacy_rates, w_mode)
 end
 
 function mtwifi_cfg_setup(argv)
-    -- reentrancy lock for DBDC driver reload path
     if utils.exists(REINSTALL_LOCK) then
-        nixio.syslog("warn", "mtwifi-cfg: reinstall in progress, skip nested setup")
+        nixio.syslog("warning", "mtwifi-cfg: reinstall in progress, skip nested setup")
         return
     end
 
@@ -913,13 +967,12 @@ function mtwifi_cfg_setup(argv)
         dats.BssidNum = 1
     end
 
-    -- setup wireless mode
     if type(cfg.config.htmode) ~= type("") then
         nixio.syslog("err", "mtwifi-cfg: invalid htmode!")
         return
     end
 
-    local WirelessMode, band_idx
+    local WirelessMode
     local band = cfg.config.band
     local require_mode = cfg.config.require_mode
 
@@ -958,14 +1011,12 @@ function mtwifi_cfg_setup(argv)
         return
     end
 
-    -- setup bandwidth
     local bw = string.match(cfg.config.htmode, "%d+")
     if not bw then
         nixio.syslog("err", "mtwifi-cfg: invalid bandwidth!")
         return
     end
 
-    -- default bw is 20MHz
     dats.HT_BW = 0
     dats.VHT_BW = 0
     dats.EHT_ApBw = 0
@@ -1029,7 +1080,7 @@ function mtwifi_cfg_setup(argv)
             dats.ApCliWirelessMode = WirelessMode
             if not v.config.disabled then
                 dats.ApCliEnable = 1
-                if not v.config.mlo then
+                if not v.config.mldgroup then
                     dats.ApcliMloDisable = 1
                     dats.ApcliMacAddress = v.config.macaddr
                 else
@@ -1094,10 +1145,8 @@ function mtwifi_cfg_setup(argv)
         end
     end
 
-    -- setup chip cfgs
     set_chip_cfg(cfg, dats)
 
-    -- setup other dev cfgs
     local country = cfg.config.country
 
     if type(country) == "string" and #country == 2 then
@@ -1108,7 +1157,6 @@ function mtwifi_cfg_setup(argv)
         end
         if band == "2g" then
             dats.CountryRegion = defs.countryRegions[country][1]
-            --dats.AutoChannelSkipList = "14"
         elseif band == "5g" then
             dats.CountryRegionABand = defs.countryRegions[country][2]
             if country == "00" or country == "US" then
@@ -1162,7 +1210,6 @@ function mtwifi_cfg_setup(argv)
     local region_map = {CN="CHN", US="FCC", JP="JAP", KR="KR", FR="CE", IE="CE", AU="CE"}
     dats.RDRegion = region_map[country] or "CE"
 
-    -- 0:default, 1:FCC, 2:ETSI_2017, 3:JAPAN, 4:ETSI_2023, 255:NONE
     dats.EDCCARegion = (country == "US" or country == "KR") and 1 or (country == "JP" and 3) or (country == "DE" and 4) or 0
 
     if cfg.config.doth then
@@ -1177,7 +1224,6 @@ function mtwifi_cfg_setup(argv)
             dats.DfsZeroWaitDefault = 1
         end
         dats.DfsEnable = cfg.config.dfs and 1 or 0
-        --dats.Band4DfsEnable = 1
     else
         dats.SeamlessCSA = 0
         dats.IEEE80211H = 0
@@ -1185,7 +1231,6 @@ function mtwifi_cfg_setup(argv)
         dats.DfsZeroWait = 0
         dats.DfsDedicatedZeroWait = 0
         dats.DfsZeroWaitDefault = 0
-        --dats.Band4DfsEnable = 0
     end
 
     if band == "2g" then
@@ -1205,7 +1250,6 @@ function mtwifi_cfg_setup(argv)
     dats.BGProtection = cfg.config.legacy_rates and 1 or 0
     dats.Vht1024QamSupport = cfg.config.vht_1024 and 1 or 0
     dats.TxBurst = cfg.config.txburst and 1 or 0
-    --dats.MLREnable = cfg.config.mlr and 1 or 0
     dats.TxPreamble = cfg.config.short_preamble and 1 or 0
     dats.HeLdpc = cfg.config.ldpc and 1 or 0
 
@@ -1252,18 +1296,25 @@ function mtwifi_cfg_setup(argv)
 
     -- setup vif cfgs
     local apidx = 1
-    for idx = 0,vif_num-1 do
-        v = cfg.interfaces[string.format("%02d", idx)]
-        if v.config and v.config.mode == "ap" then
+    local ap_index = 0
+    local iface_keys = {}
+    for k, _ in pairs(cfg.interfaces) do
+        table.insert(iface_keys, k)
+    end
+    table.sort(iface_keys)
+
+    for _, iface_key in ipairs(iface_keys) do
+        local v = cfg.interfaces[iface_key]
+        if v and v.config and v.config.mode == "ap" then
             local mac = v.config.macaddr
-            local mlo = v.config.mlo
+            local mldgroup = v.config.mldgroup
             local igmp_snooping = uci.cursor():get("network", "@device[0]", "igmp_snooping") or ""
 
-            set_dat(dats, apidx, "MldGroup", mlo or 0)
-            if mlo then
+            set_dat(dats, apidx, "MldGroup", mldgroup or 0)
+            if mldgroup then
                 set_idx_dat(dats, apidx-1, "MldAddr", mac or "")
             else
-                if idx == 0 then
+                if ap_index == 0 then
                     dats.MacAddress = mac or dats.MacAddress_Default
                 else
                     set_idx_dat(dats, apidx, "MacAddress", mac or "")
@@ -1370,7 +1421,7 @@ function mtwifi_cfg_setup(argv)
                 end
                 set_dat(dats, apidx, "PMFSAQ_Time", v.config.ieee80211w_max_timeout)
                 set_dat(dats, apidx, "PMFSAQ_ConfTime", v.config.ieee80211w_retry_timeout)
-                set_dat(dats, apidx, "OCVSupport",v.config.ocv)
+                set_dat(dats, apidx, "OCVSupport", v.config.ocv)
             else
                 set_dat(dats, apidx, "PMFMFPC", 0)
                 set_dat(dats, apidx, "PMFMFPR", 0)
@@ -1399,6 +1450,7 @@ function mtwifi_cfg_setup(argv)
             end
 
             apidx = apidx + 1
+            ap_index = ap_index + 1
         end
     end
 
@@ -1421,7 +1473,6 @@ function mtwifi_cfg_setup(argv)
     if string.find(profile, "dbdc") then
         if reinstall_wifidrv then
             nixio.syscall = nixio.syscall or syscall
-            -- set reentrancy lock
             local lf = io.open(REINSTALL_LOCK, "w")
             if lf then lf:write(tostring(os.time())); lf:close() end
             local ok = true

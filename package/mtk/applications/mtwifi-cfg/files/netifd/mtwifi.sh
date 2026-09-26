@@ -52,9 +52,7 @@ mtwifi_vif_ap_config() {
 
 	if [ -n "$ifname" ]; then
 		logger -t "netifd-mtwifi" "add $ifname to vifidx $name"
-		#wireless_add_vif "$name" "$ifname"
-		ubus -t 20 wait_for network.interface.$network
-		ubus call network.interface.$network add_device "{\"name\":\"$ifname\"}"
+		wireless_add_vif "$name" "$ifname"
 	fi
 }
 
@@ -80,7 +78,7 @@ mtwifi_vif_sta_config() {
 mtwifi_vif_ap_set_data() {
 	local ifname=""
 
-	if [ ! $AP_IDX -gt $MTWIFI_MAX_AP_IDX ]; then
+	if [ $AP_IDX -le $MTWIFI_MAX_AP_IDX ]; then
 		ifname="${MTWIFI_AP_IF_PREFIX}${AP_IDX}"
 		AP_IDX=$((AP_IDX+1))
 	fi
@@ -91,7 +89,7 @@ mtwifi_vif_ap_set_data() {
 mtwifi_vif_sta_set_data() {
 	local ifname=""
 
-	if [ ! $APCLI_IDX -gt $MTWIFI_MAX_APCLI_IDX ]; then
+	if [ $APCLI_IDX -le $MTWIFI_MAX_APCLI_IDX ]; then
 		ifname="${MTWIFI_APCLI_IF_PREFIX}${APCLI_IDX}"
 		APCLI_IDX=$((APCLI_IDX+1))
 	fi

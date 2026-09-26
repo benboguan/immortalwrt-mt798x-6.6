@@ -1256,11 +1256,20 @@ function hostapd_setup_vif(cfg, vif)
 	local dev = cfg.config
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
-	iface.network = iface.network or "lan"
+	if type(iface.network) == "table" then
+		iface.network = iface.network[1] or "lan"
+	end
 	local file_name = var_hostapd_path.."hostapd-"..iface[".name"]..".conf"
-	local file
 
+	-- 确保目录存在
+	os.execute("mkdir -p "..var_hostapd_path)
+
+	local file
 	file = io.open(file_name, "w+")
+	if not file then
+		nixio.syslog("err", "hostapd_setup_vif: cannot open "..file_name)
+		return
+	end
 
 	io.output(file)
 	if iface.logger_syslog then
@@ -1318,7 +1327,6 @@ function hostapd_setup_vif(cfg, vif)
 			io.write("ieee80211ax=1\n")
 			io.write("ieee80211be=1\n")
 		end
-		
 	elseif dev.band == "5G" or dev.band == "5g" then
 		if acs == true then
 			io.write("hw_mode=any\n")
@@ -1337,7 +1345,6 @@ function hostapd_setup_vif(cfg, vif)
 			io.write("ieee80211ax=1\n")
 			io.write("ieee80211be=1\n")
 		end
-
 	elseif dev.band == "6G" or dev.band == "6g" then
 		if acs == true then
 			io.write("hw_mode=any\n")
@@ -2232,7 +2239,7 @@ function hostapd_setup_vif(cfg, vif)
 	if iface.apsd_capable ~= nil then
 		io.write("uapsd_advertisement_enabled=", iface.apsd_capable, "\n")
 	else
-		io.write("uapsd_advertisement_enabled=1")
+		io.write("uapsd_advertisement_enabled=1\n")
 	end
 
 	if iface.ieee80211r == "1" then
@@ -2333,6 +2340,17 @@ function hostapd_setup_vif(cfg, vif)
 		io.write("proxy_arp=0\n")
 	end
 
+	if iface.mldgroup and tonumber(iface.mldgroup) > 0 then
+		io.write("mld_ap=1\n")
+		if iface.mld_addr then
+			io.write("mld_addr="..iface.mld_addr.."\n")
+		end
+	end
+
+	if iface.bssid then
+		io.write("bssid="..iface.bssid.."\n")
+	end
+
 	io.close()
 end
 
@@ -2341,7 +2359,9 @@ function hostapd_enable_vif(main_ifname, cfg, vif)
 	local phy = main_ifname   -- ra0/rai0/rax0
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
-	iface.network = iface.network or "lan"
+	if type(iface.network) == "table" then
+		iface.network = iface.network[1] or "lan"
+	end
 	local file_name = var_hostapd_path.."hostapd-"..iface[".name"]..".conf"
 	local action_wps_er_pid = var_path.."action-"..iface[".name"].."-wps-er.pid"
 	local action_wps_er_script = "/lib/wifi/hostapd_wps_er_action.lua"
@@ -2374,18 +2394,45 @@ function hostapd_start_main(cfg, vif)
 	local file_name = var_hostapd_path.."hostapd-"..iface[".name"]..".conf"
 	local pid_file  = var_hostapd_path.."hostapd-"..iface[".name"]..".pid"
 
-	-- 幂等保护：如果 ctrl 接口已经存在，说明 hostapd 已经在跑，直接返回
+	-- 强制 up
+	os.execute("ip link set "..iface[".name"].." up")
+
+	-- 等待接口 up 且 phy80211 出现，最多 5 秒
+	local retry = 0
+	while retry < 50 do
+		local up = os.execute("ip link show "..iface[".name"].." up >/dev/null 2>&1") == 0
+		local phy = os.execute("[ -e /sys/class/net/"..iface[".name"].."/phy80211 ] 2>/dev/null") == 0
+		if up and phy then break end
+		os.execute("sleep 0.1")
+		retry = retry + 1
+	end
+
+	-- 如果 ctrl 接口已存在，说明 hostapd 已在运行
 	if os.execute("[ -S "..var_hostapd_path..iface[".name"].." ] 2>/dev/null") == 0 then
 		nixio.syslog("info", "hostapd_start_main: "..iface[".name"].." already running, skip")
 		return
 	end
 
-	-- pid 文件存在但进程已死，清理掉
-	if os.execute("[ -f "..pid_file.." ] && ! kill -0 $(cat "..pid_file..") 2>/dev/null") == 0 then
-		os.remove(pid_file)
+	-- 如果 pid 文件存在且进程还在，先 kill 掉旧实例
+	if os.execute("[ -f "..pid_file.." ] && kill -0 $(cat "..pid_file..") 2>/dev/null") == 0 then
+		local f = io.popen("cat "..pid_file)
+		local oldpid = f:read("*a"):gsub("%s+$","")
+		f:close()
+		if oldpid and #oldpid > 0 then
+			os.execute("kill "..oldpid.." 2>/dev/null")
+			os.execute("sleep 0.5")
+		end
 	end
+	os.remove(pid_file)
 
 	os.execute("mkdir -p "..var_hostapd_path)
-	os.execute("ip link set "..iface[".name"].." up")
 	os.execute("hostapd -B -P "..pid_file.." "..file_name)
 end
+
+
+return {
+	hostapd_setup_vif = hostapd_setup_vif,
+	hostapd_enable_vif = hostapd_enable_vif,
+	hostapd_disable_vif = hostapd_disable_vif,
+	hostapd_start_main = hostapd_start_main
+}

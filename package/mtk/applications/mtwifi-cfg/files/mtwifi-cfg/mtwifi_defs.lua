@@ -128,7 +128,6 @@ mtwifi_defs.vif_acl = {
 mtwifi_defs.chip_cfgs = {
     -- uci config = dat config, default value
     ["beacon_int"] = { "BeaconPeriod", "100"},
-    ["whnat"] = { "WHNAT", "1"},
     ["vendor_vht"] = { "G_BAND_256QAM", "1"},
 }
 
@@ -142,7 +141,7 @@ mtwifi_defs.cfg80211_tool_ap_cfgs = {
     -- uci config = cfg80211_tool set cmd , default value
     ["kicklow"] = {"KickStaRssiLow", "0"},
     ["assocthres"] = {"AssocReqRssiThres", "0"},
-    ["mwds"] = {"mwds enable", "0"},
+    --["mwds"] = {"mwds enable", "0"},
 }
 
 mtwifi_defs.enc2dat = {

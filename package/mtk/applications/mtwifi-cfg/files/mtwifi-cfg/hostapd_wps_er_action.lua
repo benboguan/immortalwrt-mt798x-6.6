@@ -577,12 +577,14 @@ local function translate_config()
 	x:set("wireless", iface, "wps_state", "2")
 	x:commit("wireless")
 
-	local network = "lan"
+	local network
+	if type(network) == "table" then
+		network = network[1] or "lan"
+	end
 	local net = x:get("wireless", iface, "network")
 	if net then network = net end
 
-	os.execute("(sleep 1; ubus call network.interface."..network.." reload) >/dev/null 2>&1 &")
-	--os.execute("(sleep 1; ubus call network reload) >/dev/null 2>&1 &")
+	os.execute("(sleep 1; ubus call network reload) >/dev/null 2>&1 &")
 end
 
 -- Check the event

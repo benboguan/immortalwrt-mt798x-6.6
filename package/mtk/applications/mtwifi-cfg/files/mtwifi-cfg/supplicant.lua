@@ -9,7 +9,9 @@ function supp_setup_vif(cfg, vif)
 	local dev = cfg.config
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
-	iface.network = iface.network or "lan"
+	if type(iface.network) == "table" then
+		iface.network = iface.network[1] or "lan"
+	end
 	local file_name = var_supplicant_path.."wpa_supplicant-"..iface[".name"]..".conf"
 	local file
 
@@ -775,7 +777,9 @@ end
 function supp_enable_vif(cfg, vif)
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
-	iface.network = iface.network or "lan"
+	if type(iface.network) == "table" then
+		iface.network = iface.network[1] or "lan"
+	end
 	local file_name = var_supplicant_path.."wpa_supplicant-"..iface[".name"]..".conf"
 	local action_scan_pid = var_path.."/action-"..iface[".name"].."-scan.pid"
 
@@ -799,3 +803,9 @@ function supp_disable_vif(iface)
 	os.remove(scan_state)
 	os.remove(file_name)
 end
+
+return {
+	supp_setup_vif = supp_setup_vif,
+	supp_enable_vif = supp_enable_vif,
+	supp_disable_vif = supp_disable_vif
+}
