@@ -49,7 +49,7 @@
 							reg = <0x0 0x1e00>;
 						};
 
-						macaddr_factory_4: macaddr@4 {
+						/*macaddr_factory_4: macaddr@4 {
 							compatible = "mac-base";
 							reg = <0x4 0x6>;
 							#nvmem-cell-cells = <1>;
@@ -59,7 +59,7 @@
                                                         compatible = "mac-base";
                                                         reg = <0xa 0x6>;
                                                         #nvmem-cell-cells = <1>;
-                                                };
+                                                };*/
 					};
 				};
 			};

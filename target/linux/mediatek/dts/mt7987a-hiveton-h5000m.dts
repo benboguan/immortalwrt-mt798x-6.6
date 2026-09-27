@@ -81,3 +81,16 @@
 		};
 	};
 };
+
+&wed {
+	status = "okay";
+};
+
+&wed0 {
+	pci_slot_map = <0x0>;
+	status = "okay";
+};
+
+&wdma {
+	status = "okay";
+};
