@@ -16,6 +16,7 @@
 #include <linux/if.h>
 #include <linux/if_ether.h>
 #include <net/netevent.h>
+#include <net/netfilter/nf_conntrack_zones.h>
 #include <linux/mod_devicetable.h>
 #include "hnat_mcast.h"
 #include "nf_hnat_mtk.h"
@@ -897,6 +898,8 @@ struct mib_entry {
 struct hnat_accounting {
 	u64 bytes;
 	u64 packets;
+	struct nf_conntrack_zone zone;
+	u8 dir;
 };
 
 enum mtk_hnat_version {
@@ -969,14 +972,23 @@ struct mtk_hnat {
 	struct timer_list hnat_reset_timestamp_timer;
 	struct timer_list hnat_mcast_check_timer;
 	bool nf_stat_en;
-	spinlock_t		cah_lock;
 	struct xlat_conf xlat;
 	spinlock_t		entry_lock;
+	spinlock_t		flow_entry_lock;
+	struct hlist_head *foe_flow[MAX_PPE_NUM];
 	bool ipv6_en;
 	bool guest_en;
 	bool dscp_en;
 	bool macvlan_support;
  };
+
+struct hnat_flow_entry {
+	struct hlist_node list;
+	struct foe_entry data;
+	unsigned long last_update;
+	u16 ppe_index;
+	u16 hash;
+};
 
 struct extdev_entry {
 	char name[IFNAMSIZ];
@@ -1318,6 +1330,8 @@ int ext_if_add(struct extdev_entry *ext_entry);
 int ext_if_del(struct extdev_entry *ext_entry);
 void cr_set_field(void __iomem *reg, u32 field, u32 val);
 int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no);
+int mtk_hnat_eth_hook_tx(struct sk_buff *skb, struct net_device *dev);
+extern int (*eth_hook_tx)(struct sk_buff *skb, struct net_device *dev);
 int mtk_sw_nat_hook_rx(struct sk_buff *skb);
 void foe_clear_all_bind_entries(void);
 void mtk_ppe_dev_register_hook(struct net_device *dev);
@@ -1344,7 +1358,8 @@ int mtk_ppe_get_xlat_v6_by_v4(u32 *ipv4, struct in6_addr *ipv6,
 
 struct hnat_accounting *hnat_get_count(struct mtk_hnat *h, u32 ppe_id,
 				       u32 index, struct hnat_accounting *diff);
-
+bool hnat_flow_entry_match(struct foe_entry *entry, struct foe_entry *data);
+void hnat_flow_entry_delete(struct hnat_flow_entry *flow_entry);
 static inline u16 foe_timestamp(struct mtk_hnat *h)
 {
 	return (readl(hnat_priv->fe_base + 0x0010)) & 0xffff;

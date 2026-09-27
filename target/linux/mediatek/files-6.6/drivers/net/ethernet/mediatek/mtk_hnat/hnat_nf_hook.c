@@ -47,6 +47,11 @@
 		 get_wandev_from_index(skb->vlan_tci & VLAN_VID_MASK)))
 #define do_mape_w2l_fast(dev, skb)                                          \
 		(mape_toggle && IS_WAN(dev) && (!is_from_mape(skb)))
+
+//// DPI + HWNAT workaround
+extern int dpi_using;
+extern unsigned long dpi_limit_bytes;
+//// end of DPI+HWNAT workaround
 extern struct net_device *ppd_dev;
 static struct ipv6hdr mape_l2w_v6h;
 static struct ipv6hdr mape_w2l_v6h;
@@ -226,6 +231,71 @@ int ext_if_add(struct extdev_entry *ext_entry)
 	return len;
 }
 
+int ext_if_del(struct extdev_entry *ext_entry)
+{
+	int i, j;
+
+	for (i = 0; i < MAX_EXT_DEVS; i++) {
+		if (hnat_priv->ext_if[i] == ext_entry) {
+			for (j = i; hnat_priv->ext_if[j] && j < MAX_EXT_DEVS - 1; j++)
+				hnat_priv->ext_if[j] = hnat_priv->ext_if[j + 1];
+			hnat_priv->ext_if[j] = NULL;
+			break;
+		}
+	}
+
+	return i;
+}
+
+bool hnat_flow_entry_match(struct foe_entry *entry, struct foe_entry *data)
+{
+	int len;
+
+	if (entry->udib1.udp != data->udib1.udp)
+		return false;
+
+	switch (entry->udib1.pkt_type) {
+	case IPV4_HNAPT:
+	case IPV4_HNAT:
+	case IPV4_DSLITE:
+	case IPV4_MAP_T:
+	case IPV4_MAP_E:
+		len = offsetof(struct hnat_ipv4_hnapt, info_blk2);
+		break;
+	case IPV6_3T_ROUTE:
+	case IPV6_5T_ROUTE:
+	case IPV6_6RD:
+	case IPV6_HNAPT:
+	case IPV6_HNAT:
+		len = offsetof(struct hnat_ipv6_5t_route, resv1);
+		break;
+	}
+
+	return !memcmp(&entry->ipv4_hnapt.sip, &data->ipv4_hnapt.sip, len - 4);
+}
+
+void hnat_flow_entry_delete(struct hnat_flow_entry *flow_entry)
+{
+	hlist_del_init(&flow_entry->list);
+	kfree(flow_entry);
+}
+
+static struct hnat_flow_entry *hnat_flow_entry_search(u16 ppe_index, u16 hash, struct foe_entry *data)
+{
+	struct hnat_flow_entry *flow_entry;
+	struct hlist_head *head = &hnat_priv->foe_flow[ppe_index][hash / 4];
+	struct hlist_node *n;
+
+	hlist_for_each_entry_safe(flow_entry, n, head, list) {
+		if (flow_entry->ppe_index == ppe_index &&
+		    flow_entry->hash == hash &&
+		    hnat_flow_entry_match(&flow_entry->data, data))
+		    return flow_entry;
+	}
+
+	return NULL;
+}
+
 static void foe_clear_ethdev_bind_entries(struct net_device *dev)
 {
 	struct net_device *master_dev = dev;
@@ -281,21 +351,6 @@ static void foe_clear_ethdev_bind_entries(struct net_device *dev)
 	/* clear HWNAT cache */
 	if (total > 0)
 		hnat_cache_ebl(1);
-}
-int ext_if_del(struct extdev_entry *ext_entry)
-{
-	int i, j;
-
-	for (i = 0; i < MAX_EXT_DEVS; i++) {
-		if (hnat_priv->ext_if[i] == ext_entry) {
-			for (j = i; hnat_priv->ext_if[j] && j < MAX_EXT_DEVS - 1; j++)
-				hnat_priv->ext_if[j] = hnat_priv->ext_if[j + 1];
-			hnat_priv->ext_if[j] = NULL;
-			break;
-		}
-	}
-
-	return i;
 }
 
 void foe_clear_all_bind_entries(void)
@@ -2209,17 +2264,21 @@ static unsigned int skb_to_hnat_info(struct sk_buff *skb,
 
 	/* We must ensure all info has been updated before set to hw */
 	wmb();
+
 	/* Before entry enter BIND state, write other fields first,
 	 * prevent racing with hardware accesses.
 	 */
-	size_t off = offsetof(struct foe_entry, bfib1) + sizeof(entry.bfib1);
-	size_t len = sizeof(struct foe_entry) - off;
-	memcpy((u8 *)foe + off, (u8 *)&entry + off, len);
+	memcpy(&foe->ipv6_hnapt.ipv6_sip0,
+		&entry.ipv6_hnapt.ipv6_sip0,
+		sizeof(struct foe_entry) -
+		offsetof(struct foe_entry, ipv6_hnapt.ipv6_sip0));
 	/* We must ensure all info has been updated before set to hw */
 	wmb();
 	/* After other fields have been written, write info1 to BIND the entry */
 	memcpy(&foe->bfib1, &entry.bfib1, sizeof(entry.bfib1));
-	dma_wmb();
+	/* We must ensure all info has been updated */
+	wmb();
+
 	/*reset statistic for this entry*/
 	if (hnat_priv->data->per_flow_accounting &&
 	    skb_hnat_entry(skb) < hnat_priv->foe_etry_num &&
@@ -2491,17 +2550,20 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
 		entry.ipv6_5t_route.act_dp &= ~UDF_HNAT_PRE_FILLED;
 	/* We must ensure all info has been updfated before set to hw */
 	wmb();
+
 	/* Before entry enter BIND state, write other fields first,
-         * prevent racing with hardware accesses.
-         */
-		size_t off = offsetof(struct foe_entry, bfib1) + sizeof(entry.bfib1);
-		size_t len = sizeof(struct foe_entry) - off;
-		memcpy((u8 *)hw_entry + off, (u8 *)&entry + off, len);
-        /* We must ensure all info has been updated before set to hw */
-        wmb();
-        /* After other fields have been writtefn, write info1 to BIND the entry */
-        memcpy(&hw_entry->bfib1, &entry.bfib1, sizeof(entry.bfib1));
-        dma_wmb();
+	 * prevent racing with hardware accesses.
+	 */
+	memcpy(&hw_entry->ipv6_hnapt.ipv6_sip0,
+		&entry.ipv6_hnapt.ipv6_sip0,
+		sizeof(struct foe_entry) -
+		offsetof(struct foe_entry, ipv6_hnapt.ipv6_sip0));
+	/* We must ensure all info has been updated before set to hw */
+	wmb();
+	/* After other fields have been written, write info1 to BIND the entry */
+	memcpy(&hw_entry->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+	/* We must ensure the info has been updated */
+	wmb();
 
 #if defined(CONFIG_MEDIATEK_NETSYS_V3)
 	if (debug_level >= 7) {
@@ -2557,6 +2619,137 @@ int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no)
 	}
 #endif
 	spin_unlock(&hnat_priv->entry_lock);
+	return NF_ACCEPT;
+}
+
+/* for per-port-per-vlan bond mode */
+int mtk_hnat_eth_hook_tx(struct sk_buff *skb, struct net_device *dev)
+{
+	struct hnat_flow_entry *flow_entry;
+	struct foe_entry *hw_entry, entry;
+	struct mtk_mac *mac;
+	struct vlan_ethhdr *ethvhdr;
+	struct nf_conn *ct;
+	enum ip_conntrack_info ctinfo;
+	int gmac = NR_DISCARD;
+	u16 dsa_tag;
+
+	if (skb_hnat_reason(skb) != HIT_UNBIND_RATE_REACH)
+		return NF_ACCEPT;
+
+	if (skb_hnat_alg(skb) || !is_hnat_info_filled(skb) ||
+	    !is_magic_tag_valid(skb) || !IS_SPACE_AVAILABLE_HEAD(skb))
+		return NF_ACCEPT;
+
+	if (!skb_hnat_is_hashed(skb))
+		return NF_ACCEPT;
+
+	if (skb_hnat_entry(skb) >= hnat_priv->foe_etry_num ||
+	    skb_hnat_ppe(skb) >= CFG_PPE_NUM)
+		return NF_ACCEPT;
+
+	spin_lock_bh(&hnat_priv->flow_entry_lock);
+
+	hw_entry = &hnat_priv->foe_table_cpu[skb_hnat_ppe(skb)][skb_hnat_entry(skb)];
+
+	flow_entry = hnat_flow_entry_search(skb_hnat_ppe(skb),
+					    skb_hnat_entry(skb),
+					    hw_entry);
+
+	if (!flow_entry) {
+		spin_unlock_bh(&hnat_priv->flow_entry_lock);
+		return NF_ACCEPT;
+	}
+
+	if (unlikely(hw_entry->bfib1.state != UNBIND) ||
+	    unlikely(time_after_eq(jiffies, flow_entry->last_update + msecs_to_jiffies(3000)))) {
+		hnat_flow_entry_delete(flow_entry);
+		spin_unlock_bh(&hnat_priv->flow_entry_lock);
+		return NF_ACCEPT;
+	}
+
+	memcpy(&entry, &flow_entry->data, sizeof(entry));
+
+	spin_unlock_bh(&hnat_priv->flow_entry_lock);
+
+	mac = netdev_priv(dev);
+	gmac = HNAT_GMAC_FP(mac->id);
+
+	if (gmac < 0)
+		return NF_ACCEPT;
+
+	ethvhdr = (struct vlan_ethhdr *)(skb->data);
+	if (ethvhdr->h_vlan_proto == htons(ETH_P_8021Q)) {
+		dsa_tag = ntohs(ethvhdr->h_vlan_TCI);
+		/* The 802.1Q tag should be in the range BIT(11) + 0~7 */
+		if (!((dsa_tag >= BIT(11)) && (dsa_tag <= BIT(11) + 7)))
+			goto out;
+		entry.bfib1.vpm = 1;
+		entry.bfib1.vlan_layer = 1;
+		if (IS_IPV4_GRP(&entry))
+			entry.ipv4_hnapt.vlan1 = dsa_tag;
+		else
+			entry.ipv6_5t_route.vlan1 = dsa_tag;
+	}
+
+	if (IS_IPV4_GRP(&entry))
+		entry.ipv4_hnapt.iblk2.dp = gmac & 0xf;
+	else
+		entry.ipv6_5t_route.iblk2.dp = gmac & 0xf;
+
+	entry.bfib1.ttl = 1;
+	entry.bfib1.time_stamp = foe_timestamp(hnat_priv);
+	entry.bfib1.state = BIND;
+	wmb();
+
+	spin_lock_bh(&hnat_priv->entry_lock);
+
+	/* Final check if the entry is not in UNBIND state,
+	 * we should not modify it right now.
+	 */
+	if (unlikely(hw_entry->bfib1.state != UNBIND)) {
+		spin_unlock_bh(&hnat_priv->entry_lock);
+		goto out;
+	}
+
+	/* Before entry enter BIND state, write other fields first,
+	 * prevent racing with hardware accesses.
+	 */
+	memcpy(&hw_entry->ipv6_hnapt.ipv6_sip0,
+		&entry.ipv6_hnapt.ipv6_sip0,
+		sizeof(struct foe_entry) -
+		offsetof(struct foe_entry, ipv6_hnapt.ipv6_sip0));
+	/* We must ensure all info has been updated before set to hw */
+	wmb();
+	/* After other fields have been written, write info1 to BIND the entry */
+	memcpy(&hw_entry->bfib1, &entry.bfib1, sizeof(entry.bfib1));
+	/* We must ensure the info has been updated */
+	wmb();
+
+	spin_unlock_bh(&hnat_priv->entry_lock);
+
+	/* reset statistic for this entry */
+	if (hnat_priv->data->per_flow_accounting) {
+		memset(&hnat_priv->acct[skb_hnat_ppe(skb)][skb_hnat_entry(skb)],
+			0, sizeof(struct hnat_accounting));
+		ct = nf_ct_get(skb, &ctinfo);
+		if (ct) {
+			hnat_priv->acct[skb_hnat_ppe(skb)][skb_hnat_entry(skb)].zone = ct->zone;
+			hnat_priv->acct[skb_hnat_ppe(skb)][skb_hnat_entry(skb)].dir =
+										CTINFO2DIR(ctinfo);
+		}
+	}
+
+out:
+	spin_lock_bh(&hnat_priv->flow_entry_lock);
+	flow_entry = hnat_flow_entry_search(skb_hnat_ppe(skb),
+					    skb_hnat_entry(skb),
+					    &entry);
+	if (flow_entry) {
+		/* Clear the flow entry node in the foe_flow table */
+		hnat_flow_entry_delete(flow_entry);
+	}
+	spin_unlock_bh(&hnat_priv->flow_entry_lock);
 	return NF_ACCEPT;
 }
 
@@ -2629,7 +2822,7 @@ add_wifi_hook_if:
 			break;
 		}
 	}
-	pr_info("%s : ineterface %s register (%d)\n", __func__, dev->name, i);
+	pr_info("%s : interface %s register (%d)\n", __func__, dev->name, i);
 }
 
 void mtk_ppe_dev_unregister_hook(struct net_device *dev)
@@ -2646,7 +2839,7 @@ void mtk_ppe_dev_unregister_hook(struct net_device *dev)
 	}
 
 	extif_put_dev(dev);
-	pr_info("%s : ineterface %s set null (%d)\n", __func__, dev->name, i);
+	pr_info("%s : interface %s set null (%d)\n", __func__, dev->name, i);
 }
 
 static unsigned int mtk_hnat_accel_type(struct sk_buff *skb)
@@ -2997,6 +3190,23 @@ int mtk_464xlat_post_process(struct sk_buff *skb, const struct net_device *out)
 	return 0;
 }
 
+#if 1 /* ASUS: skip specific VID */
+extern int vlan_num[MTLAN_MAXINUM];
+static int check_vlan(u16 vid)
+{
+	int i;
+
+	if (vid != 0) {
+		for (i = 0; i < MTLAN_MAXINUM && vlan_num[i]; ++i) {
+			if (vid == vlan_num[i])
+				return 1;
+		}
+	}
+
+	return 0;
+}	
+#endif
+
 static unsigned int mtk_hnat_nf_post_routing(
 	struct sk_buff *skb, const struct net_device *out,
 	unsigned int (*fn)(struct sk_buff *, const struct net_device *,
@@ -3058,6 +3268,44 @@ static unsigned int mtk_hnat_nf_post_routing(
 
 		if (fn && fn(skb, arp_dev, &hw_path))
 			break;
+
+#if 1 /* ASUS: skip specific VID */
+		if (check_vlan(hw_path.vlan_id)) {
+			break;
+		}
+		if (skb->vlan_tci) {
+			u16 vid = skb->vlan_tci & VLAN_VID_MASK;
+
+			if (check_vlan(vid)) {
+				break;
+			}
+		}
+#endif
+
+		//// DPI + HWNAT workaround
+		if (dpi_using) {
+			const struct nf_conn *ct;
+			enum ip_conntrack_info ctinfo;
+
+			ct = nf_ct_get(skb, &ctinfo);
+			if (ct) {
+				const struct nf_conn_acct *acct;
+				acct = nf_conn_acct_find(ct);
+				if (acct) {
+					u_int64_t org_bytes, rpy_bytes;
+					const struct nf_conn_counter *counters;
+					counters = acct->counter;
+					org_bytes = atomic64_read(&counters[IP_CT_DIR_ORIGINAL].bytes);
+					rpy_bytes = atomic64_read(&counters[IP_CT_DIR_REPLY].bytes);
+					if ((org_bytes < dpi_limit_bytes) && (rpy_bytes < dpi_limit_bytes))
+						break;
+				} else {
+					pr_crit("[%s]nf_conntrack_acct not enabled!\n", __func__);
+				}
+			}
+		}
+		//// end of DPI+HWNAT workaround
+		/* skb_hnat_tops(skb) is updated in mtk_tnl_offload() */
 
 		spin_lock(&hnat_priv->entry_lock);
 		skb_to_hnat_info(skb, out, entry, &hw_path);

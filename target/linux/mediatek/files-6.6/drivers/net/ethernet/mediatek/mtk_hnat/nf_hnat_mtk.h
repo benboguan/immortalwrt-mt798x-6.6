@@ -18,6 +18,10 @@
 #include <linux/netdevice.h>
 #include "../mtk_eth_soc.h"
 
+#if 1 /* ASUS: skip specific VID */
+#define MTLAN_MAXINUM             17 /* 1 (Default) + 16 */
+#endif
+
 #define HNAT_SKB_CB2(__skb) ((struct hnat_skb_cb2 *)&((__skb)->cb[44]))
 struct hnat_skb_cb2 {
 	__u32 magic;

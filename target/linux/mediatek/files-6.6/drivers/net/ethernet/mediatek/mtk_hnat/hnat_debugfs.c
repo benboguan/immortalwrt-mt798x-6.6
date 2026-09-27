@@ -18,6 +18,11 @@
 #include <linux/iopoll.h>
 #include <linux/inet.h>
 #include <net/ipv6.h>
+#include <net/netfilter/nf_conntrack.h>
+#include <net/netfilter/nf_conntrack_acct.h>
+#include <net/netfilter/nf_conntrack_core.h>
+#include <net/netfilter/nf_conntrack_tuple.h>
+
 #include "hnat.h"
 #include "nf_hnat_mtk.h"
 #include "../mtk_eth_soc.h"
@@ -32,8 +37,15 @@ int qos_toggle;
 int qos_dl_toggle = 1;
 int qos_ul_toggle = 1;
 int xlat_toggle;
+//// DPI + HWNAT workaround
+int dpi_using = 0;
+u_int64_t dpi_limit_bytes = 1500 * 30;
+//// end of DPI+HWNAT workaround
 struct hnat_desc headroom[DEF_ETRY_NUM];
 unsigned int dbg_cpu_reason_cnt[MAX_CRSN_NUM];
+#if 1 /* ASUS: skip specific VID */
+int vlan_num[MTLAN_MAXINUM];
+#endif
 
 static const char * const entry_state[] = { "INVALID", "UNBIND", "BIND", "FIN" };
 
@@ -997,6 +1009,76 @@ int read_mib(struct mtk_hnat *h, u32 ppe_id,
 
 }
 
+static int hnat_nf_acct_update(struct mtk_hnat *h, u32 ppe_id,
+			       u32 index, u64 bytes, u64 packets)
+{
+	struct nf_conntrack_tuple tuple = {0};
+	struct nf_conntrack_tuple_hash *hash;
+	struct nf_conntrack_zone *zone;
+	struct nf_conn_counter *counter;
+	struct nf_conn_acct *acct;
+	struct foe_entry *entry;
+	struct nf_conn *ct;
+	u8 dir;
+
+	entry = &h->foe_table_cpu[ppe_id][index];
+	zone = &h->acct[ppe_id][index].zone;
+	dir = h->acct[ppe_id][index].dir;
+
+	tuple.dst.protonum = (entry->bfib1.udp) ? IPPROTO_UDP : IPPROTO_TCP;
+
+	switch (entry->bfib1.pkt_type) {
+	case IPV4_HNAT:
+	case IPV4_HNAPT:
+	case IPV4_DSLITE:
+	case IPV4_MAP_T:
+	case IPV4_MAP_E:
+		tuple.src.l3num = AF_INET;
+		tuple.src.u3.ip = htonl(entry->ipv4_hnapt.sip);
+		tuple.dst.u3.ip = htonl(entry->ipv4_hnapt.dip);
+		tuple.src.u.tcp.port = htons(entry->ipv4_hnapt.sport);
+		tuple.dst.u.tcp.port = htons(entry->ipv4_hnapt.dport);
+		break;
+	case IPV6_6RD:
+	case IPV6_HNAT:
+	case IPV6_HNAPT:
+	case IPV6_3T_ROUTE:
+	case IPV6_5T_ROUTE:
+		tuple.src.l3num = AF_INET6;
+
+		tuple.src.u3.in6.s6_addr32[0] = htonl(entry->ipv6_5t_route.ipv6_sip0);
+		tuple.src.u3.in6.s6_addr32[1] = htonl(entry->ipv6_5t_route.ipv6_sip1);
+		tuple.src.u3.in6.s6_addr32[2] = htonl(entry->ipv6_5t_route.ipv6_sip2);
+		tuple.src.u3.in6.s6_addr32[3] = htonl(entry->ipv6_5t_route.ipv6_sip3);
+
+		tuple.dst.u3.in6.s6_addr32[0] = htonl(entry->ipv6_5t_route.ipv6_dip0);
+		tuple.dst.u3.in6.s6_addr32[1] = htonl(entry->ipv6_5t_route.ipv6_dip1);
+		tuple.dst.u3.in6.s6_addr32[2] = htonl(entry->ipv6_5t_route.ipv6_dip2);
+		tuple.dst.u3.in6.s6_addr32[3] = htonl(entry->ipv6_5t_route.ipv6_dip3);
+
+		tuple.src.u.tcp.port = htons(entry->ipv6_5t_route.sport);
+		tuple.dst.u.tcp.port = htons(entry->ipv6_5t_route.dport);
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	hash = nf_conntrack_find_get(&init_net, zone, &tuple);
+	if (hash) {
+		ct = nf_ct_tuplehash_to_ctrack(hash);
+		if (ct) {
+			acct = nf_conn_acct_find(ct);
+			if (acct) {
+				counter = acct->counter;
+				atomic64_add(bytes, &counter[dir].bytes);
+				atomic64_add(packets, &counter[dir].packets);
+			}
+			nf_ct_put(ct);
+		}
+	}
+
+	return 0;
+}
 
 struct hnat_accounting *hnat_get_count(struct mtk_hnat *h, u32 ppe_id,
 				       u32 index, struct hnat_accounting *diff)
@@ -1023,6 +1105,9 @@ struct hnat_accounting *hnat_get_count(struct mtk_hnat *h, u32 ppe_id,
 		diff->bytes = bytes;
 		diff->packets = packets;
 	}
+
+	hnat_nf_acct_update(h, ppe_id, index, bytes, packets);
+
 	return &h->acct[ppe_id][index];
 }
 EXPORT_SYMBOL(hnat_get_count);
@@ -2506,6 +2591,45 @@ static const struct file_operations hnat_xlat_cfg_fops = {
 	.release = single_release,
 };
 
+//// DPI + HWNAT workaround
+static int hnat_dpi_using_read(struct seq_file *m, void *private)
+{
+	seq_printf(m, "%d\n", !!dpi_using);
+
+	return 0;
+}
+
+static int hnat_dpi_using_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hnat_dpi_using_read, file->private_data);
+}
+
+static ssize_t hnat_dpi_using_write(struct file *file, const char __user *buffer,
+				      size_t count, loff_t *data)
+{
+	char buf[2] = {0};
+	int len = count;
+
+	if ((len > 2) || copy_from_user(buf, buffer, len))
+		return -EFAULT;
+
+	if (buf[0] == '1' && !dpi_using)
+		dpi_using = 1;
+	else if (buf[0] == '0' && dpi_using)
+		dpi_using = 0;
+
+	return len;
+}
+
+static const struct file_operations hnat_dpi_using_fops = {
+	.open = hnat_dpi_using_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = hnat_dpi_using_write,
+	.release = single_release,
+};
+//// end of DPI+HWNAT workaround
+
 static void hnat_qos_toggle_usage(void)
 {
 	pr_info("\nHQoS toggle Command Usage:\n");
@@ -3007,6 +3131,73 @@ static const struct file_operations hnat_static_fops = {
 	.release = single_release,
 };
 
+#if 1 /* ASUS: skip specific VID */
+static int hnat_skip_vid_read(struct seq_file *m, void *private)
+{
+	int i, l = 0;
+	char tmp[128], *ptr;
+
+	ptr = tmp;
+	for (i = 0; i < MTLAN_MAXINUM && vlan_num[i]; ++i)
+		l += snprintf(ptr + l, sizeof(tmp) - l, "%s%d", (i ? ">" : ""), vlan_num[i]);
+	seq_printf(m, "%s\n", tmp);
+
+	return 0;
+}
+
+static int hnat_skip_vid_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hnat_skip_vid_read, file->private_data);
+}
+
+int parse_vids(char *ids)
+{
+	int ret, i = 0;
+	char *ptr = ids, *str = NULL;
+
+	if (!strlen(ids))
+		return -1;
+
+	while ((str = strsep(&ptr, ">"))) {
+		if ((ret = kstrtouint(str, 0, &vlan_num[i])))
+			return ret;
+		if (++i > MTLAN_MAXINUM)
+			break;
+	}
+
+	return 0;
+}
+
+static ssize_t hnat_skip_vid_write(struct file *file, const char __user *buffer,
+				   size_t count, loff_t *data)
+{
+	int i, len = count;
+	char tmp[128];
+
+	memset(tmp, 0, sizeof(tmp));
+	if ((len >= sizeof(tmp)) || copy_from_user(tmp, buffer, len))
+		return -EFAULT;
+
+	memset(vlan_num, 0, sizeof(vlan_num));
+	if (parse_vids(tmp) == 0) {
+		pr_info("hnat: Skip VLAN: ");
+		for (i = 0; i < MTLAN_MAXINUM && vlan_num[i]; ++i)
+			pr_info("%d,", vlan_num[i]);
+		pr_info("\n");
+	}
+
+	return len;
+}
+
+static const struct file_operations hnat_skip_vid_fops = {
+	.open = hnat_skip_vid_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = hnat_skip_vid_write,
+	.release = single_release,
+};
+#endif
+
 int get_ppe_mib(u32 ppe_id, int index, u64 *pkt_cnt, u64 *byte_cnt)
 {
 	struct mtk_hnat *h = hnat_priv;
@@ -3148,6 +3339,8 @@ int hnat_init_debugfs(struct mtk_hnat *h)
 			    &hnat_mcast_fops);
 	debugfs_create_file("hook_toggle", 0444, root, h,
 			    &hnat_hook_toggle_fops);
+	debugfs_create_file("dpi_using", 0444, root, h,
+			    &hnat_dpi_using_fops);
 	debugfs_create_file("mape_toggle", 0444, root, h,
 			    &hnat_mape_toggle_fops);
 	debugfs_create_file("qos_toggle", 0444, root, h,
@@ -3162,6 +3355,10 @@ int hnat_init_debugfs(struct mtk_hnat *h)
 			    &hnat_xlat_toggle_fops);
 	debugfs_create_file("xlat_cfg", 0444, root, h,
 			    &hnat_xlat_cfg_fops);
+#if 1 /* ASUS: skip specific VID */
+	debugfs_create_file("skip_vid", 0444, root, h,
+			    &hnat_skip_vid_fops);
+#endif
 
 	for (i = 0; i < hnat_priv->data->num_of_sch; i++) {
 		ret = snprintf(name, sizeof(name), "qdma_sch%ld", i);

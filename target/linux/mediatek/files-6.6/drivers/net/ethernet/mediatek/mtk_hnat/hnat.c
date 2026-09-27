@@ -1,4 +1,3 @@
-
 /*   This program is free software; you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
  *   the Free Software Foundation; version 2 of the License
@@ -26,6 +25,10 @@
 #include "nf_hnat_mtk.h"
 #include "hnat.h"
 
+#if 1 /* ASUS: skip specific VID */
+extern int vlan_num[MTLAN_MAXINUM];
+#endif
+
 struct mtk_hnat *hnat_priv;
 static struct socket *_hnat_roam_sock;
 static struct work_struct _hnat_roam_work;
@@ -49,6 +52,8 @@ void (*ppe_dev_register_hook)(struct net_device *dev) = NULL;
 EXPORT_SYMBOL(ppe_dev_register_hook);
 void (*ppe_dev_unregister_hook)(struct net_device *dev) = NULL;
 EXPORT_SYMBOL(ppe_dev_unregister_hook);
+int (*eth_hook_tx)(struct sk_buff *skb, struct net_device *dev) = NULL;
+EXPORT_SYMBOL(eth_hook_tx);
 
 int (*hnat_set_wdma_pse_port_state)(u32 wdma_idx, bool up) = NULL;
 EXPORT_SYMBOL(hnat_set_wdma_pse_port_state);
@@ -353,6 +358,10 @@ static int hnat_hw_init(u32 ppe_id)
 	if (ppe_id >= CFG_PPE_NUM)
 		return -EINVAL;
 
+#if 1 /* ASUS: skip specific VID */
+	memset(vlan_num, 0, sizeof(vlan_num));
+#endif
+
 	/* setup hashing */
 	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, TB_ETRY_NUM, hnat_priv->etry_num_cfg);
 	cr_set_field(hnat_priv->ppe_base[ppe_id] + PPE_TB_CFG, HASH_MODE, HASH_MODE_1);
@@ -456,8 +465,8 @@ static int hnat_hw_init(u32 ppe_id)
 
 	dev_info(hnat_priv->dev, "PPE%d hwnat start\n", ppe_id);
 
-	spin_lock_init(&hnat_priv->cah_lock);
 	spin_lock_init(&hnat_priv->entry_lock);
+	spin_lock_init(&hnat_priv->flow_entry_lock);
 	return 0;
 }
 
@@ -665,6 +674,7 @@ int hnat_enable_hook(void)
 		hnat_get_wdma_rx_port = mtk_get_wdma_rx_port;
 		hnat_set_wdma_pse_port_state = mtk_set_wdma_pse_port_state;
 	}
+	eth_hook_tx = mtk_hnat_eth_hook_tx;
 
 	if (hnat_register_nf_hooks())
 		return -1;
@@ -686,6 +696,7 @@ int hnat_disable_hook(void)
 	hnat_get_wdma_tx_port = NULL;
 	hnat_get_wdma_rx_port = NULL;
 	hnat_set_wdma_pse_port_state = NULL;
+	eth_hook_tx = NULL;
 	hnat_unregister_nf_hooks();
 
 	for (i = 0; i < CFG_PPE_NUM; i++) {
