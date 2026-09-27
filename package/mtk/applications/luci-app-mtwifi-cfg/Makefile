@@ -10,7 +10,7 @@ LUCI_TITLE:=LuCI support for mtwifi-cfg
 LUCI_DEPENDS:=+mtwifi-cfg +rpcd-mod-iwinfo
 LUCI_PKGARCH:=all
 
-PKG_VERSION:=1
+PKG_VERSION:=2
 
 include $(TOPDIR)/feeds/luci/luci.mk
 
