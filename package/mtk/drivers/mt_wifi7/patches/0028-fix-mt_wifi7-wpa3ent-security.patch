@@ -70,18 +70,7 @@
  	    IS_AKM_WPA3_192BIT(pSecConfig->AKMMap) ||
  	    IS_AKM_OWE(pSecConfig->AKMMap)) {
  		pSecConfig->RSNE_Type[1] = SEC_RSNIE_WPA2_IE;
-@@ -2690,8 +2693,10 @@ BOOLEAN WPACheckAKM(
- 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA384;
- 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_FT_SAE_EXT, 4)) {
- 				SET_AKM_FT_SAE_EXT(pSecConfigEntry->AKMMap);
-+				SET_AKM_SAE_EXT(pSecConfigEntry->AKMMap);
- 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA384;
- 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_SUITEB_SHA256, 4)) {
-+				SET_AKM_WPA3(pSecConfigEntry->AKMMap);
- 				SET_AKM_SUITEB_SHA256(pSecConfigEntry->AKMMap);
- 				pSecConfigEntry->key_deri_alg = SEC_KEY_DERI_SHA256;
- 			} else if (NdisEqualMemory(pStaTmp, &OUI_WPA2_AKM_SUITEB_SHA384, 4)) {
-@@ -6800,6 +6805,7 @@ VOID PeerPairMsg4Action(
+@@ -6800,6 +6803,7 @@ VOID PeerPairMsg4Action(
  
  	if (IS_AKM_WPA2(pSecConfig->AKMMap)
  		|| IS_AKM_WPA2PSK(pSecConfig->AKMMap)

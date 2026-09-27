@@ -24,8 +24,8 @@ Index: mt_wifi7/mt_wifi/common/cmm_info.c
 +			Rssi_Quality = (UINT)(((Rssi + 90) * 26) / 10);
 +		else    /* < -84 dbm*/
 +			Rssi_Quality = 0;
-+		if(Rssi_Quality == 0)
-+			continue;
++		//if(Rssi_Quality == 0)
++		//	continue;
  		if (pBss->Channel == 0)
  			break;
  
