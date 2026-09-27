@@ -1,0 +1,39 @@
+diff --git a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_nf_hook.c
+@@ -21,6 +21,8 @@
+ #include <net/ipv6.h>
+ #include <net/ip6_route.h>
+ #include <net/ip.h>
++#include <net/route.h>
++#include <net/addrconf.h>
+ #include <net/tcp.h>
+ #include <net/udp.h>
+ #include <net/netfilter/nf_conntrack.h>
+@@ -921,6 +923,14 @@
+ 		if ((iph->protocol == IPPROTO_TCP) ||
+ 		    (iph->protocol == IPPROTO_UDP) ||
+ 		    (iph->protocol == IPPROTO_IPV6)) {
++			/* Never offload flows destined to a locally assigned
++			 * address (the router's own LAN/WAN IP). Offloading
++			 * them bypasses the local INPUT chain and breaks
++			 * admin/LuCI access from wireless clients.
++			 */
++			if (inet_addr_type(&init_net, iph->daddr) == RTN_LOCAL)
++				return 0;
++
+ 			return 1;
+ 		}
+ 
+@@ -930,6 +940,11 @@
+ 
+ 		if ((ip6h->nexthdr == NEXTHDR_TCP) ||
+ 		    (ip6h->nexthdr == NEXTHDR_UDP)) {
++			/* Same local-destination guard as IPv4 above. */
++			if ((ipv6_addr_type(&ip6h->daddr) & IPV6_ADDR_UNICAST) &&
++			    ipv6_chk_addr(&init_net, &ip6h->daddr, NULL, 0))
++				return 0;
++
+ 			return 1;
+ 		} else if (ip6h->nexthdr == NEXTHDR_IPIP) {
+ 			iph = skb_header_pointer(skb, IPV6_HDR_LEN,
