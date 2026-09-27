@@ -12,42 +12,48 @@
  	void *c = NULL, *d, *e;
  	struct blob_attr *tb[__RPC_A_MAX];
  	bool found = false;
-+	void *mlo_links_array, *link_table, *rx_table, *tx_table;
++	void *mlo;
 +	int j;
  
  	blobmsg_parse(rpc_assoclist_policy, __RPC_A_MAX, tb,
  	              blob_data(msg), blob_len(msg));
-@@ -566,6 +569,33 @@ rpc_iwinfo_assoclist(struct
- 			blobmsg_add_string(&buf, "mesh peer PS", a->peer_ps);
- 			blobmsg_add_string(&buf, "mesh non-peer PS", a->nonpeer_ps);
+@@ -581,6 +584,39 @@ rpc_iwinfo_assoclist(struct
+ 			rpc_iwinfo_add_rateinfo(&a->tx_rate);
+ 			blobmsg_close_table(&buf, e);
  
 +			if (a->mlo_enable) {
-+				char mld_mac_str[18];
-+				snprintf(mld_mac_str, sizeof(mld_mac_str),
++				char mld_mac[18];
++
++				blobmsg_add_u8(&buf, "mlo_enable", 1);
++
++				snprintf(mld_mac, sizeof(mld_mac),
 +				         "%02X:%02X:%02X:%02X:%02X:%02X",
 +				         a->mld_mac[0], a->mld_mac[1], a->mld_mac[2],
 +				         a->mld_mac[3], a->mld_mac[4], a->mld_mac[5]);
++				blobmsg_add_string(&buf, "mld_mac", mld_mac);
++				blobmsg_add_u8(&buf, "mlo_link_id", a->mlo_link_id);
++				blobmsg_add_u8(&buf, "mlo_num_links", a->mlo_num_links);
 +
-+				blobmsg_add_u8(&buf, "mlo_enable", 1);
-+				blobmsg_add_string(&buf, "mld_mac", mld_mac_str);
++				mlo = blobmsg_open_array(&buf, "mlo_links");
++				for (j = 0; j < a->mlo_num_links && j < 3; j++) {
++					void *link = blobmsg_open_table(&buf, NULL);
++					void *sub;
 +
-+				mlo_links_array = blobmsg_open_array(&buf, "mlo_links");
-+				for (j = 0; j < a->mlo_num_links; j++) {
-+					link_table = blobmsg_open_table(&buf, NULL);
++					blobmsg_add_u8(&buf, "link_id", j);
 +
-+					rx_table = blobmsg_open_table(&buf, "rx");
++					sub = blobmsg_open_table(&buf, "rx");
 +					rpc_iwinfo_add_rateinfo(&a->mlo_rx_rate[j]);
-+					blobmsg_close_table(&buf, rx_table);
++					blobmsg_close_table(&buf, sub);
 +
-+					tx_table = blobmsg_open_table(&buf, "tx");
++					sub = blobmsg_open_table(&buf, "tx");
 +					rpc_iwinfo_add_rateinfo(&a->mlo_tx_rate[j]);
-+					blobmsg_close_table(&buf, tx_table);
++					blobmsg_close_table(&buf, sub);
 +
-+					blobmsg_close_table(&buf, link_table);
++					blobmsg_close_table(&buf, link);
 +				}
-+				blobmsg_close_array(&buf, mlo_links_array);
++				blobmsg_close_array(&buf, mlo);
 +			}
 +
- 			e = blobmsg_open_table(&buf, "rx");
- 			blobmsg_add_u64(&buf, "drop_misc", a->rx_drop_misc);
- 			blobmsg_add_u32(&buf, "packets", a->rx_packets);
+ 			found = true;
+ 			if (!macaddr)
+ 				blobmsg_close_table(&buf, d);
