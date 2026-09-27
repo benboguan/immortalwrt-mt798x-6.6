@@ -7,7 +7,7 @@
 -	if (!s)
 -		goto out;
 +	if (!s) {
-+		s = iwinfo_uci_get_radio(name, "mtkwifi");
++		s = iwinfo_uci_get_radio(name, "mtwifi");
 +		if(!s)
 +			goto out;
 +	}

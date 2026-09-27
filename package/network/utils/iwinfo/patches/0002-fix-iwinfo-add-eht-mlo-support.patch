@@ -32,7 +32,7 @@
  	char nonpeer_ps[16];
 +	struct iwinfo_rate_entry mlo_rx_rate[3];
 +	struct iwinfo_rate_entry mlo_tx_rate[3];
-+	uint8_t mlo_enable:1;
++	uint8_t mlo_enable;
 +	uint8_t	mld_mac[6];
 +	uint8_t	mlo_link_id;
 +	uint8_t	mlo_num_links;
@@ -62,27 +62,48 @@
  		}
  	}
  
-@@ -855,6 +858,20 @@ static void print_assoclist(const
+@@ -821,6 +824,8 @@ static void print_assoclist(const
+ {
+ 	int i, len;
+ 	char buf[IWINFO_BUFSIZE];
++	int j;
++	char mld_mac[18];
+ 	struct iwinfo_assoclist_entry *e;
+ 
+ 	if (iw->assoclist(ifname, buf, &len))
+@@ -855,8 +860,31 @@ static void print_assoclist(const
  			e->tx_packets
  		);
  
+-		printf("	expected throughput: %s\n\n",
++		printf("	expected throughput: %s\n",
+ 			format_rate(e->thr));
++
 +		if (e->mlo_enable)
 +		{
-+			printf("	MldAddr: %s\n",
-+				format_bssid(e->mld_mac));
++			snprintf(mld_mac, sizeof(mld_mac),
++			         "%02X:%02X:%02X:%02X:%02X:%02X",
++			         e->mld_mac[0], e->mld_mac[1], e->mld_mac[2],
++			         e->mld_mac[3], e->mld_mac[4], e->mld_mac[5]);
 +
-+			int j;
-+			for (j = 0; j < e->mlo_num_links; j++)
++			printf("	MLO: yes  MLD: %s  links: %d  setup link: %d\n",
++			       mld_mac,
++			       e->mlo_num_links,
++			       e->mlo_link_id);
++
++			for (j = 0; j < e->mlo_num_links && j < 3; j++)
 +			{
-+				printf("  Link %d:\n", j);
-+				printf("    RX: %-38s\n", format_assocrate(&e->mlo_rx_rate[j]));
-+				printf("    TX: %-38s\n", format_assocrate(&e->mlo_tx_rate[j]));
++				printf("	  link[%d] RX: %-38s\n", j,
++				       format_assocrate(&e->mlo_rx_rate[j]));
++				printf("	  link[%d] TX: %-38s\n", j,
++				       format_assocrate(&e->mlo_tx_rate[j]));
 +			}
 +		}
 +
- 		printf("	expected throughput: %s\n\n",
- 			format_rate(e->thr));
++		printf("\n");
  	}
+ }
+ 
 --- a/iwinfo_lua.c
 +++ b/iwinfo_lua.c
 @@ -315,6 +315,9 @@ static void set_rateinfo(lua_State
@@ -95,19 +116,7 @@
  		}
  
  		if (r->is_vht) {
-@@ -342,6 +345,11 @@ static int iwinfo_L_assoclist(lua_State *L
- 		{
- 			e = (struct iwinfo_assoclist_entry *) &rv[i];
- 
-+			if (e->mlo_enable)
-+				sprintf(macstr, "%02X:%02X:%02X:%02X:%02X:%02X",
-+					e->mld_mac[0], e->mld_mac[1], e->mld_mac[2],
-+					e->mld_mac[3], e->mld_mac[4], e->mld_mac[5]);
-+
- 			sprintf(macstr, "%02X:%02X:%02X:%02X:%02X:%02X",
- 				e->mac[0], e->mac[1], e->mac[2],
- 				e->mac[3], e->mac[4], e->mac[5]);
-@@ -363,9 +371,40 @@ static int iwinfo_L_assoclist(lua_State *L
+@@ -363,9 +366,51 @@ static int iwinfo_L_assoclist(lua_State *L
  			lua_pushnumber(L, e->tx_packets);
  			lua_setfield(L, -2, "tx_packets");
  
@@ -120,27 +129,38 @@
  			set_rateinfo(L, &e->rx_rate, true);
  			set_rateinfo(L, &e->tx_rate, false);
  
-+			if (e->mlo_enable)
-+			{
++			if (e->mlo_enable) {
 +				lua_pushboolean(L, 1);
 +				lua_setfield(L, -2, "mlo_enable");
 +
-+				lua_newtable(L);  /* mlo_links */
-+				int j;
-+				for (j = 0; j < e->mlo_num_links; j++) {
-+					lua_newtable(L);
++				sprintf(macstr, "%02X:%02X:%02X:%02X:%02X:%02X",
++				        e->mld_mac[0], e->mld_mac[1], e->mld_mac[2],
++				        e->mld_mac[3], e->mld_mac[4], e->mld_mac[5]);
++				lua_pushstring(L, macstr);
++				lua_setfield(L, -2, "mld_mac");
 +
-+					push_rate_entry(L, &e->mlo_rx_rate[j]);
-+					lua_setfield(L, -2, "rx_rate");
-+					push_rate_entry(L, &e->mlo_tx_rate[j]);
-+					lua_setfield(L, -2, "tx_rate");
++				lua_pushinteger(L, e->mlo_link_id);
++				lua_setfield(L, -2, "mlo_link_id");
 +
-+					if (e->mlo_link_id) {
-+						lua_pushinteger(L, e->mlo_link_id);
++				lua_pushinteger(L, e->mlo_num_links);
++				lua_setfield(L, -2, "mlo_num_links");
++
++				lua_newtable(L);
++				{
++					int j;
++					for (j = 0; j < e->mlo_num_links && j < 3; j++) {
++						lua_newtable(L);
++
++						set_rateinfo(L, &e->mlo_rx_rate[j], true);
++						lua_setfield(L, -2, "rx_rate");
++						set_rateinfo(L, &e->mlo_tx_rate[j], false);
++						lua_setfield(L, -2, "tx_rate");
++
++						lua_pushinteger(L, j);
 +						lua_setfield(L, -2, "link_id");
-+					}
 +
-+					lua_rawseti(L, -2, j + 1);
++						lua_rawseti(L, -2, j + 1);
++					}
 +				}
 +				lua_setfield(L, -2, "mlo_links");
 +			}
@@ -148,7 +168,7 @@
  			if (e->thr) {
  				lua_pushnumber(L, e->thr);
  				lua_setfield(L, -2, "expected_throughput");
-@@ -500,6 +539,10 @@ static int iwinfo_L_freqlist(lua_State
+@@ -500,6 +550,10 @@ static int iwinfo_L_freqlist(lua_State
  			lua_pushinteger(L, e->mhz);
  			lua_setfield(L, -2, "mhz");
  

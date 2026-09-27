@@ -17,15 +17,11 @@ PKG_MIRROR_HASH:=a9ed29ea9f222d222fc554238e9c79675e1784293685198f759785da9940571
 PKG_MAINTAINER:=Jo-Philipp Wich <jo@mein.io>
 PKG_LICENSE:=GPL-2.0
 
-PKG_CONFIG_DEPENDS:= \
-	CONFIG_MTK_WIFI7_CFG80211_SUPPORT
-
 PKG_BUILD_FLAGS:=no-lto
 
 IWINFO_ABI_VERSION:=20230701
 
 include $(INCLUDE_DIR)/package.mk
-include $(INCLUDE_DIR)/kernel.mk
 
 
 define Package/libiwinfo
@@ -81,10 +77,6 @@ TARGET_CFLAGS += \
 	-I$(STAGING_DIR)/usr/include/libnl-tiny \
 	-I$(STAGING_DIR)/usr/include \
 	-D_GNU_SOURCE
-
-ifeq ($(CONFIG_MTK_WIFI7_CFG80211_SUPPORT),y)
-TARGET_CFLAGS += -I$(LINUX_DIR)/include/uapi/linux/mtk_nl80211_inc
-endif
 
 MAKE_FLAGS += \
 	FPIC="$(FPIC)" \
