@@ -380,7 +380,7 @@ var CBIWifiFrequencyValue = form.Value.extend({
 						available: available,
 						no_outdoor: freq.no_outdoor
 					}
-					
+
 				);
 			});
 
@@ -1321,6 +1321,30 @@ return view.extend({
 					}, this));
 				};
 
+				// VLAN ID option for bridge VLAN filtering
+				o = ss.taboption('general', form.Value, 'vid', _('VLAN ID'),
+					_('VLAN ID for bridge VLAN filtering. Set this to match your network VLAN configuration. Common values: 7 (guest), 70 (IoT), 73 (corporate), 74 (lab).'));
+				o.datatype = 'range(1,4094)';
+				o.optional = true;
+				o.rmempty = true;
+				o.placeholder = _('auto');
+				o.depends('mode', 'ap');
+				o.depends('mode', 'ap-wds');
+				o.depends('mode', 'sta');
+				o.depends('mode', 'sta-wds');
+
+				// Add validation to ensure VID matches network configuration
+				o.validate = function(section_id, value) {
+					if (value === '' || value === null)
+						return true;
+
+					const vid = parseInt(value);
+					if (isNaN(vid) || vid < 1 || vid > 4094)
+						return _('VLAN ID must be between 1 and 4094');
+
+					return true;
+				};
+
 				let encr;
 				if (hwtype == 'mtwifi') {
 					const mode = ss.children.find(obj => obj.option === 'mode');
@@ -1390,7 +1414,7 @@ return view.extend({
 						return mode;
 					};
 
-					o = ss.taboption('general', form.Value, 'mlo', _('Multi-Link Operation (MLO)'), _('Multi-Link Operation (MLO), enables simultaneous use of multiple radio links for improved performance and reliability.'));
+					o = ss.taboption('general', form.Value, 'mldgroup', _('Multi-Link Operation (MLO)'), _('Multi-Link Operation (MLO), enables simultaneous use of multiple radio links for improved performance and reliability.'));
 					add_dep_eht_feature(o);
 					o.optional    = true;
 					o.placeholder = 1;
