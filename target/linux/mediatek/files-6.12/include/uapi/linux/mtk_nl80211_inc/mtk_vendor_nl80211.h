@@ -1124,6 +1124,7 @@ enum mtk_nl80211_vendor_attrs_ap_mld {
  * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_TRANS_TO: used to set MLD AP's EML transition timeout
  * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_OMN: used to enable MLD AP's EML omn frame resp
  * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_T2LM_NEGO: used to support MLD AP's T2LM negotiation
+ * @MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_CFG_INDEX: used to transfer AP link by profile MLD cfg index
  */
 enum mtk_nl80211_vendor_attrs_set_ap_mld {
 	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_INVALID = 0,
@@ -1133,6 +1134,7 @@ enum mtk_nl80211_vendor_attrs_set_ap_mld {
 	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_TRANS_TO,
 	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_EML_OMN,
 	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_T2LM_NEGO,
+	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_CFG_INDEX,
 
 	__MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_LAST,
 	MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_ATTR_MAX = __MTK_NL80211_VENDOR_ATTR_SET_AP_MLD_LAST - 1,
@@ -2302,6 +2304,8 @@ struct GNU_PACKED mtk_wifi_scan_info {
  * @MTK_NL80211_VENDOR_ATTR_6G_PSC_SCAN_EN: u8, enable or disable 6G PSC scan
  * @MTK_NL80211_VENDOR_ATTR_GET_SCAN_RESULT_ANDLINK_FORMAT: scan result, struct mtk_wifi_scan_info
  * @MTK_NL80211_VENDOR_ATTR_SCAN_BAND_LINK_ID: u8, scan band link id
+ * @MTK_NL80211_VENDOR_ATTR_SCAN_DUMP_ALL: without value, trigger dumpall compact string snapshot
+ * @MTK_NL80211_VENDOR_ATTR_GET_SCAN_RESULT_ALL: compact scan result string
  */
 enum mtk_nl80211_vendor_attr_scan{
 	/* don't change the order or add anything between, this is ABI! */
@@ -2320,6 +2324,8 @@ enum mtk_nl80211_vendor_attr_scan{
 	MTK_NL80211_VENDOR_ATTR_6G_PSC_SCAN_EN,
 	MTK_NL80211_VENDOR_ATTR_GET_SCAN_RESULT_ANDLINK_FORMAT,
 	MTK_NL80211_VENDOR_ATTR_SCAN_BAND_LINK_ID,
+	MTK_NL80211_VENDOR_ATTR_SCAN_DUMP_ALL,
+	MTK_NL80211_VENDOR_ATTR_GET_SCAN_RESULT_ALL,
 
 	__MTK_NL80211_VENDOR_ATTR_SCAN_LAST,
 	MTK_NL80211_VENDOR_ATTR_SCAN_MAX =
