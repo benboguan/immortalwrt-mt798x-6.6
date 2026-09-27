@@ -4,6 +4,7 @@
 #
 
 . /lib/netifd/netifd-wireless.sh
+. /lib/functions/system.sh
 
 init_wireless_driver "$@"
 
@@ -14,17 +15,22 @@ MTWIFI_MAX_APCLI_IDX=0
 MTWIFI_CFG_IFNAME_KEY="mtwifi_ifname"
 
 drv_mtwifi_init_device_config() {
-	config_add_int txpower beacon_int
-	config_add_boolean mu_beamformer dbdc_main whnat
-	config_add_string country twt
+	config_add_int txpower beacon_int cell_density
+	config_add_boolean mu_beamformer dbdc_main whnat legacy_rates noscan
+	config_add_boolean vendor_vht vht_1024 doth dfs zw_dfs short_preamble txburst ldpc
+	config_add_string distance country twt
 }
 
 drv_mtwifi_init_iface_config() {
-	config_add_string 'ssid:string' macfilter bssid kicklow assocthres 'macaddr:macaddr'
-	config_add_boolean mlo wmm hidden isolate ieee80211k bss_transition
-	config_add_int wpa_group_rekey frag rts dtim_period
-	config_add_array 'maclist:list(macaddr)'
-	config_add_boolean mumimo_dl mumimo_ul ofdma_dl ofdma_ul amsdu autoba uapsd
+	config_add_string 'ssid:string' macfilter bssid kicklow assocthres 'macaddr:macaddr' pin nasid mobility_domain
+	config_add_string r1_key_holder auth_secret acct_secret ownip multi_ap
+	config_add_boolean mumimo_dl mumimo_ul ofdma_dl ofdma_ul amsdu autoba uapsd rsn_preauth disassoc_low_ack
+	config_add_boolean mlo mwds wmm hidden isolate ieee80211k rrm_neighbor_report bss_transition wnm_notify wds
+	config_add_boolean proxy_arp ieee80211r ft_over_ds hairpin
+	config_add_int wpa_group_rekey frag rts dtim_period ocv r0_key_lifetime reassociation_deadline
+	config_add_int 'auth_port:port' acct_port own_radius_port wps_pushbutton
+	config_add_int ieee80211w ieee80211w_max_timeout ieee80211w_retry_timeout
+	config_add_array 'maclist:list(macaddr)' auth_server acct_server r0kh r1kh
 }
 
 drv_mtwifi_cleanup() {
@@ -72,7 +78,7 @@ mtwifi_vif_sta_config() {
 mtwifi_vif_ap_set_data() {
 	local ifname=""
 
-	if [ ! $AP_IDX -gt $MTWIFI_MAX_AP_IDX ]; then
+	if [ $AP_IDX -le $MTWIFI_MAX_AP_IDX ]; then
 		ifname="${MTWIFI_AP_IF_PREFIX}${AP_IDX}"
 		AP_IDX=$((AP_IDX+1))
 	fi
@@ -83,7 +89,7 @@ mtwifi_vif_ap_set_data() {
 mtwifi_vif_sta_set_data() {
 	local ifname=""
 
-	if [ ! $APCLI_IDX -gt $MTWIFI_MAX_APCLI_IDX ]; then
+	if [ $APCLI_IDX -le $MTWIFI_MAX_APCLI_IDX ]; then
 		ifname="${MTWIFI_APCLI_IF_PREFIX}${APCLI_IDX}"
 		APCLI_IDX=$((APCLI_IDX+1))
 	fi

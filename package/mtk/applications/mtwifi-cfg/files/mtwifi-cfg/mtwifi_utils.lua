@@ -41,6 +41,16 @@ function mtwifi_utils.read_pipe(pipe)
     return txt
 end
 
+function mtwifi_utils.load_profile(path)
+    local cfgs = {}
+    local cfgobj = datconf.openfile(path)
+    if cfgobj then
+        cfgs = cfgobj:getall()
+        cfgobj:close()
+    end
+    return cfgs
+end
+
 function mtwifi_utils.__cfg2list(str)
     -- delimeter == ";"
     local i = 1

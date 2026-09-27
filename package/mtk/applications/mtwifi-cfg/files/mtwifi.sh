@@ -34,9 +34,10 @@ detect_mtwifi() {
 					ssid="ImmortalWrt-5G"
 					channel="36"
 				elif [ "$band" = "6g" ]; then
-					htmode="EHT160"
+					htmode="EHT320"
 					htbsscoex="0"
 					ssid="ImmortalWrt-6G"
+					channel="37"
 				fi
 
 				uci -q batch <<-EOF
@@ -52,7 +53,7 @@ detect_mtwifi() {
 					set wireless.${dev}.mu_beamformer=1
 					set wireless.${dev}.noscan=${htbsscoex}
 					set wireless.${dev}.serialize=1
-					
+
 					set wireless.default_${dev}=wifi-iface
 					set wireless.default_${dev}.device=${dev}
 					set wireless.default_${dev}.network=lan
