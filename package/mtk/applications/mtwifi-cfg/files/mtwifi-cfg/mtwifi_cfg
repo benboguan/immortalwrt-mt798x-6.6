@@ -159,50 +159,6 @@ function find_vif_by_ifname(cfg, ifname)
 end
 
 -- ============================================================
--- ext vif（ra15/rai15）
--- from gl.inet
--- ============================================================
-function mtwifi_create_ext_vif(cfg)
-    if not cfg then return end
-    local dev = l1dat.devname_ridx[cfg.device]
-    if not dev or not dev.ext_ifname then return end
-
-    local phyname = get_phy_name(dev.main_ifname)
-    if not phyname then
-        nixio.syslog("warning", "mtwifi-cfg: cannot find phy for "..dev.main_ifname..", skip ext vif")
-        return
-    end
-
-    local ifname_ext = dev.ext_ifname..tostring(15)
-
-    local need_create = true
-    for _, vif in ipairs(list_net_ifnames()) do
-        if vif == ifname_ext then
-            need_create = false
-            break
-        end
-    end
-
-    if need_create then
-        os.execute("iw phy "..phyname.." interface add "..ifname_ext.." type __ap 2>/dev/null")
-        nixio.syslog("info", "mtwifi-cfg: created ext vif "..ifname_ext)
-    end
-
-    os.execute("ip link set "..ifname_ext.." up")
-    os.execute("mwctl "..ifname_ext.." set no_bcn 1")
-end
-
-function mtwifi_release_ext_vif(devname)
-    if not devname then return end
-    local dev = l1dat.devname_ridx[devname]
-    if not dev or not dev.ext_ifname then return end
-
-    local ifname_ext = dev.ext_ifname..tostring(15)
-    os.execute("ip link set "..ifname_ext.." down 2>/dev/null")
-    nixio.syslog("info", "mtwifi-cfg: released ext vif "..ifname_ext)
-end
-
--- ============================================================
 -- mgmt_rx
 -- ============================================================
 function mtwifi_set_mgmt_rx(devname, value)
@@ -376,14 +332,14 @@ function start_hostapd_group(vifs, cfg)
         return
     end
 
-    -- 2. 等待 phy80211 就绪，最多 5 秒
+    -- 2. 等待 phy80211 就绪，最多 3 秒
     local retry = 0
-    local max_retry = 50
+    local max_retry = 30
     while retry < max_retry do
         if is_cfg80211_enabled(first_ifname) then
             break
         end
-        utils.sleep(0.1)
+        --utils.sleep(0.1)
         retry = retry + 1
     end
 
@@ -424,7 +380,7 @@ function start_hostapd_group(vifs, cfg)
         if os.execute("[ -S " .. HOSTAPD_CTRL_DIR .. "/" .. main_ifname .. " ] 2>/dev/null") == 0 then
             break
         end
-        utils.sleep(0.1)
+        --utils.sleep(0.1)
         retry2 = retry2 + 1
     end
     if retry2 >= max_retry then
@@ -707,9 +663,6 @@ function mtwifi_up(devname, cfg, restore_vifs, is_dbdc)
         end
     end
 
-    -- ext vif（ra15/rai15）
-    mtwifi_create_ext_vif(cfg)
-
     local ap_vifs, sta_vifs = {}, {}
     mtwifi_cfg_foreach_vif(cfg, "ap", function(v)
         if not v.config.disabled and v.mtwifi_ifname then
@@ -783,9 +736,6 @@ function mtwifi_down(devname, cfg)
         stop_hostapd_group(ap_ifnames)
     end
     mtwifi_set_mgmt_rx_accept_beacon_probrsp(devname)
-
-    -- ext vif
-    mtwifi_release_ext_vif(devname)
 
     return reset_vifs
 end
