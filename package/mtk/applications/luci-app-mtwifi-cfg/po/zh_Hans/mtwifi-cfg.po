@@ -134,6 +134,15 @@ msgstr "iwpriv 失败："
 msgid "mwctl failed: "
 msgstr "mwctl 失败："
 
+msgid "MLD: %s"
+msgstr "MLD：%s"
+
+msgid "(%d links)"
+msgstr "（%d 链路）"
+
+msgid "Link %d"
+msgstr "链路 %d"
+
 msgid "Enable Multi-AP functionality"
 msgstr "启用 Multi-AP"
 
@@ -145,6 +154,33 @@ msgstr "前传 AP (Fronthaul BSS)"
 
 msgid "Both Backhaul BSS and Fronthaul BSS"
 msgstr "前传 AP + 回传 AP"
+
+msgid "QR Code"
+msgstr "二维码"
+
+msgid "QR Error Correction Code Level"
+msgstr "二维码错误纠正级别"
+
+msgid "Generate QR…"
+msgstr "生成二维码…"
+
+msgid "Generate WiFi QR…"
+msgstr "生成 WiFi 二维码…"
+
+msgid "SSID and passwords with URIencoded sequences (e.g. %20) may not work."
+msgstr "SSID 或密码中包含 URI 编码字符串时（如 %20）可能无法使用。"
+
+msgid "Scan"
+msgstr "扫描"
+
+msgid "Scan this QR code with the client device."
+msgstr "用客户端设备扫描此二维码。"
+
+msgid "Low"
+msgstr "低"
+
+msgid "Quartile"
+msgstr "四分之一"
 
 msgid "Back to settings"
 msgstr "返回设置"
@@ -169,3 +205,46 @@ msgstr "用于网桥 VLAN 过滤的 VLAN ID。请将其设置为与您的网络 
 
 msgid "VLAN ID must be between 1 and 4094"
 msgstr "VLAN ID 必须介于1 和 4094 之间"
+
+msgid "Device"
+msgstr "设备"
+
+msgid "GCMP-256 pairwise cipher"
+msgstr "GCMP-256 pairwise 密码"
+
+msgid "SAE-EXT-KEY (SAE-GDH)"
+msgstr "SAE-EXT-KEY (SAE-GDH)"
+
+msgid "Transition Disable"
+msgstr "禁用过渡模式"
+
+msgid ""
+"Advertise the GCMP-256 pairwise cipher. Mandatory for Wi-Fi 7 (EHT) and "
+"recommended otherwise, but some clients and chipsets fail to associate when "
+"it is offered. Enabled by default only in Compatibility Mode on a Wi-Fi 7 "
+"(EHT) radio, disabled otherwise."
+msgstr ""
+"通告 GCMP-256 pairwise 密码 。Wi-Fi 7 (EHT) 强制启用，其他情况下建议启用，但"
+"部分客户端和芯片组在提供该算法时可能无法连接。默认情况下，仅在 Wi-Fi 7 (EHT) "
+"无线电的兼容模式下启用，其他情况下禁用。"
+
+msgid ""
+"Advertise the SAE-EXT-KEY AKM (SAE using a group-dependent hash). Mandatory "
+"for Wi-Fi 7 (EHT) and recommended otherwise, but some clients misbehave when "
+"it is offered, in particular together with 802.11r Fast Transition. Enabled "
+"by default only in Compatibility Mode on a Wi-Fi 7 (EHT) radio, disabled "
+"otherwise."
+msgstr ""
+"通告 SAE-EXT-KEY AKM（使用组相关哈希的 SAE）。Wi-Fi 7 (EHT) 强制使用此功能，"
+"其他情况下建议启用，但某些客户端在提供此功能时可能会出现异常，尤其是在与 "
+"802.11r 快速转换功能一起使用时。仅在 Wi-Fi 7 (EHT) 无线电的兼容模式下默认启用"
+"此功能，其他情况禁用。"
+
+msgid ""
+"Signal Transition Disable (WPA3 Specification v3.5 section 13) so that a "
+"client which has connected once no longer downgrades to a weaker security "
+"mode for this SSID. The advertised bitmap is derived from the encryption "
+"mode."
+msgstr ""
+"广播 Transition Disable 标志（WPA3 规范 v3.5 第 13 节）。已连接过的客户端后续"
+"将禁止降级至低安全性模式连接此 SSID。广播的位图由当前的加密模式决定。"
