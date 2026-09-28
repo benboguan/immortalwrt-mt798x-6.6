@@ -378,6 +378,48 @@ struct hnat_info_blk2_whnat {
 	u32 dscp : 8; /* DSCP value */
 } __packed;
 
+struct hnat_l2_bridge {
+	union {
+		struct hnat_bind_info_blk bfib1;
+		struct hnat_unbind_info_blk udib1;
+		u32 info_blk1;
+	};
+	u32 dmac_hi;
+	u16 smac_lo;
+	u16 dmac_lo;
+	u32 smac_hi;
+	u16 etype;
+	u16 hph; /* hash placeholder */
+	u16 vlan1;
+	u16 vlan2;
+	u32 resv1;
+	u32 resv2;
+	union {
+		struct hnat_info_blk2 iblk2;
+		struct hnat_info_blk2_whnat iblk2w;
+		u32 info_blk2;
+	};
+	u32 resv3;
+	u32 resv4 : 24;
+	u32 act_dp : 8; /* UDF */
+	u16 new_vlan1;
+	u16 sp_tag;
+	u32 new_dmac_hi;
+	u16 new_vlan2;
+	u16 new_dmac_lo;
+	u32 new_smac_hi;
+	u16 resv5;
+	u16 new_smac_lo;
+#if defined(CONFIG_MEDIATEK_NETSYS_V3)
+	u32 resv6;
+	struct hnat_winfo winfo;
+	struct hnat_winfo_pao winfo_pao;
+#elif defined(CONFIG_MEDIATEK_NETSYS_V2)
+	u16 minfo;
+	struct hnat_winfo winfo;
+#endif
+} __packed;
+
 struct hnat_ipv4_hnapt {
 	union {
 		struct hnat_bind_info_blk bfib1;
@@ -410,7 +452,7 @@ struct hnat_ipv4_hnapt {
 #endif
 	u32 act_dp : 8; /* UDF */
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -479,7 +521,7 @@ struct hnat_ipv4_dslite {
 	};
 
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -548,7 +590,7 @@ struct hnat_ipv4_mape {
 	};
 
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -620,7 +662,7 @@ struct hnat_ipv6_3t_route {
 		u32 info_blk2;
 	};
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -685,7 +727,7 @@ struct hnat_ipv6_5t_route {
 	};
 
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -758,7 +800,7 @@ struct hnat_ipv6_6rd {
 	};
 
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	union {
 #if !defined(CONFIG_MEDIATEK_NETSYS_V2) && !defined(CONFIG_MEDIATEK_NETSYS_V3)
@@ -820,7 +862,7 @@ struct hnat_ipv6_hnapt {
 	};
 
 	u16 vlan1;
-	u16 etype;
+	u16 sp_tag;
 	u32 dmac_hi;
 	u16 vlan2;
 	u16 dmac_lo;
@@ -851,6 +893,7 @@ struct foe_entry {
 	union {
 		struct hnat_unbind_info_blk udib1;
 		struct hnat_bind_info_blk bfib1;
+		struct hnat_l2_bridge l2_bridge;
 		struct hnat_ipv4_hnapt ipv4_hnapt;
 		struct hnat_ipv4_dslite ipv4_dslite;
 		struct hnat_ipv4_mape ipv4_mape;
@@ -1006,6 +1049,7 @@ enum FoeEntryState { INVALID = 0, UNBIND = 1, BIND = 2, FIN = 3 };
 enum FoeIpAct {
 	IPV4_HNAPT = 0,
 	IPV4_HNAT = 1,
+	L2_BRIDGE = 2,
 	IPV4_DSLITE = 3,
 	IPV6_3T_ROUTE = 4,
 	IPV6_5T_ROUTE = 5,
@@ -1055,6 +1099,7 @@ enum FoeIpAct {
 #define BIT_IPV4_NAT_EN BIT(12)
 #define BIT_IPV4_NAPT_EN BIT(13)
 #define BIT_IPV4_DSL_EN BIT(14)
+#define BIT_L2_BRG_EN BIT(15)
 #define BIT_MIB_BUSY BIT(16)
 #define BIT_IPV4_NAT_FRAG_EN BIT(17)
 #define BIT_IPV4_HASH_GREK BIT(19)
@@ -1064,6 +1109,9 @@ enum FoeIpAct {
 #define BIT_IPV6_NAT_EN BIT(23)
 #define BIT_IPV6_NAPT_EN BIT(24)
 #define BIT_CS0_RM_ALL_IP6_IP_EN BIT(25)
+#define BIT_L2_HASH_ETH BIT(29)
+#define BIT_L2_HASH_VID BIT(30)
+#define BIT_L2_LRN_EN BIT(31)
 
 /*GDMA_FWD_CFG value*/
 #define BITS_GDM_UFRC_P_PPE (NR_PPE0_PORT << 12)
@@ -1196,6 +1244,7 @@ enum FoeIpAct {
 	 (get_wifi_hook_if_index_from_dev(dev) != 0)) ? 1 : 0)
 #define IS_EXT(dev) ((get_index_from_dev(dev) != 0) ? 1 : 0)
 #define IS_PPD(dev) (!strncmp(dev->name, hnat_priv->ppd,4))
+#define IS_L2_BRIDGE(x) (((x)->bfib1.pkt_type == L2_BRIDGE) ? 1 : 0)
 #define IS_IPV4_HNAPT(x) (((x)->bfib1.pkt_type == IPV4_HNAPT) ? 1 : 0)
 #define IS_IPV4_HNAT(x) (((x)->bfib1.pkt_type == IPV4_HNAT) ? 1 : 0)
 #define IS_IPV4_GRP(x) (IS_IPV4_HNAPT(x) | IS_IPV4_HNAT(x))
@@ -1285,7 +1334,7 @@ static inline int is_hnat_pre_filled(struct foe_entry *entry)
 {
 	u32 udf = 0;
 
-	if (IS_IPV4_GRP(entry))
+	if (IS_IPV4_GRP(entry) || IS_L2_BRIDGE(entry))
 		udf = entry->ipv4_hnapt.act_dp;
 	else
 		udf = entry->ipv6_5t_route.act_dp;
@@ -1325,9 +1374,11 @@ extern int qos_ul_toggle;
 extern int hook_toggle;
 extern int mape_toggle;
 extern int qos_toggle;
-
+extern int l2br_toggle;
 int ext_if_add(struct extdev_entry *ext_entry);
 int ext_if_del(struct extdev_entry *ext_entry);
+void cr_set_bits(void __iomem *reg, u32 bs);
+void cr_clr_bits(void __iomem *reg, u32 bs);
 void cr_set_field(void __iomem *reg, u32 field, u32 val);
 int mtk_sw_nat_hook_tx(struct sk_buff *skb, int gmac_no);
 int mtk_hnat_eth_hook_tx(struct sk_buff *skb, struct net_device *dev);
