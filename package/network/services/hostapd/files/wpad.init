@@ -6,6 +6,9 @@ STOP=91
 USE_PROCD=1
 NAME=wpad
 
+CRONTAB_ROOT="/tmp/gl_crontabs/root"
+PERSIST_DIR="/etc/gl_crontabs/crontabs.d/"
+
 start_service() {
 	config_load wpad
 	if [ -x "/usr/sbin/hostapd" ]; then
@@ -40,13 +43,25 @@ start_service() {
 			[ "$log_file_enable" = "1" -a -n "$log_file_path" ] && {
 				rm ${log_file_path}*
 				procd_append_param command -f $log_file_path
-				[ -f /etc/crontabs/root ] && sed -i '/hostapd.logrotate.conf/d' /etc/crontabs/root
 				[ "$log_rotate_enable" = "1" -a -x "/usr/sbin/logrotate" ] && {
 					cp /etc/wpad/template/hostapd.logrotate.conf /var/run/hostapd.logrotate.conf
 					new_log_file=$(echo ${log_file_path} | sed 's/\//\\\//g')
 					sed -i "s/HOSTAPD_LOG_PATH/${new_log_file}/g" /var/run/hostapd.logrotate.conf
 					sed -i "s/HOSTAPD_LOG_SIZE/${log_rotate_size}/g" /var/run/hostapd.logrotate.conf
-					echo "$log_rotate_cron /usr/sbin/logrotate /var/run/hostapd.logrotate.conf" >> /etc/crontabs/root
+					if [ -f "$CRONTAB_ROOT" ]; then
+						sed -i '/hostapd.logrotate.conf/d' $CRONTAB_ROOT
+						echo "$log_rotate_cron /usr/sbin/logrotate /var/run/hostapd.logrotate.conf" >> $CRONTAB_ROOT
+					elif [ -d "$PERSIST_DIR" ]; then
+						echo "$log_rotate_cron /usr/sbin/logrotate /var/run/hostapd.logrotate.conf" > $PERSIST_DIR/hostapd
+					fi
+				}
+
+				[ "$log_rotate_enable" = "0" ] && {
+					if [ -f "$CRONTAB_ROOT" ]; then
+						sed -i '/hostapd.logrotate.conf/d' $CRONTAB_ROOT
+					elif [ -d "$PERSIST_DIR" ] && [ -f "$PERSIST_DIR/hostapd" ]; then
+						rm -f $PERSIST_DIR/hostapd
+					fi
 				}
 			}
 			[ "$log_timestamp" = "1" ] && procd_append_param command -t
@@ -106,13 +121,25 @@ start_service() {
 			[ "$log_file_enable" = "1" -a -n "$log_file_path" ] && {
 				rm ${log_file_path}*
 				procd_append_param command -f $log_file_path
-				[ -f /etc/crontabs/root ] && sed -i '/wpa_supplicant.logrotate.conf/d' /etc/crontabs/root
 				[ "$log_rotate_enable" = "1" -a -x "/usr/sbin/logrotate" ] && {
 					cp /etc/wpad/template/wpa_supplicant.logrotate.conf /var/run/wpa_supplicant.logrotate.conf
 					new_log_file=$(echo ${log_file_path} | sed 's/\//\\\//g')
 					sed -i "s/WPA_SUPPLICANT_LOG_PATH/${new_log_file}/g" /var/run/wpa_supplicant.logrotate.conf
 					sed -i "s/WPA_SUPPLICANT_LOG_SIZE/${log_rotate_size}/g" /var/run/wpa_supplicant.logrotate.conf
-					echo "$log_rotate_cron /usr/sbin/logrotate /var/run/wpa_supplicant.logrotate.conf" >> /etc/crontabs/root
+					if [ -f "$CRONTAB_ROOT" ]; then
+						sed -i '/wpa_supplicant.logrotate.conf/d' $CRONTAB_ROOT
+						echo "$log_rotate_cron /usr/sbin/logrotate /var/run/wpa_supplicant.logrotate.conf" >> $CRONTAB_ROOT
+					elif [ -d "$PERSIST_DIR" ]; then
+						echo "$log_rotate_cron /usr/sbin/logrotate /var/run/wpa_supplicant.logrotate.conf" > $PERSIST_DIR/wpa_supplicant
+					fi
+				}
+
+				[ "$log_rotate_enable" = "0" ] && {
+					if [ -f "$CRONTAB_ROOT" ]; then
+						sed -i '/wpa_supplicant.logrotate.conf/d' $CRONTAB_ROOT
+					elif [ -d "$PERSIST_DIR" ] && [ -f "$PERSIST_DIR/wpa_supplicant" ]; then
+						rm -f $PERSIST_DIR/wpa_supplicant
+					fi
 				}
 			}
 			[ "$log_timestamp" = "1" ] && procd_append_param command -t
