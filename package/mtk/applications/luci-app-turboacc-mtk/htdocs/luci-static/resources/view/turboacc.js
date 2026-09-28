@@ -1205,7 +1205,7 @@ function buildForm(features, config) {
 
 	if (showMediatekHnat) {
 		o = s.taboption('hnat', form.Flag, 'fastpath_mh_eth_hnat', _('Enable ethernet HNAT'),
-			_('Enable MediaTek HNAT hook_toggle; turboacc service writes kernel toggle after save & apply.'));
+			_('Enable MediaTek HNAT hook_toggle, turboacc service writes kernel toggle after save & apply.'));
 		o.default = o.enabled;
 		o.rmempty = false;
 		o.depends('fastpath', 'mediatek_hnat');
