@@ -833,7 +833,7 @@ define Device/hiveton-h5000m
   KERNEL_LOADADDR := 0x40080000
   DEVICE_PACKAGES := \
 	mt798x-2p5g-phy-firmware-internal wireless-regdb kmod-mediatek_hnat luci-app-eqos-mtk luci-app-turboacc-mtk \
-	kmod-gpio-button-hotplug kmod-leds-gpio kmod-hwmon-pwmfan luci-light luci-app-Airpifanctrl \
+	kmod-gpio-button-hotplug kmod-leds-gpio kmod-hwmon-pwmfan luci-light luci-app-fan \
 	kmod-crypto-hw-safexcel kmod-usb3 luci-app-modem sms-tool quectel-CM-5G kmod-usb-acm kmod-usb-net \
 	kmod-usb-net-cdc-ether kmod-usb-net-cdc-mbim kmod-usb-net-cdc-ncm kmod-usb-net-huawei-cdc-ncm \
 	kmod-usb-net-qmi-wwan kmod-usb-net-rndis kmod-usb-serial kmod-usb-serial-option kmod-usb-serial-qualcomm kmod-usb-serial-wwan kmod-usb-wdm
