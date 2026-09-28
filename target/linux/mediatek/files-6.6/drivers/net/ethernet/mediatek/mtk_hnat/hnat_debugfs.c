@@ -2720,6 +2720,51 @@ static const struct file_operations hnat_dpi_using_fops = {
 };
 //// end of DPI+HWNAT workaround
 
+//// DPI + HWNAT workaround limit bytes
+static int hnat_dpi_limit_read(struct seq_file *m, void *private)
+{
+	seq_printf(m, "%llu\n", dpi_limit_bytes);
+	return 0;
+}
+
+static int hnat_dpi_limit_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, hnat_dpi_limit_read, file->private_data);
+}
+
+static ssize_t hnat_dpi_limit_write(struct file *file, const char __user *buffer,
+				      size_t count, loff_t *data)
+{
+	char buf[32] = {0};
+	int ret;
+	unsigned long long val;
+
+	if (count >= sizeof(buf)-1)
+		return -EINVAL;
+	if (copy_from_user(buf, buffer, count))
+		return -EFAULT;
+	buf[count] = '\0';
+	strim(buf);
+	ret = kstrtoull(buf, 10, &val);
+	if (ret)
+		return -EINVAL;
+	/* 43KB ~ 100MB */
+	if (val < 4096 || val > 100*1024*1024)
+		return -EINVAL;
+	dpi_limit_bytes = val;
+	pr_info("hnat: dpi_limit_bytes set to %llu bytes\n", dpi_limit_bytes);
+	return count;
+}
+
+static const struct file_operations hnat_dpi_limit_fops = {
+	.open = hnat_dpi_limit_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.write = hnat_dpi_limit_write,
+	.release = single_release,
+};
+//// end of DPI limit bytes
+
 static void hnat_qos_toggle_usage(void)
 {
 	pr_info("\nHQoS toggle Command Usage:\n");
@@ -3562,6 +3607,8 @@ int hnat_init_debugfs(struct mtk_hnat *h)
 			    &hnat_hook_toggle_fops);
 	debugfs_create_file("dpi_using", 0444, root, h,
 			    &hnat_dpi_using_fops);
+	debugfs_create_file("dpi_limit_bytes", 0444, root, h,
+			    &hnat_dpi_limit_fops);
 #if 1 /* ASUS: skip specific VID */
 	debugfs_create_file("skip_vid", 0444, root, h,
 			    &hnat_skip_vid_fops);
