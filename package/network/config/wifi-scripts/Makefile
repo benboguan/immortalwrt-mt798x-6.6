@@ -14,7 +14,8 @@ PKG_LICENSE:=GPL-2.0
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
 PKG_CONFIG_DEPENDS:= \
-	CONFIG_PACKAGE_wifi-script
+	CONFIG_PACKAGE_wifi-script \
+	CONFIG_PACKAGE_mtwifi-cfg
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -46,6 +47,9 @@ define Package/wifi-scripts/install
 		rm -f $(1)/lib/wifi/mac80211.uc; \
 		rm -f $(1)/lib/netifd/hostapd.sh; \
 		rm -f $(1)/lib/netifd/netifd-wireless.sh; \
+		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
+	$(if $(CONFIG_PACKAGE_mtwifi-cfg), \
+		rm -f $(1)/lib/wifi/mac80211.uc; \
 		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
 endef
 
