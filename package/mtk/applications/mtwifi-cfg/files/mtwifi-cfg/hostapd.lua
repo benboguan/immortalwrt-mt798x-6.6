@@ -1,9 +1,11 @@
 #!/usr/bin/env lua
 
 local nixio = require("nixio")
+local utils = require "mtwifi_utils"
 local var_path = "/var/run/"
 local var_hostapd_path = var_path.."hostapd/"
 local hostapd_cli = "/usr/sbin/hostapd_cli"
+
 local encryption_table = {
 	-- none
 	{
@@ -47,6 +49,18 @@ local encryption_table = {
 		["ieee80211w"] = "0",
 		["wpa_key_mgmt"] = {"WPA-PSK"},
 		["pairwise"] = {"ccmp", "tkip"}
+	},
+
+	-- psk-mixed
+	{
+		["key"] = {
+			["name"] = "psk-mixed",
+		},
+		["auth_algs"] = "1",
+		["wpa"] = "3",
+		["ieee80211w"] = "0",
+		["wpa_key_mgmt"] = {"WPA-PSK"},
+		["pairwise"] = {"ccmp"}
 	},
 
 	-- psk-mixed+tkip
@@ -1252,139 +1266,9 @@ function find_encryption(name, ieee80211w, pmf_sha256, sixg, rsne, rsno, rsno2)
 	return nil
 end
 
-function hostapd_setup_vif(cfg, vif)
-	local dev = cfg.config
-	local iface = vif.config
-	iface[".name"] = vif.mtwifi_ifname
-	if type(iface.network) == "table" then
-		iface.network = iface.network[1] or "lan"
-	end
-	local file_name = var_hostapd_path.."hostapd-"..iface[".name"]..".conf"
-
-	-- 确保目录存在
-	os.execute("mkdir -p "..var_hostapd_path)
-
-	local file
-	file = io.open(file_name, "w+")
-	if not file then
-		nixio.syslog("err", "hostapd_setup_vif: cannot open "..file_name)
-		return
-	end
-
-	io.output(file)
-	if iface.logger_syslog then
-		io.write("logger_syslog=", iface.logger_syslog, "\n")
-	end
-	if iface.logger_syslog_level then
-		io.write("logger_syslog_level=", iface.logger_syslog_level, "\n")
-	end
-	if iface.logger_stdout then
-		io.write("logger_stdout=", iface.logger_stdout, "\n")
-	end
-	if iface.logger_stdout_level then
-		io.write("logger_stdout_level=", iface.logger_stdout_level, "\n")
-	end
-
-	io.write("interface=", iface[".name"], "\n")
+-- 写 BSS 级字段（主 BSS 和子 BSS 都调用）
+local function write_bss_fields(dev, iface)
 	io.write("ssid=", iface.ssid, "\n")
-
---	if dev.country ~= nil then
---		io.write("country_code=", dev.country, "\n")
---	end
-
---	if dev.country_ie ~= nil then
---		io.write("ieee80211d=", dev.country_ie, "\n")
---	end
-
-	io.write("bridge=", "br-", iface.network, "\n")  -- need to have network to bridge translate function
-
-	local acs = (string.lower(dev.channel) == "auto" or dev.channel == nil or dev.channel == "0")
-	if not ((dev.band == "6G" or dev.band == "6g") and iface.vifidx ~= "1") then
-		if acs then
-			io.write("channel=0\n")
-		else
-			io.write("channel=", dev.channel, "\n")
-		end
-	end
-
-
-
-	io.write("driver=nl80211\n")
-
-	if dev.band == "2.4G" or dev.band == "2g" then
-		if acs == true then
-			io.write("hw_mode=any\n")
-		else
-			io.write("hw_mode=g\n")
-		end
-		io.write("preamble=1\n")
-		io.write("ieee80211n=1\n")
-		io.write("ieee80211ac=1\n")
-
-		if string.match(dev.htmode, "^HE") then
-			io.write("ieee80211ax=1\n")
-		elseif string.match(dev.htmode, "^EHT") then
-			io.write("ieee80211ax=1\n")
-			io.write("ieee80211be=1\n")
-		end
-	elseif dev.band == "5G" or dev.band == "5g" then
-		if acs == true then
-			io.write("hw_mode=any\n")
-		else
-			io.write("hw_mode=a\n")
-		end
-		io.write("ieee80211n=1\n")
-
-		if string.match(dev.htmode, "^VHT") then
-			io.write("ieee80211ac=1\n")
-		elseif string.match(dev.htmode, "^HE") then
-			io.write("ieee80211ac=1\n")
-			io.write("ieee80211ax=1\n")
-		elseif string.match(dev.htmode, "^EHT") then
-			io.write("ieee80211ac=1\n")
-			io.write("ieee80211ax=1\n")
-			io.write("ieee80211be=1\n")
-		end
-	elseif dev.band == "6G" or dev.band == "6g" then
-		if acs == true then
-			io.write("hw_mode=any\n")
-		else
-			io.write("hw_mode=a\n")
-		end
-
-		if string.match(dev.htmode, "^HE") then
-			io.write("ieee80211ax=1\n")
-		elseif string.match(dev.htmode, "^EHT") then
-			io.write("ieee80211ax=1\n")
-			io.write("ieee80211be=1\n")
-		end
-
-		io.write("he_6ghz_max_mpdu=0\n")
-		io.write("he_6ghz_max_ampdu_len_exp=0\n")
-		io.write("he_6ghz_rx_ant_pat=0\n")
-		io.write("he_6ghz_tx_ant_pat=0\n")
-		io.write("op_class=131\n")
-	end
-	io.write("noscan=1\n")
-
-	if iface.beacon_int ~= nil then
-		if tonumber(iface.beacon_int) >= 15 and tonumber(iface.beacon_int) <= 65535 then
-			io.write("beacon_int=", iface.beacon_int, "\n")
-		end
-	elseif dev.beacon_int ~= nil then
-			if tonumber(dev.beacon_int) >= 15 and tonumber(dev.beacon_int) <= 65535 then
-		io.write("beacon_int=", dev.beacon_int, "\n")
-		end
-	end
-
-	if dev.band == "6G" or dev.band == "6g" then
-		iface.ieee80211w = "2"
-	else
-		if dev.map_mode ~= nil and dev.map_mode ~= "0" then
-			iface.ieee80211w = "1"
-		end
-	end
-
 
 	if iface.dtim_period ~= nil then
 		if tonumber(iface.dtim_period) >= 1 and tonumber(iface.dtim_period) <= 255 then
@@ -2350,44 +2234,210 @@ function hostapd_setup_vif(cfg, vif)
 	if iface.bssid then
 		io.write("bssid="..iface.bssid.."\n")
 	end
-
-	io.close()
 end
 
 
-function hostapd_enable_vif(main_ifname, cfg, vif)
-	local phy = main_ifname   -- ra0/rai0/rax0
+-- 主 BSS 配置（生成一个 phy 的 .conf，包含 radio 参数 + 主 BSS 字段）
+function hostapd_setup_vif(cfg, vif)
+	local dev = cfg.config
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
 	if type(iface.network) == "table" then
 		iface.network = iface.network[1] or "lan"
 	end
 	local file_name = var_hostapd_path.."hostapd-"..iface[".name"]..".conf"
-	local action_wps_er_pid = var_path.."action-"..iface[".name"].."-wps-er.pid"
-	local action_wps_er_script = "/lib/wifi/hostapd_wps_er_action.lua"
 
-	if iface.network then
-		os.execute("ubus -t 20 wait_for network.interface."..iface.network)
+	os.execute("mkdir -p "..var_hostapd_path)
+
+	local file = io.open(file_name, "w+")
+	if not file then
+		nixio.syslog("err", "hostapd_setup_vif: cannot open "..file_name)
+		return
 	end
-	os.execute(hostapd_cli.." -p "..var_hostapd_path.." -i global raw ADD bss_config="..phy..":"..file_name)
-	if iface.wps_state == "1" then
-		os.execute("exec 1000>&- && "..hostapd_cli.." -i "..iface[".name"].." -a "..action_wps_er_script.." -B -P "..action_wps_er_pid)
+
+	io.output(file)
+	if iface.logger_syslog then
+		io.write("logger_syslog=", iface.logger_syslog, "\n")
 	end
+	if iface.logger_syslog_level then
+		io.write("logger_syslog_level=", iface.logger_syslog_level, "\n")
+	end
+	if iface.logger_stdout then
+		io.write("logger_stdout=", iface.logger_stdout, "\n")
+	end
+	if iface.logger_stdout_level then
+		io.write("logger_stdout_level=", iface.logger_stdout_level, "\n")
+	end
+
+	io.write("interface=", iface[".name"], "\n")
+
+	if dev.country ~= nil then
+		io.write("country_code=", dev.country, "\n")
+	end
+
+--	if dev.country_ie ~= nil then
+--		io.write("ieee80211d=", dev.country_ie, "\n")
+--	end
+
+	io.write("bridge=", "br-", iface.network, "\n")  -- need to have network to bridge translate function
+
+	local vendor_vht = dev.vendor_vht and "1" or "0"
+	io.write("vendor_vht="..vendor_vht.."\n")
+
+	local acs = (string.lower(dev.channel) == "auto" or dev.channel == nil or dev.channel == "0")
+	if not (dev.band == "6G" or dev.band == "6g") then
+		if acs then
+			io.write("channel=0\n")
+		else
+			io.write("channel=", dev.channel, "\n")
+		end
+	end
+
+	io.write("driver=nl80211\n")
+
+	if dev.band == "2.4G" or dev.band == "2g" then
+		if acs == true then
+			io.write("hw_mode=any\n")
+		else
+			io.write("hw_mode=g\n")
+		end
+		io.write("preamble=1\n")
+		io.write("ieee80211n=1\n")
+		io.write("ieee80211ac=1\n")
+
+		if string.match(dev.htmode, "^HE") then
+			io.write("ieee80211ax=1\n")
+		elseif string.match(dev.htmode, "^EHT") then
+			io.write("ieee80211ax=1\n")
+			io.write("ieee80211be=1\n")
+		end
+	elseif dev.band == "5G" or dev.band == "5g" then
+		if acs == true then
+			io.write("hw_mode=any\n")
+		else
+			io.write("hw_mode=a\n")
+		end
+		io.write("ieee80211n=1\n")
+
+		if string.match(dev.htmode, "^VHT") then
+			io.write("ieee80211ac=1\n")
+		elseif string.match(dev.htmode, "^HE") then
+			io.write("ieee80211ac=1\n")
+			io.write("ieee80211ax=1\n")
+		elseif string.match(dev.htmode, "^EHT") then
+			io.write("ieee80211ac=1\n")
+			io.write("ieee80211ax=1\n")
+			io.write("ieee80211be=1\n")
+		end
+	elseif dev.band == "6G" or dev.band == "6g" then
+		if acs == true then
+			io.write("hw_mode=any\n")
+		else
+			io.write("hw_mode=a\n")
+		end
+
+		if string.match(dev.htmode, "^HE") then
+			io.write("ieee80211ax=1\n")
+		elseif string.match(dev.htmode, "^EHT") then
+			io.write("ieee80211ax=1\n")
+			io.write("ieee80211be=1\n")
+		end
+
+		io.write("he_6ghz_max_mpdu=0\n")
+		io.write("he_6ghz_max_ampdu_len_exp=0\n")
+		io.write("he_6ghz_rx_ant_pat=0\n")
+		io.write("he_6ghz_tx_ant_pat=0\n")
+		io.write("op_class=131\n")
+	end
+	local noscan = dev.noscan and "1" or "0"
+	io.write("noscan="..noscan.."\n")
+
+	if iface.beacon_int ~= nil then
+		if tonumber(iface.beacon_int) >= 15 and tonumber(iface.beacon_int) <= 65535 then
+			io.write("beacon_int=", iface.beacon_int, "\n")
+		end
+	elseif dev.beacon_int ~= nil then
+		if tonumber(dev.beacon_int) >= 15 and tonumber(dev.beacon_int) <= 65535 then
+			io.write("beacon_int=", dev.beacon_int, "\n")
+		end
+	end
+
+	if dev.band == "6G" or dev.band == "6g" then
+		iface.ieee80211w = "2"
+	else
+		if dev.map_mode ~= nil and dev.map_mode ~= "0" then
+			iface.ieee80211w = "1"
+		end
+	end
+
+	-- 调用 BSS 字段写入
+	write_bss_fields(dev, iface)
+
+	-- 设备级别信息
+	io.write("use_driver_iface_addr=1\n")
+	io.write("friendly_name=WPS Access Point\n")
+	io.write("model_name=MediaTek Wireless Access Point\n")
+	io.write("model_number=MT7988\n")
+	io.write("serial_number=12345678\n")
+	io.write("os_version=80000000\n")
+
+	io.close()
+end
+
+
+-- 子 BSS：以 bss=xx 追加到主 BSS 的 .conf
+function hostapd_append_bss(cfg, vif, main_ifname)
+	local dev = cfg.config
+	local iface = vif.config
+	iface[".name"] = vif.mtwifi_ifname
+	if type(iface.network) == "table" then
+		iface.network = iface.network[1] or "lan"
+	end
+	local file_name = var_hostapd_path.."hostapd-"..main_ifname..".conf"
+
+	local file = io.open(file_name, "a")
+	if not file then
+		nixio.syslog("err", "hostapd_append_bss: cannot open "..file_name)
+		return
+	end
+
+	io.output(file)
+	io.write("\n")
+	io.write("bss=", iface[".name"], "\n")
+
+	if dev.band == "6G" or dev.band == "6g" then
+		iface.ieee80211w = "2"
+	else
+		if dev.map_mode ~= nil and dev.map_mode ~= "0" then
+			iface.ieee80211w = "1"
+		end
+	end
+
+	write_bss_fields(dev, iface)
+
+	io.close()
+end
+
+
+function hostapd_start_wps_er(iface)
+	if not iface or iface.wps_state ~= "1" or not iface.mtwifi_ifname then
+		return
+	end
+	local action_wps_er_pid = var_path.."action-"..iface.mtwifi_ifname.."-wps-er.pid"
+	local action_wps_er_script = "/lib/wifi/hostapd_wps_er_action.lua"
+	os.execute("exec 1000>&- && "..hostapd_cli.." -i "..iface.mtwifi_ifname.." -a "..action_wps_er_script.." -B -P "..action_wps_er_pid)
 end
 
 
 function hostapd_disable_vif(iface)
-	local file_name = var_hostapd_path.."hostapd-"..iface..".conf"
 	local action_wps_er_pid = var_path.."action-"..iface.."-wps-er.pid"
 
 	os.execute("[ -f "..action_wps_er_pid.." ] && kill -SIGTERM `cat "..action_wps_er_pid.."` 2>/dev/null")
-	os.execute(hostapd_cli.." -p "..var_hostapd_path.." -i global raw REMOVE "..iface)
 	os.remove(action_wps_er_pid)
-	os.remove(file_name)
 end
 
 
--- 自己拉起 hostapd（一个 PHY 只调一次，主 BSS 专用）
+-- 启动 hostapd（一个 PHY 只调一次）
 function hostapd_start_main(cfg, vif)
 	local iface = vif.config
 	iface[".name"] = vif.mtwifi_ifname
@@ -2397,13 +2447,13 @@ function hostapd_start_main(cfg, vif)
 	-- 强制 up
 	os.execute("ip link set "..iface[".name"].." up")
 
-	-- 等待接口 up 且 phy80211 出现，最多 5 秒
+	-- 等待接口 up 且 phy80211 出现，最多 3 秒
 	local retry = 0
-	while retry < 50 do
+	while retry < 30 do
 		local up = os.execute("ip link show "..iface[".name"].." up >/dev/null 2>&1") == 0
 		local phy = os.execute("[ -e /sys/class/net/"..iface[".name"].."/phy80211 ] 2>/dev/null") == 0
 		if up and phy then break end
-		os.execute("sleep 0.1")
+		utils.sleep(0.1)
 		retry = retry + 1
 	end
 
@@ -2420,7 +2470,7 @@ function hostapd_start_main(cfg, vif)
 		f:close()
 		if oldpid and #oldpid > 0 then
 			os.execute("kill "..oldpid.." 2>/dev/null")
-			os.execute("sleep 0.5")
+			utils.sleep(0.5)
 		end
 	end
 	os.remove(pid_file)
@@ -2432,7 +2482,8 @@ end
 
 return {
 	hostapd_setup_vif = hostapd_setup_vif,
-	hostapd_enable_vif = hostapd_enable_vif,
+	hostapd_start_wps_er = hostapd_start_wps_er,
+	hostapd_append_bss = hostapd_append_bss,
 	hostapd_disable_vif = hostapd_disable_vif,
 	hostapd_start_main = hostapd_start_main
 }

@@ -339,7 +339,7 @@ function start_hostapd_group(vifs, cfg)
         if is_cfg80211_enabled(first_ifname) then
             break
         end
-        --utils.sleep(0.1)
+        utils.sleep(0.1)
         retry = retry + 1
     end
 
@@ -372,6 +372,13 @@ function start_hostapd_group(vifs, cfg)
 
     -- 5. 生成主 BSS 配置并启动 hostapd
     mtk_hostapd.hostapd_setup_vif(cfg, main_vif)
+
+    -- 再把每个子 BSS 作为 bss=xx 追加到同一个 .conf
+    for _, v in ipairs(sub_vifs) do
+        mtk_hostapd.hostapd_append_bss(cfg, v, main_ifname)
+    end
+
+    -- 一次性启动 hostapd，所有 BSS 一起生效
     mtk_hostapd.hostapd_start_main(cfg, main_vif)
 
     -- 6. 等待主 BSS ctrl socket 就绪（用 -S 测试，不要用 utils.exists）
@@ -380,7 +387,7 @@ function start_hostapd_group(vifs, cfg)
         if os.execute("[ -S " .. HOSTAPD_CTRL_DIR .. "/" .. main_ifname .. " ] 2>/dev/null") == 0 then
             break
         end
-        --utils.sleep(0.1)
+        utils.sleep(0.1)
         retry2 = retry2 + 1
     end
     if retry2 >= max_retry then
@@ -389,60 +396,55 @@ function start_hostapd_group(vifs, cfg)
         nixio.syslog("info", "mtwifi-cfg: hostapd ctrl socket ready for "..main_ifname)
     end
 
-    -- 7. 生成并添加子 BSS
-    for _, v in ipairs(sub_vifs) do
-        mtk_hostapd.hostapd_setup_vif(cfg, v)
-        mtk_hostapd.hostapd_enable_vif(main_ifname, cfg, v)
-    end
+    mtk_hostapd.hostapd_start_wps_er(v)
 end
 
 function stop_hostapd_group(ifnames)
     if not ifnames or #ifnames == 0 then return end
 
-    local killed_phys = {}
+    local handled_phys = {}
     for _, ifname in ipairs(ifnames) do
-        if is_cfg80211_enabled(ifname) then
-            local phy = get_phy_name(ifname)
-            if phy and not killed_phys[phy] then
-                killed_phys[phy] = true
+        local phy = get_phy_name(ifname)
+        if phy and not handled_phys[phy] then
+            handled_phys[phy] = true
 
-                local main_ifname, min_num = nil, nil
+            -- 找该 phy 上编号最小的接口（主 BSS）
+            local main_ifname, min_num = nil, nil
+            for _, cand in ipairs(ifnames) do
+                if get_phy_name(cand) == phy then
+                    local num = tonumber(cand:match("(%d+)$") or "")
+                    if num and (not min_num or num < min_num) then
+                        min_num = num
+                        main_ifname = cand
+                    end
+                end
+            end
+
+            if main_ifname then
+                -- 清理该 phy 上所有 BSS 的 WPS ER 监听（如果有）
                 for _, cand in ipairs(ifnames) do
                     if get_phy_name(cand) == phy then
-                        local num = tonumber(cand:match("(%d+)$") or "")
-                        if num and (not min_num or num < min_num) then
-                            min_num = num
-                            main_ifname = cand
-                        end
+                        mtk_hostapd.hostapd_disable_vif(cand)
                     end
                 end
 
-                if main_ifname then
-                    for _, cand in ipairs(ifnames) do
-                        if cand ~= main_ifname and get_phy_name(cand) == phy then
-                            mtk_hostapd.hostapd_disable_vif(cand)
-                        end
+                -- kill 主 hostapd 进程，删 pid 和主 .conf
+                local pid_file = HOSTAPD_CTRL_DIR .. "/hostapd-" .. main_ifname .. ".pid"
+                if os.execute("[ -f " .. pid_file .. " ] 2>/dev/null") == 0 then
+                    local f = io.popen("cat " .. pid_file)
+                    local pid = f:read("*a"):gsub("%s+$", "")
+                    f:close()
+                    if pid and #pid > 0 then
+                        os.execute("kill " .. pid .. " 2>/dev/null")
+                        nixio.syslog("info", "mtwifi-cfg: killed hostapd pid " .. pid .. " for " .. main_ifname)
                     end
-                    mtk_hostapd.hostapd_disable_vif(main_ifname)
+                    os.remove(pid_file)
                 end
+
+                os.remove(HOSTAPD_CTRL_DIR .. "/hostapd-" .. main_ifname .. ".conf")
             end
         end
         os.execute("ip link set " .. ifname .. " down")
-    end
-
-    -- 直接 kill 我们启动的 hostapd 实例
-    for _, ifname in ipairs(ifnames) do
-        local pid_file = HOSTAPD_CTRL_DIR .. "/hostapd-" .. ifname .. ".pid"
-        if os.execute("[ -f " .. pid_file .. " ] 2>/dev/null") == 0 then
-            local f = io.popen("cat " .. pid_file)
-            local pid = f:read("*a"):gsub("%s+$", "")
-            f:close()
-            if pid and #pid > 0 then
-                os.execute("kill " .. pid .. " 2>/dev/null")
-                nixio.syslog("info", "mtwifi-cfg: killed hostapd pid " .. pid .. " for " .. ifname)
-            end
-            os.remove(pid_file)
-        end
     end
 end
 
@@ -452,20 +454,10 @@ function start_all_ap_bss(vifs, cfg)
         return
     end
 
-    local phy_groups = {}
-    for _, v in ipairs(vifs) do
-        if v.mtwifi_ifname then
-            local phy = get_phy_name(v.mtwifi_ifname) or ("unknown_" .. v.mtwifi_ifname)
-            phy_groups[phy] = phy_groups[phy] or {}
-            table.insert(phy_groups[phy], v)
-        end
-    end
-
-    for phy, group in pairs(phy_groups) do
-        nixio.syslog("info", "mtwifi-cfg: start hostapd group " .. phy
-            .. " with " .. #group .. " BSS")
-        start_hostapd_group(group, cfg)
-    end
+    -- 不再按 phy 分组。ra1 等子接口由 hostapd 根据 .conf 里的 bss= 段创建，
+    -- 分到不同 phy 组会导致每个 group 只有一个 vif，sub_vifs 永远为空。
+    nixio.syslog("info", "mtwifi-cfg: start_all_ap_bss vifs="..#vifs)
+    start_hostapd_group(vifs, cfg)
 end
 
 -- ============================================================
