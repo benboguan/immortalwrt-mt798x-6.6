@@ -1,0 +1,103 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -28,6 +28,7 @@
+ #include <fnmatch.h>
+ #include <stdarg.h>
+ #include <stdlib.h>
++#include <signal.h>
+ 
+ #include "iwinfo_nl80211.h"
+ #include "mtk_nl80211.h" 
+@@ -904,24 +905,30 @@ static int __nl80211_hostapd_query(const char *ifname, ...)
+ 	va_list ap, ap_cur;
+ 	char *phy, *search, *dest, *key, *val, buf[128];
+ 	int len, found = 0, match = 1;
+-	FILE *fp;
++	FILE *fp = NULL;
+ 
+ 	if (nl80211_get_if_data(ifname, &data))
+ 		return 0;
+ 
+ 	if (data.mode != IWINFO_OPMODE_MASTER && data.mode != IWINFO_OPMODE_AP_VLAN)
+ 		return 0;
+ 
+ 	phy = nl80211_ifname2phy(ifname);
+ 
+-	if (!phy)
+-		return 0;
+-
+-	if (data.radio_idx >= 0)
+-		snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.%d.conf", phy, data.radio_idx);
+-	else
+-		snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.conf", phy);
+-	fp = fopen(buf, "r");
++	if (phy)
++	{
++		if (data.radio_idx >= 0)
++			snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.%d.conf", phy, data.radio_idx);
++		else
++			snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.conf", phy);
++		fp = fopen(buf, "r");
++	}
++
++	if (!fp)
++	{
++		snprintf(buf, sizeof(buf), "/var/run/hostapd-%s.conf", ifname);
++		fp = fopen(buf, "r");
++	}
+ 
+ 	if (!fp)
+ 		return 0;
+@@ -1199,24 +1205,42 @@
+ 
+ static void nl80211_hostapd_hup(const char *ifname)
+ {
+-	int fd, pid = 0;
++	int fd = -1, pid = 0;
+ 	char buf[32];
+ 	char *phy = nl80211_ifname2phy(ifname);
++	char path[PATH_MAX];
+ 
+ 	if (phy)
+ 	{
+-		snprintf(buf, sizeof(buf), "/var/run/wifi-%s.pid", phy);
+-		if ((fd = open(buf, O_RDONLY)) >= 0)
++		snprintf(path, sizeof(path), "/var/run/wifi-%s.pid", phy);
++		fd = open(path, O_RDONLY);
++
++		if (fd < 0)
+ 		{
+-			if (read(fd, buf, sizeof(buf)) > 0)
+-				pid = atoi(buf);
+-
+-			close(fd);
++			snprintf(path, sizeof(path), "/var/run/hostapd-%s.pid", ifname);
++			fd = open(path, O_RDONLY);
+ 		}
+-
+-		if (pid > 0)
+-			kill(pid, 1);
+ 	}
++	else
++	{
++		snprintf(path, sizeof(path), "/var/run/hostapd-%s.pid", ifname);
++		fd = open(path, O_RDONLY);
++	}
++
++	if (fd >= 0)
++	{
++		if (read(fd, buf, sizeof(buf) - 1) > 0)
++		{
++			buf[sizeof(buf) - 1] = '\0';
++			pid = atoi(buf);
++		}
++
++		close(fd);
++	}
++
++	if (pid > 0)
++		kill(pid, SIGHUP);
++	}
+ }
+ 
+ 

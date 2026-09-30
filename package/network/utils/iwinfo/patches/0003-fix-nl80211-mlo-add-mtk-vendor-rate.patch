@@ -89,6 +89,16 @@
 +	e->rx_rate.eht_dcm = si.rx_dcm;
 +	e->tx_rate.eht_dcm = si.tx_dcm;
 +
++	if (!e->noise) {
++		for (i = 0; i < 4; i++) {
++			if (si.snr[i] > best_snr)
++				best_snr = si.snr[i];
++		}
++
++		if (best_snr)
++			e->noise = e->signal - best_snr;
++	}
++
 +	if (si.mlo_enable) {
 +		e->mlo_enable = 1;
 +		memcpy(e->mld_mac, si.mld_mac, 6);
@@ -112,16 +122,6 @@
 +
 +			rx->eht_dcm = si.rx_dcm;
 +			tx->eht_dcm = si.tx_dcm;
-+
-+			if (!e->noise) {
-+				for (i = 0; i < 4; i++) {
-+					if (si.snr[i] > best_snr)
-+						best_snr = si.snr[i];
-+				}
-+
-+				if (best_snr)
-+					e->noise = e->signal - best_snr;
-+			}
 +
 +			if (rx->is_eht && !rx->eht_gi)
 +				rx->eht_gi = e->rx_rate.eht_gi;
