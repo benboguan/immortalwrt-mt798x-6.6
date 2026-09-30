@@ -1190,7 +1190,7 @@ return view.extend({
 					o.default = o.disabled;
 					o.rmempty = false;
 
-					o = ss.taboption('advanced', form.Flag, 'txburst', _('TxBurst'));
+					o = ss.taboption('advanced', form.Flag, 'tx_burst', _('TxBurst'));
 					o.default = o.enabled;
 					o.rmempty = false;
 
