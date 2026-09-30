@@ -1,0 +1,21 @@
+mtwifi.sh drv_mtwifi_setup
+  │
+  ├─ json_dump | mtwifi_cfg setup ─┐
+  │                                 ├─ mtwifi_cfg_setup
+  │                                 │    ├─ update_iface_wps(cfg)  → 写 /var/run/mtwifi-iface-wps
+  │                                 │    ├─ mtwifi_up → 写 dat + hairpin
+  │                                 │    └─ ...
+  │                                 │
+  ├─ 生成 hostapd-<phy>.conf        │
+  ├─ mtwifi_hostapd_start           │
+  ├─ mtwifi_hostapd_wps_er_start    │
+  │      └─ hostapd_cli -a hostapd_wps_er_action.lua
+  │            └─ 触发 WPS-NEW-AP-SETTINGS 时：
+  │                  ├─ 读 /var/run/mtwifi-iface-wps 得 section
+  │                  ├─ 读 /var/run/hostapd-<iface>.conf 得 new creds
+  │                  └─ 写 UCI wireless.<section>.{key,ssid,wps_state}
+  │
+  ├─ STA: mtwifi_supplicant_setup_vif → wpa_cli interface_add
+  │      └─ 挂 scan action 到 /lib/wifi/supplicant_scan_action.sh
+  │
+  └─ wireless_set_up

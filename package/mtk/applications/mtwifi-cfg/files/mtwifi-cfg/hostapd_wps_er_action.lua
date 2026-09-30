@@ -1,6 +1,7 @@
 #!/usr/bin/env lua
 
-require("uci")
+local uci = require("uci")
+local x = uci.cursor()
 
 local iface = arg[1]
 local event = arg[2]
@@ -16,6 +17,28 @@ local wpa_pairwise = {}
 local wpa_passphrase
 local wpa_psk
 local auth_algs
+
+-- iface 是驱动接口名（ra0/ra1/rai0/rai1/apcli0/...），
+-- UCI section 名是 default_MT7992_1_1 或 wifinetN 这种，两者没有推导关系。
+-- mtwifi_cfg.lua 会生成 /var/run/mtwifi-iface-wps 供这里查询。
+local iface_wps = {}
+do
+	local f = io.open("/var/run/mtwifi-iface-wps", "r")
+	if f then
+		for line in f:lines() do
+			local ifn, sec = line:match("^(%S+)%s+(%S+)$")
+			if ifn and sec then
+				iface_wps[ifn] = sec
+			end
+		end
+		f:close()
+	end
+end
+
+local section = iface_wps[iface]
+if not section then
+	return
+end
 
 local function parse_config(line)
 	if line == nil or line == "" then
@@ -62,8 +85,6 @@ local function parse_config(line)
 end
 
 local function translate_config()
-	local x = uci.cursor()
-
 	if auth_algs == nil or
 	   auth_algs ~= "1" then
 		-- TODO log here
@@ -73,164 +94,164 @@ local function translate_config()
 	if wpa == nil and
 	   #wpa_key_mgmt == 0 and
 	   #wpa_pairwise == 0 then
-		x:set("wireless", iface, "encryption", "none")
-		x:delete("wireless", iface, "key")
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "none")
+		x:delete("wireless", section, "key")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk+tkip+ccmp")
+		x:set("wireless", section, "encryption", "psk+tkip+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "psk+ccmp")
+		x:set("wireless", section, "encryption", "psk+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk+tkip")
+		x:set("wireless", section, "encryption", "psk+tkip")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk2+tkip+ccmp")
+		x:set("wireless", section, "encryption", "psk2+tkip+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "psk2+ccmp")
+		x:set("wireless", section, "encryption", "psk2+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk2+tkip")
+		x:set("wireless", section, "encryption", "psk2+tkip")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk-mixed+tkip+ccmp")
+		x:set("wireless", section, "encryption", "psk-mixed+tkip+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "psk-mixed+ccmp")
+		x:set("wireless", section, "encryption", "psk-mixed+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-PSK" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "psk-mixed+tkip")
+		x:set("wireless", section, "encryption", "psk-mixed+tkip")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE" and
@@ -238,57 +259,57 @@ local function translate_config()
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae")  -- sae+ccmp+gcmp256
+		x:set("wireless", section, "encryption", "sae")  -- sae+ccmp+gcmp256
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae+ccmp")
+		x:set("wireless", section, "encryption", "sae+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae+gcmp256")
+		x:set("wireless", section, "encryption", "sae+gcmp256")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE-EXT" and
@@ -296,62 +317,62 @@ local function translate_config()
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae-ext")
+		x:set("wireless", section, "encryption", "sae-ext")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae+ccmp")
+		x:set("wireless", section, "encryption", "sae+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae+gcmp256")
+		x:set("wireless", section, "encryption", "sae+gcmp256")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE-EXT" and
@@ -359,57 +380,57 @@ local function translate_config()
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae-ext")
+		x:set("wireless", section, "encryption", "sae-ext")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE-EXT" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae-ext+ccmp")
+		x:set("wireless", section, "encryption", "sae-ext+ccmp")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "SAE-EXT" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "sae-ext+gcmp256")
+		x:set("wireless", section, "encryption", "sae-ext+gcmp256")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "2")
+		x:set("wireless", section, "ieee80211w", "2")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 2 and
 	   wpa_key_mgmt[1] == "SAE" and
@@ -417,22 +438,22 @@ local function translate_config()
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" and
 	   ieee80211w == "1" then
-		x:set("wireless", iface, "encryption", "sae-mixed")
+		x:set("wireless", section, "encryption", "sae-mixed")
 		if wpa_passphrase then
-			x:set("wireless", iface, "key", wpa_passphrase);
+			x:set("wireless", section, "key", wpa_passphrase);
 		elseif wpa_psk then
-			x:set("wireless", iface, "key", wpa_psk);
+			x:set("wireless", section, "key", wpa_psk);
 		end
-		x:set("wireless", iface, "ieee80211w", "1")
+		x:set("wireless", section, "ieee80211w", "1")
 		if sae_pwe then
-			x:set("wireless", iface, "sae_pwe", sae_pwe)
+			x:set("wireless", section, "sae_pwe", sae_pwe)
 		else
-			x:delete("wireless", iface, "sae_pwe")
+			x:delete("wireless", section, "sae_pwe")
 		end
 		if sae_require_mfp then
-			x:set("wireless", iface, "sae_require_mfp", sae_require_mfp)
+			x:set("wireless", section, "sae_require_mfp", sae_require_mfp)
 		else
-			x:delete("wireless", iface, "sae_require_mfp")
+			x:delete("wireless", section, "sae_require_mfp")
 		end
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
@@ -440,127 +461,127 @@ local function translate_config()
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa+tkip+ccmp")
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
+		x:set("wireless", section, "encryption", "wpa+tkip+ccmp")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "wpa+ccmp")
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "wpa+ccmp")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "1" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa+tkip")
-		x:delete("wireless", iface, "ieee80211w")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "wpa+tkip")
+		x:delete("wireless", section, "ieee80211w")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa2+tkip+ccmp")
+		x:set("wireless", section, "encryption", "wpa2+tkip+ccmp")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "wpa2+ccmp")
+		x:set("wireless", section, "encryption", "wpa2+ccmp")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa2+tkip")
+		x:set("wireless", section, "encryption", "wpa2+tkip")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 2 and
 	   wpa_pairwise[1] == "CCMP" and
 	   wpa_pairwise[2] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa-mixed+tkip+ccmp")
+		x:set("wireless", section, "encryption", "wpa-mixed+tkip+ccmp")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" then
-		x:set("wireless", iface, "encryption", "wpa-mixed+ccmp")
+		x:set("wireless", section, "encryption", "wpa-mixed+ccmp")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "3" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "TKIP" then
-		x:set("wireless", iface, "encryption", "wpa-mixed+tkip")
+		x:set("wireless", section, "encryption", "wpa-mixed+tkip")
 		if ieee80211w then
-			x:set("wireless", iface, "ieee80211w", ieee80211w)
+			x:set("wireless", section, "ieee80211w", ieee80211w)
 		else
-			x:set("wireless", iface, "ieee80211w", "0")
+			x:set("wireless", section, "ieee80211w", "0")
 		end
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP-SHA256" and
 	   (wpa_pairwise[0] == "CCMP" or
 	    wpa_pairwise[1] == "CCMP") and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "wpa3")
-		x:set("wireless", iface, "ieee80211w", "2")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "wpa3")
+		x:set("wireless", section, "ieee80211w", "2")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 1 and
 	   wpa_key_mgmt[1] == "WPA-EAP-SUITE-B-192" and
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "GCMP-256" and
 	   ieee80211w == "2" then
-		x:set("wireless", iface, "encryption", "wpa3-192")
-		x:set("wireless", iface, "ieee80211w", "2")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "wpa3-192")
+		x:set("wireless", section, "ieee80211w", "2")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	elseif wpa == "2" and
 	   #wpa_key_mgmt == 2 and
 	   wpa_key_mgmt[1] == "WPA-EAP" and
@@ -568,20 +589,23 @@ local function translate_config()
 	   #wpa_pairwise == 1 and
 	   wpa_pairwise[1] == "CCMP" and
 	   ieee80211w == "1" then
-		x:set("wireless", iface, "encryption", "wpa3-mixed")
-		x:set("wireless", iface, "ieee80211w", "1")
-		x:delete("wireless", iface, "sae_pwe")
-		x:delete("wireless", iface, "sae_require_mfp")
+		x:set("wireless", section, "encryption", "wpa3-mixed")
+		x:set("wireless", section, "ieee80211w", "1")
+		x:delete("wireless", section, "sae_pwe")
+		x:delete("wireless", section, "sae_require_mfp")
 	end
-	x:set("wireless", iface, "ssid", ssid)
-	x:set("wireless", iface, "wps_state", "2")
+
+	if ssid then
+		x:set("wireless", section, "ssid", ssid)
+	end
+	x:set("wireless", section, "wps_state", "2")
 	x:commit("wireless")
 
 	local network
 	if type(network) == "table" then
 		network = network[1] or "lan"
 	end
-	local net = x:get("wireless", iface, "network")
+	local net = x:get("wireless", section, "network")
 	if net then network = net end
 
 	os.execute("(sleep 1; ubus call network reload) >/dev/null 2>&1 &")
@@ -596,7 +620,17 @@ end
 os.execute("sleep 1")
 
 
-local fp = io.open("/var/run/hostapd/hostapd-"..iface..".conf", "r")
+local conf_paths = {
+	"/var/run/hostapd-"..iface..".conf",
+	"/var/run/hostapd/hostapd-"..iface..".conf",
+}
+
+local fp = nil
+for _, p in ipairs(conf_paths) do
+	fp = io.open(p, "r")
+	if fp then break end
+end
+
 if fp == nil then
 	return
 end
@@ -619,4 +653,3 @@ end
 fp:close()
 
 translate_config()
-

@@ -132,15 +132,15 @@ mtwifi_defs.chip_cfgs = {
 }
 
 mtwifi_defs.reinstall_cfgs = {
-    "BssidNum", "WHNAT", "E2pAccessMode",
+    "WHNAT", "E2pAccessMode",
     "HT_RxStream", "HT_TxStream", "WdsEnable",
     "MldGroup", "ApcliMloDisable"
 }
 
 mtwifi_defs.cfg80211_tool_ap_cfgs = {
     -- uci config = cfg80211_tool set cmd , default value
-    ["kicklow"] = {"KickStaRssiLow", "0"},
-    ["assocthres"] = {"AssocReqRssiThres", "0"},
+    --["kicklow"] = {"KickStaRssiLow", "0"},
+    --["assocthres"] = {"set assocreq_rssi_thres", "0"},
     --["mwds"] = {"mwds enable", "0"},
 }
 
@@ -149,19 +149,19 @@ mtwifi_defs.enc2dat = {
     ["none"] = {"OPEN", "NONE"},
     ["sae-ext-mixed"] = {"WPA2PSKWPA3PSKWPA3PSK-EXT", "CCMP128,GCMP256"},
     ["sae_sae-ext"] = {"WPA3PSKWPA3PSK-EXT", "CCMP128,GCMP256"},
-    ["sae-ext"] = {"WPA3PSK_EXT", "GCMP256"},
+    ["sae-compat"] = {"WPA3PSK_EXT", "GCMP256"},
     ["sae-ext+ccmp"] = {"WPA3PSK_EXT", "CCMP128"},
     ["sae-ext+gcmp"] = {"WPA3PSK_EXT", "GCMP128"},
     ["sae-ext+ccmp256"] = {"WPA3PSK_EXT", "CCMP256"},
     ["sae-ext+gcmp256"] = {"WPA3PSK_EXT", "GCMP256"},
     ["sae-ext+ccmp+gcmp256"] = {"WPA3PSK_EXT", "CCMP128,GCMP256"},
-    ["sae"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
-    ["sae+ccmp"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128"},
-    ["sae+gcmp"] = {"WPA3PSK,WPA3PSK_EXT", "GCMP128"},
-    ["sae+ccmp256"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP256"},
-    ["sae+gcmp256"] = {"WPA3PSK,WPA3PSK_EXT", "GCMP256"},
-    ["sae+ccmp+gcmp256"] = {"WPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
-    ["sae-mixed"] = {"WPA2PSKWPA3PSK,WPA3PSK_EXT", "CCMP128,GCMP256"},
+    ["sae"] = {"WPA3PSK", "CCMP128"},
+    ["sae+ccmp"] = {"WPA3PSK", "CCMP128"},
+    ["sae+gcmp"] = {"WPA3PSK", "GCMP128"},
+    ["sae+ccmp256"] = {"WPA3PSK", "CCMP256"},
+    ["sae+gcmp256"] = {"WPA3PSK", "GCMP256"},
+    ["sae+ccmp+gcmp256"] = {"WPA3PSK", "CCMP128,GCMP256"},
+    ["sae-mixed"] = {"WPA2PSKWPA3PSK", "CCMP128"},
     ["wpa3-192"] = {"WPA3-192", "GCMP256"},
     ["wpa3-mixed"] = {"WPA3WPA2", "AES"},
     ["wpa3"] = {"WPA3", "AES"},
@@ -181,10 +181,10 @@ mtwifi_defs.enc2dat = {
     ["wpa+tkip"] = {"WPA", "TKIP"},
     ["wpa+ccmp"] = {"WPA", "AES"},
     ["wpa"] = {"WPA", "AES"},
-    ["psk-mixed+tkip+ccmp"] = {"WPAPSK,WPA2PSK", "TKIPAES"},
-    ["psk-mixed+tkip"] = {"WPAPSK,WPA2PSK", "TKIP"},
-    ["psk-mixed+ccmp"] = {"WPAPSK,WPA2PSK", "AES"},
-    ["psk-mixed"] = {"WPAPSK,WPA2PSK", "AES"},
+    ["psk-mixed+tkip+ccmp"] = {"WPAPSKWPA2PSK", "TKIPAES"},
+    ["psk-mixed+tkip"] = {"WPAPSKWPA2PSK", "TKIP"},
+    ["psk-mixed+ccmp"] = {"WPAPSKWPA2PSK", "AES"},
+    ["psk-mixed"] = {"WPAPSKWPA2PSK", "AES"},
     ["wpa-mixed+tkip+ccmp"] = {"WPA1WPA2", "TKIPAES"},
     ["wpa-mixed+tkip"] = {"WPA1WPA2", "TKIP"},
     ["wpa-mixed+ccmp"] = {"WPA1WPA2", "AES"},
