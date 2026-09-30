@@ -44,11 +44,11 @@ disable_hnat_runtime() {
 
 	# 2) 归零改写 PPE/QDMA 寄存器的子开关，避免下次启动残留
 	[ -w "$hnat_path/mcast_hook_toggle" ] && echo "0" >"$hnat_path/mcast_hook_toggle" 2>/dev/null
-	[ -w "$hnat_path/xlat_toggle" ] && echo "0" >"$hnat_path/xlat_toggle"       2>/dev/null
-	[ -w "$hnat_path/l2br_toggle" ] && echo "0" >"$hnat_path/l2br_toggle"       2>/dev/null
-	[ -w "$hnat_path/l4s_toggle" ] && echo "0" >"$hnat_path/l4s_toggle"        2>/dev/null
-	[ -w "$hnat_path/tnl_toggle" ] && echo "0" >"$hnat_path/tnl_toggle"        2>/dev/null
-	[ -w "$hnat_path/dpi_using" ] && echo "0" >"$hnat_path/dpi_using"         2>/dev/null
+	[ -w "$hnat_path/xlat_toggle" ] && echo "0" >"$hnat_path/xlat_toggle" 2>/dev/null
+	[ -w "$hnat_path/l2br_toggle" ] && echo "0" >"$hnat_path/l2br_toggle" 2>/dev/null
+	[ -w "$hnat_path/l4s_toggle" ] && echo "0" >"$hnat_path/l4s_toggle" 2>/dev/null
+	[ -w "$hnat_path/tnl_toggle" ] && echo "0" >"$hnat_path/tnl_toggle" 2>/dev/null
+	[ -w "$hnat_path/dpi_using" ] && echo "0" >"$hnat_path/dpi_using" 2>/dev/null
 }
 
 wait_hnat_debugfs() {
@@ -243,7 +243,6 @@ start_service() {
 		# 三、仅当总闸开启时才写的 HNAT 功能开关
 		# =========================================================
 		if _uci_bool_enabled "$fastpath_mh_eth_hnat"; then
-
 			# 3.1 组播 HNAT + 黑名单
 			local fastpath_mh_eth_hnat_mcast fastpath_mh_mcast_blist
 			config_get_bool "fastpath_mh_eth_hnat_mcast" "config" "fastpath_mh_eth_hnat_mcast" "0"

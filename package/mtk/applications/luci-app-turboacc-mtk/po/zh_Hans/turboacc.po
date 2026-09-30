@@ -246,13 +246,13 @@ msgid "Enable software deep packet inspection"
 msgstr "启用软件深度报文检测（DPI）"
 
 msgid "Software deep packet inspection temporarily bypasses hardware HNAT acceleration."
-msgstr "软件深度报文检测（DPI）临时绕过硬件 HNAT 加速。"
+msgstr "软件深度报文检测（DPI），临时绕过硬件 HNAT 加速。"
 
 msgid "DPI Threshold (bytes)"
 msgstr "DPI 阈值（字节）"
 
 msgid "The threshold for allowing DPI to bypass HNAT hardware acceleration is set to 45000 bytes by default."
-msgstr "允许（DPI）绕过 HNAT 硬件加速的阈值，默认 45000 字节。"
+msgstr "允许（DPI）绕过 HNAT 硬件加速的阈值，默认（45000）字节。"
 
 msgid "Skipping specific VLANs is suitable for scenarios like IPTV that require bypassing hardware HNAT acceleration. Format: 10>20>100, with a maximum of 16."
 msgstr "跳过特定 VLAN 适用于需要绕过硬件 HNAT 加速的场景，如：IPTV 等。格式：10>20>100，最大16个。"
@@ -280,6 +280,9 @@ msgstr "启用 464XLAT 卸载"
 
 msgid "Enable 464XLAT (IPv4 over IPv6) hardware offload."
 msgstr "启用 464XLAT（IPv4 over IPv6）硬件卸载功能。"
+
+msgid "Skip Specific VLAN"
+msgstr "跳过特定 VLAN"
 
 msgid "Bind Entrys"
 msgstr "已绑定连接数"
@@ -346,6 +349,9 @@ msgstr "路由/NAT 引擎"
 
 msgid "Runtime warnings"
 msgstr "运行时告警"
+
+msgid "Config matches the runtime path."
+msgstr "配置与运行时路径匹配。"
 
 msgid "PPE lanes"
 msgstr "PPE 通道数"
@@ -780,8 +786,8 @@ msgstr "TCP 拥塞控制算法"
 msgid "Choose TCP congestion control algorithm. BBR for high-bandwidth links, CUBIC is the kernel default, Reno for best compatibility."
 msgstr "选择 TCP 拥塞控制算法。BBR 适合高带宽链路，CUBIC 为内核默认，Reno 兼容性最佳。"
 
-msgid "Enable MediaTek HNAT hook_toggle; turboacc service writes kernel toggle after save & apply."
-msgstr "启用 MediaTek HNAT hook_toggle；保存并应用后由 turboacc 服务写入内核开关。"
+msgid "Enable MediaTek HNAT hook_toggle, turboacc service writes kernel toggle after save & apply."
+msgstr "启用 MediaTek HNAT hook_toggle，保存并应用后由 turboacc 服务写入内核开关。"
 
 msgid "Enable IPv6 HNAT."
 msgstr "启用 IPv6 HNAT。"
