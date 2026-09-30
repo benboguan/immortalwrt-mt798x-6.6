@@ -31,7 +31,9 @@ PKG_CONFIG_DEPENDS:= \
 	CONFIG_DRIVER_11N_SUPPORT \
 	CONFIG_DRIVER_11AC_SUPPORT \
 	CONFIG_DRIVER_11AX_SUPPORT \
+	CONFIG_DRIVER_11BE_SUPPORT \
 	CONFIG_PACKAGE_wifi-scripts \
+	CONFIG_PACKAGE_mtwifi-cfg \
 	CONFIG_WPA_ENABLE_WEP
 
 EAPOL_TEST_PROVIDERS:=eapol-test eapol-test-openssl eapol-test-wolfssl
@@ -81,8 +83,6 @@ ifeq ($(LOCAL_VARIANT),mesh)
   CONFIG_VARIANT:=full
 endif
 
-include $(INCLUDE_DIR)/package.mk
-
 STAMP_CONFIGURED:=$(STAMP_CONFIGURED)_$(CONFIG_WPA_MSG_MIN_PRIORITY)
 
 
@@ -98,12 +98,17 @@ ifneq ($(CONFIG_DRIVER_11AX_SUPPORT),)
   HOSTAPD_IEEE80211AX:=y
 endif
 
+ifneq ($(CONFIG_DRIVER_11BE_SUPPORT),)
+  HOSTAPD_IEEE80211BE:=y
+endif
+
 DRIVER_MAKEOPTS= \
 	CONFIG_ACS=$(CONFIG_PACKAGE_kmod-cfg80211) \
 	CONFIG_DRIVER_NL80211=$(CONFIG_PACKAGE_kmod-cfg80211) \
 	CONFIG_IEEE80211N=$(HOSTAPD_IEEE80211N) \
 	CONFIG_IEEE80211AC=$(HOSTAPD_IEEE80211AC) \
 	CONFIG_IEEE80211AX=$(HOSTAPD_IEEE80211AX) \
+	CONFIG_IEEE80211BE=$(HOSTAPD_IEEE80211BE) \
 	CONFIG_DRIVER_WEXT=$(CONFIG_DRIVER_WEXT_SUPPORT) \
 	CONFIG_MBO=$(CONFIG_WPA_MBO_SUPPORT)
 
@@ -632,7 +637,7 @@ define Package/hostapd-common/install
 	$(CP) ./files/*.conf $(1)/etc/wpad/template
 	$(CP) ./files/hostapd_conf_generate.sh $(1)/usr/bin/
 
-	$(if $(CONFIG_PACKAGE_wifi-scripts), \
+	$(if $(or $(CONFIG_PACKAGE_wifi-scripts),$(CONFIG_PACKAGE_mtwifi-cfg)), \
 		rm -f $(1)/lib/netifd/hostapd.sh; \
 		rm -f $(1)/etc/rc.button/wps)
 endef
