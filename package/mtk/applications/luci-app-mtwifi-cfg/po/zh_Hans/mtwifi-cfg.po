@@ -134,6 +134,15 @@ msgstr "iwpriv 失败："
 msgid "mwctl failed: "
 msgstr "mwctl 失败："
 
+msgid "MLD: %s"
+msgstr "MLD：%s"
+
+msgid "(%d links)"
+msgstr "（%d 链路）"
+
+msgid "Link %d"
+msgstr "链路 %d"
+
 msgid "Enable Multi-AP functionality"
 msgstr "启用 Multi-AP"
 
