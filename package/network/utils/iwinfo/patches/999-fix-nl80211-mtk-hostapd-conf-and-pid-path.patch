@@ -48,7 +48,7 @@
  
  	if (!fp)
  		return 0;
-@@ -1199,24 +1205,42 @@
+@@ -1199,24 +1205,41 @@
  
  static void nl80211_hostapd_hup(const char *ifname)
  {
@@ -97,7 +97,6 @@
 +
 +	if (pid > 0)
 +		kill(pid, SIGHUP);
-+	}
  }
  
  
