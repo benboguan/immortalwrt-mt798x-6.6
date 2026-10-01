@@ -213,7 +213,7 @@
 	reset-gpios = <&pio 36 GPIO_ACTIVE_HIGH>;
 	wifi-reset-gpios = <&pio 38 GPIO_ACTIVE_LOW>;
 	wifi-reset-msleep = <100>;
-	//wifi-deassert-msleep = <500>;
+	wifi-deassert-msleep = <500>;
 	max-link-width = <2>;
 	status = "okay";
 };
