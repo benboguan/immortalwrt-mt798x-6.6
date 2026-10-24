@@ -4,6 +4,7 @@
 #include "utils/common.h"
 #include "utils/ucode.h"
 #include "sta_info.h"
+#include "hostapd.h"
 #include "beacon.h"
 #include "hw_features.h"
 #include "ap_drv_ops.h"
@@ -17,6 +18,12 @@ static uc_resource_type_t *global_type, *bss_type, *iface_type;
 static struct hapd_interfaces *interfaces;
 static uc_value_t *global, *bss_registry, *iface_registry;
 static uc_vm_t *vm;
+extern void hostapd_ubus_add(struct hapd_interfaces *ifaces);
+extern void hostapd_ubus_free(struct hapd_interfaces *ifaces);
+extern bool hostapd_ubus_object_exists(void);
+
+static struct hapd_interfaces *ucode_ifaces;
+static bool ucode_ubus_fallback = false;
 
 static uc_value_t *
 hostapd_ucode_bss_get_uval(struct hostapd_data *hapd)
@@ -47,37 +54,41 @@ hostapd_ucode_iface_get_uval(struct hostapd_iface *hapd)
 }
 
 static void
-hostapd_ucode_update_bss_list(struct hostapd_iface *iface, uc_value_t *bss)
+hostapd_ucode_update_bss_list(struct hostapd_iface *iface, uc_value_t *if_bss, uc_value_t *bss)
 {
 	uc_value_t *list;
 	int i;
 
-	list = ucv_object_new(vm);
+	list = ucv_array_new(vm);
 	for (i = 0; iface->bss && i < iface->num_bss; i++) {
 		struct hostapd_data *hapd = iface->bss[i];
-		uc_value_t *uval = hostapd_ucode_bss_get_uval(hapd);
 
-		ucv_object_add(list, hapd->conf->iface, uval);
+		ucv_array_set(list, i, ucv_string_new(hapd->conf->iface));
+		ucv_object_add(bss, hapd->conf->iface, hostapd_ucode_bss_get_uval(hapd));
 	}
-	ucv_object_add(bss, iface->phy, list);
+	ucv_object_add(if_bss, iface->phy, list);
 }
 
 static void
 hostapd_ucode_update_interfaces(void)
 {
 	uc_value_t *ifs = ucv_object_new(vm);
-	uc_value_t *if_bss = ucv_object_new(vm);
+	uc_value_t *if_bss = ucv_array_new(vm);
+	uc_value_t *bss = ucv_object_new(vm);
 	int i;
 
 	for (i = 0; i < interfaces->count; i++) {
 		struct hostapd_iface *iface = interfaces->iface[i];
 
 		ucv_object_add(ifs, iface->phy, hostapd_ucode_iface_get_uval(iface));
-		hostapd_ucode_update_bss_list(iface, if_bss);
+		hostapd_ucode_update_bss_list(iface, if_bss, bss);
 	}
 
 	ucv_object_add(ucv_prototype_get(global), "interfaces", ifs);
-	ucv_object_add(ucv_prototype_get(global), "bss", if_bss);
+	ucv_object_add(ucv_prototype_get(global), "interface_bss", if_bss);
+	ucv_object_add(ucv_prototype_get(global), "bss", bss);
+
+	ucv_gc(vm);
 }
 
 static uc_value_t *
@@ -201,49 +212,6 @@ bss_reload_vlans(struct hostapd_data *hapd, struct hostapd_bss_config *bss)
 	return 0;
 }
 
-static void
-__uc_hostapd_bss_stop(struct hostapd_data *hapd)
-{
-	struct hostapd_iface *iface = hapd->iface;
-
-	if (!hapd->started)
-		return;
-
-	hostapd_bss_deinit_no_free(hapd);
-	hostapd_drv_stop_ap(hapd);
-	hostapd_bss_link_deinit(hapd);
-
-#ifdef CONFIG_IEEE80211BE
-	if (hapd == iface->bss[0] && hapd->conf->mld_ap)
-	        hostapd_if_link_remove(hapd, WPA_IF_AP_BSS, hapd->conf->iface,
-                       hapd->mld_link_id);
-#endif
-
-	hostapd_free_hapd_data(hapd);
-}
-
-static int
-__uc_hostapd_bss_start(struct hostapd_data *hapd)
-{
-	struct hostapd_iface *iface = hapd->iface;
-	bool first = hapd == iface->bss[0];
-	int ret;
-
-	if (hapd->started)
-		return 0;
-
-#ifdef CONFIG_IEEE80211BE
-	if (hapd->conf->mld_ap)
-		first = false;
-#endif
-
-	ret = hostapd_setup_bss(hapd, first, true);
-	hostapd_neighbor_set_own_report(hapd);
-	hostapd_owe_update_trans(iface);
-
-	return ret;
-}
-
 static uc_value_t *
 uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 {
@@ -256,7 +224,6 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	uc_value_t *files_only = uc_fn_arg(2);
 	unsigned int i, idx = 0;
 	int ret = -1;
-	bool started;
 
 	if (!hapd || ucv_type(file) != UC_STRING)
 		goto out;
@@ -285,11 +252,12 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 
 		swap_field(ssid.wpa_psk_file);
 		ret = bss_reload_vlans(hapd, bss);
-		goto free;
+		goto done;
 	}
 
-	started = hapd->started;
-	__uc_hostapd_bss_stop(hapd);
+	hostapd_bss_deinit_no_free(hapd);
+	hostapd_drv_stop_ap(hapd);
+	hostapd_free_hapd_data(hapd);
 
 	old_bss = hapd->conf;
 	for (i = 0; i < iface->conf->num_bss; i++)
@@ -301,12 +269,13 @@ uc_hostapd_bss_set_config(uc_vm_t *vm, size_t nargs)
 	if (hapd == iface->bss[0])
 		memcpy(hapd->own_addr, hapd->conf->bssid, ETH_ALEN);
 
-	if (started)
-		ret = __uc_hostapd_bss_start(hapd);
-	else
-		ret = 0;
+	hostapd_setup_bss(hapd, hapd == iface->bss[0]);
+	hostapd_neighbor_set_own_report(hapd, hapd);
 	hostapd_ucode_update_interfaces();
+	hostapd_owe_update_trans(iface);
 
+done:
+	ret = 0;
 free:
 	hostapd_config_free(conf);
 out:
@@ -368,46 +337,13 @@ uc_hostapd_bss_delete(uc_vm_t *vm, size_t nargs)
 	hostapd_bss_deinit(hapd);
 	hostapd_remove_iface_bss_conf(iface->conf, hapd->conf);
 	hostapd_config_free_bss(hapd->conf);
-#ifdef CONFIG_IEEE80211BE
-	if (hapd->mld)
-		hapd->mld->refcount--;
-#endif
 	os_free(hapd);
 
-	hostapd_cleanup_unused_mlds(iface->interfaces);
 	hostapd_ucode_update_interfaces();
+	ucv_gc(vm);
 
 	return NULL;
 }
-
-static uc_value_t *
-uc_hostapd_iface_state(uc_vm_t *vm, size_t nargs)
-{
-#define hapd_state(name) [HAPD_IFACE_##name] = #name
-	static const char * const hapd_state_name[] = {
-		hapd_state(UNINITIALIZED),
-		hapd_state(DISABLED),
-		hapd_state(COUNTRY_UPDATE),
-		hapd_state(ACS),
-		hapd_state(HT_SCAN),
-		hapd_state(DFS),
-		hapd_state(NO_IR),
-		hapd_state(ENABLED),
-	};
-	struct hostapd_iface *iface = uc_fn_thisval("hostapd.iface");
-	const char *state = NULL;
-
-	if (!iface)
-		return NULL;
-
-	if (iface->state < ARRAY_SIZE(hapd_state_name))
-		state = hapd_state_name[iface->state];
-	if (!state)
-		state = "unknown";
-
-	return ucv_string_new(state);
-}
-
 
 static uc_value_t *
 uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
@@ -438,21 +374,12 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 
 	hapd->driver = iface->bss[0]->driver;
 	hapd->drv_priv = iface->bss[0]->drv_priv;
-#ifdef CONFIG_IEEE80211BE
-	os_strlcpy(hapd->ctrl_sock_iface, hapd->conf->iface,
-		   sizeof(hapd->ctrl_sock_iface));
-	if (hapd->conf->mld_ap) {
-		hostapd_bss_setup_multi_link(hapd, iface->interfaces);
-		hostapd_set_ctrl_sock_iface(hapd);
-	}
-#endif
-
 	if (interfaces->ctrl_iface_init &&
 	    interfaces->ctrl_iface_init(hapd) < 0)
 		goto free_hapd;
 
 	if (iface->state == HAPD_IFACE_ENABLED &&
-	    hostapd_setup_bss(hapd, -1, true))
+	    hostapd_setup_bss(hapd, -1))
 		goto deinit_ctrl;
 
 	iface->bss = os_realloc_array(iface->bss, iface->num_bss + 1,
@@ -465,7 +392,7 @@ uc_hostapd_iface_add_bss(uc_vm_t *vm, size_t nargs)
 	iface->conf->bss[iface->conf->num_bss] = bss;
 	conf->bss[idx] = NULL;
 	ret = hostapd_ucode_bss_get_uval(hapd);
-	hostapd_neighbor_set_own_report(hapd);
+	hostapd_neighbor_set_own_report(hapd, hapd);
 	hostapd_ucode_update_interfaces();
 	hostapd_owe_update_trans(iface);
 	goto out;
@@ -611,8 +538,10 @@ uc_hostapd_iface_start(uc_vm_t *vm, size_t nargs)
 	if (!iface)
 		return NULL;
 
-	if (!info)
+	if (!info) {
+		iface->freq = 0;
 		goto out;
+	}
 
 	if (ucv_type(info) != UC_OBJECT)
 		return NULL;
@@ -671,9 +600,6 @@ out:
 	if (conf->channel && !iface->freq)
 		iface->freq = hostapd_hw_get_freq(iface->bss[0], conf->channel);
 
-	for (i = 0; i < iface->num_bss; i++)
-		iface->bss[i]->conf->start_disabled = 0;
-
 	if (iface->state != HAPD_IFACE_ENABLED) {
 		hostapd_enable_iface(iface);
 		return ucv_boolean_new(true);
@@ -683,6 +609,7 @@ out:
 		struct hostapd_data *hapd = iface->bss[i];
 		int ret;
 
+		hapd->conf->start_disabled = 0;
 		hostapd_set_freq(hapd, conf->hw_mode, iface->freq,
 				 conf->channel,
 				 conf->enable_edmg,
@@ -754,7 +681,6 @@ uc_hostapd_bss_rename(uc_vm_t *vm, size_t nargs)
 {
 	struct hostapd_data *hapd = uc_fn_thisval("hostapd.bss");
 	uc_value_t *ifname_arg = uc_fn_arg(0);
-	uc_value_t *skip_rename = uc_fn_arg(1);
 	char prev_ifname[IFNAMSIZ + 1];
 	struct sta_info *sta;
 	const char *ifname;
@@ -770,11 +696,9 @@ uc_hostapd_bss_rename(uc_vm_t *vm, size_t nargs)
 	if (interfaces->ctrl_iface_deinit)
 		interfaces->ctrl_iface_deinit(hapd);
 
-	if (!ucv_is_truish(skip_rename)) {
-		ret = hostapd_drv_if_rename(hapd, WPA_IF_AP_BSS, NULL, ifname);
-		if (ret)
-			goto out;
-	}
+	ret = hostapd_drv_if_rename(hapd, WPA_IF_AP_BSS, NULL, ifname);
+	if (ret)
+		goto out;
 
 	for (sta = hapd->sta_list; sta; sta = sta->next) {
 		char cur_name[IFNAMSIZ + 1], new_name[IFNAMSIZ + 1];
@@ -861,6 +785,7 @@ int hostapd_ucode_sta_auth(struct hostapd_data *hapd, struct sta_info *sta)
 		ret = ucv_int64_get(cur);
 
 	ucv_put(val);
+	ucv_gc(vm);
 
 	return ret;
 }
@@ -903,52 +828,12 @@ out:
 	ucv_put(val);
 }
 
-static uc_value_t *
-uc_wpa_rkh_derive_key(uc_vm_t *vm, size_t nargs)
-{
-#ifdef CONFIG_IEEE80211R_AP
-	u8 oldkey[16];
-	char *oldkey_hex;
-	u8 key[SHA256_MAC_LEN];
-	size_t key_len = sizeof(key);
-	char key_hex[2 * ARRAY_SIZE(key) + 1];
-	uc_value_t *val = uc_fn_arg(0);
-	int i;
-
-	if (ucv_type(val) != UC_STRING)
-		return NULL;
-
-	oldkey_hex = ucv_string_get(val);
-
-	if (!hexstr2bin(oldkey_hex, key, key_len))
-		return ucv_string_new_length(oldkey_hex, 2 * ARRAY_SIZE(key));
-
-	if (hexstr2bin(oldkey_hex, oldkey, sizeof(oldkey))) {
-		wpa_printf(MSG_ERROR, "Invalid RxKH key: '%s'", oldkey_hex);
-		return NULL;
-	}
-
-	if (hmac_sha256_kdf(oldkey, sizeof(oldkey), "FT OLDKEY", NULL, 0, key, key_len) < 0) {
-		wpa_printf(MSG_ERROR, "Invalid RxKH key: '%s'", oldkey_hex);
-		return NULL;
-	}
-
-	for (i = 0; i < ARRAY_SIZE(key); i++)
-		sprintf(key_hex + 2 * i, "%02x", key[i]);
-
-	return ucv_string_new_length(key_hex, 2 * ARRAY_SIZE(key));
-#else
-	return NULL;
-#endif
-}
-
 int hostapd_ucode_init(struct hapd_interfaces *ifaces)
 {
 	static const uc_function_list_t global_fns[] = {
 		{ "printf",	uc_wpa_printf },
 		{ "getpid", uc_wpa_getpid },
 		{ "sha1", uc_wpa_sha1 },
-		{ "rkh_derive_key", uc_wpa_rkh_derive_key },
 		{ "freq_info", uc_wpa_freq_info },
 		{ "add_iface", uc_hostapd_add_iface },
 		{ "remove_iface", uc_hostapd_remove_iface },
@@ -961,7 +846,6 @@ int hostapd_ucode_init(struct hapd_interfaces *ifaces)
 		{ "delete", uc_hostapd_bss_delete },
 	};
 	static const uc_function_list_t iface_fns[] = {
-		{ "state", uc_hostapd_iface_state },
 		{ "set_bss_order", uc_hostapd_iface_set_bss_order },
 		{ "add_bss", uc_hostapd_iface_add_bss },
 		{ "stop", uc_hostapd_iface_stop },
@@ -988,6 +872,19 @@ int hostapd_ucode_init(struct hapd_interfaces *ifaces)
 	if (wpa_ucode_run(HOSTAPD_UC_PATH "hostapd.uc"))
 		goto free_vm;
 
+	/* fallback: ubus */
+	if (!hostapd_ubus_object_exists()) {
+		wpa_printf(MSG_WARNING,
+			   "hostapd.uc did not register 'hostapd' ubus object, "
+			   "falling back to ubus registration");
+		hostapd_ubus_add(ifaces);
+		ucode_ubus_fallback = true;
+	} else {
+		ucode_ubus_fallback = false;
+	}
+
+	ucv_gc(vm);
+
 	return 0;
 
 free_vm:
@@ -997,6 +894,13 @@ free_vm:
 
 void hostapd_ucode_free(void)
 {
+	/* fallback: should be released by the ubus */
+	if (ucode_ubus_fallback && ucode_ifaces) {
+		hostapd_ubus_free(ucode_ifaces);
+		ucode_ubus_fallback = false;
+	}
+	ucode_ifaces = NULL;
+
 	if (wpa_ucode_call_prepare("shutdown") == 0)
 		ucv_put(wpa_ucode_call(0));
 	wpa_ucode_free_vm();
@@ -1020,6 +924,7 @@ void hostapd_ucode_bss_cb(struct hostapd_data *hapd, const char *type)
 	uc_value_push(ucv_get(val));
 	ucv_put(wpa_ucode_call(3));
 	ucv_put(val);
+	ucv_gc(vm);
 }
 
 void hostapd_ucode_free_bss(struct hostapd_data *hapd)
@@ -1039,6 +944,7 @@ void hostapd_ucode_free_bss(struct hostapd_data *hapd)
 	ucv_put(wpa_ucode_call(2));
 
 	ucv_put(val);
+	ucv_gc(vm);
 }
 
 #ifdef CONFIG_APUP
@@ -1055,5 +961,6 @@ void hostapd_ucode_apup_newpeer(struct hostapd_data *hapd, const char *ifname)
 	uc_value_push(ucv_string_new(ifname)); // APuP peer ifname
 	ucv_put(wpa_ucode_call(2));
 	ucv_put(val);
+	ucv_gc(vm);
 }
 #endif // def CONFIG_APUP

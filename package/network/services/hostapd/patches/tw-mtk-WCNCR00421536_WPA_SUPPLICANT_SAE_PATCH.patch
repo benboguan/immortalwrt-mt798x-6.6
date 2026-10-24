@@ -1,0 +1,65 @@
+Index: hostapd-2022-07-29-b704dc72/wpa_supplicant/wps_supplicant.c
+===================================================================
+--- hostapd-2022-07-29-b704dc72.orig/wpa_supplicant/wps_supplicant.c
++++ hostapd-2022-07-29-b704dc72/wpa_supplicant/wps_supplicant.c
+@@ -361,6 +361,37 @@ static void wpas_wps_remove_dup_network(
+ 	}
+ }
+ 
++static int wpas_wps_security_add_sae(struct wpa_supplicant *wpa_s,
++					 struct wpa_ssid *ssid,
++					 const struct wps_credential *cred)
++{
++	struct wpa_bss *bss;
++	struct wpa_ie_data adv;
++	const u8 *ie;
++	bool add_sae_val = 0;
++
++	if (ssid->ssid == NULL) {
++		wpa_printf(MSG_DEBUG, "WPS: SSID is NULL.");
++		return 0;
++	}
++
++	bss = wpa_bss_get(wpa_s, wpa_s->bssid,
++			  ssid->ssid, ssid->ssid_len);
++	if (bss == NULL) {
++		wpa_printf(MSG_ERROR, "WPS: The AP was not found from BSS "
++			   "table - use credential as-is");
++		return 0;
++	}
++	
++	wpa_printf(MSG_DEBUG, "WPS: AP found from BSS table");
++	ie = wpa_bss_get_rsne(bss);
++	if (ie && wpa_parse_wpa_ie(ie, 2 + ie[1], &adv) == 0) {
++		if(adv.key_mgmt & WPA_KEY_MGMT_SAE) {
++			add_sae_val = 1;
++		}
++	}
++	return add_sae_val;
++}
+ 
+ static int wpa_supplicant_wps_cred(void *ctx,
+ 				   const struct wps_credential *cred)
+@@ -519,6 +550,7 @@ static int wpa_supplicant_wps_cred(void
+ 		ssid->ssid_len = cred->ssid_len;
+ 	}
+ 
++	add_sae = wpas_wps_security_add_sae(wpa_s, ssid, cred);
+ 	switch (cred->encr_type) {
+ 	case WPS_ENCR_NONE:
+ 		break;
+@@ -570,12 +602,12 @@ static int wpa_supplicant_wps_cred(void
+ 		ssid->auth_alg = WPA_AUTH_ALG_OPEN;
+ #ifdef CONFIG_MTK_MAP_SAE_EXT_KEY
+ 		/* Support for SAE AKM 24 */
+-		add_sae = wpa_s->conf->wps_cred_add_sae;
++		add_sae |= wpa_s->conf->wps_cred_add_sae;
+ 		if (!add_sae)
+ 			ssid->key_mgmt = WPA_KEY_MGMT_PSK;
+ #else
+ 		ssid->key_mgmt = WPA_KEY_MGMT_PSK;
+-		add_sae = wpa_s->conf->wps_cred_add_sae;
++		add_sae |= wpa_s->conf->wps_cred_add_sae;
+ #endif /* CONFIG_MTK_MAP_SAE_EXT_KEY */
+ #ifdef CONFIG_P2P
+ 		if (ssid->p2p_group && is_p2p_6ghz_capable(wpa_s->global->p2p))

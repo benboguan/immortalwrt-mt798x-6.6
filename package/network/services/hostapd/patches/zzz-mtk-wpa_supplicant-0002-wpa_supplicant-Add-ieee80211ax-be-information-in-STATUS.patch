@@ -1,0 +1,73 @@
+--- a/wpa_supplicant/ctrl_iface.c
++++ b/wpa_supplicant/ctrl_iface.c
+@@ -2345,7 +2345,14 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
+ 			if (os_snprintf_error(end - pos, ret))
+ 				return pos - buf;
+ 			pos += ret;
+-		}
++		} else if (wpa_s->ieee80211be || wpa_s->ieee80211ax) {
++			ret = os_snprintf(pos, end - pos,
++				"wifi_generation=%u\n",
++				wpa_s->ieee80211be ? 7 : 6);
++			if (os_snprintf_error(end - pos, ret))
++				return pos - buf;
++			pos += ret;
++		}
+ 
+ #if defined(CONFIG_AP) && defined(CONFIG_CTRL_IFACE_MIB)
+ 		if (wpa_s->ap_iface) {
+@@ -2540,6 +2547,20 @@ static int wpa_supplicant_ctrl_iface_status(struct wpa_supplicant *wpa_s,
+ 	}
+ #endif /* CONFIG_WPS */
+ 
++	if (wpa_s->ieee80211be) {
++		ret = os_snprintf(pos, end - pos, "ieee80211be=1\n");
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++	}
++
++	if (wpa_s->ieee80211ax) {
++		ret = os_snprintf(pos, end - pos, "ieee80211ax=1\n");
++		if (os_snprintf_error(end - pos, ret))
++			return pos - buf;
++		pos += ret;
++	}
++
+ 	if (wpa_s->ieee80211ac) {
+ 		ret = os_snprintf(pos, end - pos, "ieee80211ac=1\n");
+ 		if (os_snprintf_error(end - pos, ret))
+--- a/wpa_supplicant/events.c
++++ b/wpa_supplicant/events.c
+@@ -319,6 +319,8 @@ void wpa_supplicant_mark_disassoc(struct wpa_supplicant *wpa_s)
+ 	wpa_s->last_tk_alg = WPA_ALG_NONE;
+ 	os_memset(wpa_s->last_tk, 0, sizeof(wpa_s->last_tk));
+ #endif /* CONFIG_TESTING_OPTIONS */
++	wpa_s->ieee80211be = 0;
++	wpa_s->ieee80211ax = 0;
+ 	wpa_s->ieee80211ac = 0;
+ 
+ 	if (wpa_s->enabled_4addr_mode && wpa_drv_set_4addr_mode(wpa_s, 0) == 0)
+@@ -3020,6 +3022,11 @@ static int wpa_supplicant_event_associnfo(struct wpa_supplicant *wpa_s,
+ 				resp_elems.he_capabilities;
+ 			wpa_s->connection_eht = req_elems.eht_capabilities &&
+ 				resp_elems.eht_capabilities;
++
++			if ((wpa_s->hw_capab & BIT(CAPAB_EHT)) && resp_elems.eht_capabilities)
++				wpa_s->ieee80211be = 1;
++			if ((wpa_s->hw_capab & BIT(CAPAB_HE)) && resp_elems.he_capabilities)
++				wpa_s->ieee80211ax = 1;
+ 		}
+ 	}
+ 
+--- a/wpa_supplicant/wpa_supplicant_i.h
++++ b/wpa_supplicant/wpa_supplicant_i.h
+@@ -1225,6 +1225,8 @@ struct wpa_supplicant {
+ #ifdef CONFIG_FILS
+ 	unsigned int disable_fils:1;
+ #endif /* CONFIG_FILS */
++	unsigned int ieee80211be:1;
++	unsigned int ieee80211ax:1;
+ 	unsigned int ieee80211ac:1;
+ 	unsigned int enabled_4addr_mode:1;
+ 	unsigned int multi_bss_support:1;

@@ -1,0 +1,142 @@
+From 054fcfab6fbe9be6df014852a03520a9360930ec Mon Sep 17 00:00:00 2001
+From: Johannes Berg <johannes.berg@intel.com>
+Date: Sun, 4 Dec 2022 11:49:32 +0200
+Subject: [PATCH] hostapd: Add require_he configuration
+
+Add the ability to require HE, advertising that via the
+BSS membership selector as well as rejecting association
+without HE.
+
+Signed-off-by: Johannes Berg <johannes.berg@intel.com>
+Signed-off-by: Andrei Otcheretianski <andrei.otcheretianski@intel.com>
+---
+ hostapd/config_file.c        |  2 ++
+ hostapd/hostapd.conf         |  3 +++
+ src/ap/ap_config.h           |  1 +
+ src/ap/ieee802_11.c          | 32 ++++++++++++++++++++++++++++++++
+ src/common/ieee802_11_defs.h |  1 +
+ 5 files changed, 39 insertions(+)
+
+diff --git a/hostapd/config_file.c b/hostapd/config_file.c
+index b5393fd6c..76f9cf831 100644
+--- a/hostapd/config_file.c
++++ b/hostapd/config_file.c
+@@ -3776,6 +3776,9 @@ static int hostapd_config_fill(struct hostapd_config *conf,
+ 	} else if (os_strcmp(buf, "ieee80211ax") == 0) {
+ 		conf->ieee80211ax = atoi(pos);
+ 		conf->conf_changed = 1;
++	} else if (os_strcmp(buf, "require_he") == 0) {
++		conf->require_he = atoi(pos);
++		conf->conf_changed = 1;
+ 	} else if (os_strcmp(buf, "he_su_beamformer") == 0) {
+ 		conf->he_phy_capab.he_su_beamformer = atoi(pos);
+ 		conf->conf_changed = 1;
+diff --git a/hostapd/hostapd.conf b/hostapd/hostapd.conf
+index 6b9a7d260..c5e74a6a2 100644
+--- a/hostapd/hostapd.conf
++++ b/hostapd/hostapd.conf
+@@ -817,6 +817,9 @@ wmm_ac_vo_acm=0
+ # 1 = enabled
+ #ieee80211ax=1
+ 
++# Require stations to support HE PHY (reject association if they do not)
++#require_he=1
++
+ # disable_11ax: Boolean (0/1) to disable HE for a specific BSS
+ #disable_11ax=0
+ 
+diff --git a/src/ap/ap_config.h b/src/ap/ap_config.h
+index 46b7a4781..1631cf2aa 100644
+--- a/src/ap/ap_config.h
++++ b/src/ap/ap_config.h
+@@ -1161,6 +1161,7 @@ struct hostapd_config {
+ 	u8 he_6ghz_rx_ant_pat;
+ 	u8 he_6ghz_tx_ant_pat;
+ 	u8 he_6ghz_reg_pwr_type;
++	bool require_he;
+ #endif /* CONFIG_IEEE80211AX */
+ 
+ 	/* VHT enable/disable config from CHAN_SWITCH */
+diff --git a/src/ap/ieee802_11.c b/src/ap/ieee802_11.c
+index 41a0d66a6..490dbcbe9 100644
+--- a/src/ap/ieee802_11.c
++++ b/src/ap/ieee802_11.c
+@@ -126,6 +126,10 @@ u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 		num++;
+ 	if (hapd->iconf->ieee80211ac && hapd->iconf->require_vht)
+ 		num++;
++#ifdef CONFIG_IEEE80211AX
++	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he)
++		num++;
++#endif /* CONFIG_IEEE80211AX */
+ 	h2e_required = (hapd->conf->sae_pwe == 1 ||
+ 			hostapd_sae_pw_id_in_use(hapd->conf) == 2) &&
+ 		hapd->conf->sae_pwe != 3 &&
+@@ -154,6 +158,13 @@ u8 * hostapd_eid_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_VHT_PHY;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211AX
++	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he && count < 8) {
++		count++;
++		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_HE_PHY;
++	}
++#endif /* CONFIG_IEEE80211AX */
++
+ 	if (h2e_required && count < 8) {
+ 		count++;
+ 		*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY;
+@@ -171,6 +182,10 @@ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 		num++;
+ 	if (hapd->iconf->ieee80211ac && hapd->iconf->require_vht)
+ 		num++;
++#ifdef CONFIG_IEEE80211AX
++	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he)
++		num++;
++#endif /* CONFIG_IEEE80211AX */
+ 	h2e_required = (hapd->conf->sae_pwe == 1 ||
+ 			hostapd_sae_pw_id_in_use(hapd->conf) == 2) &&
+ 		hapd->conf->sae_pwe != 3 &&
+@@ -208,6 +223,14 @@ u8 * hostapd_eid_ext_supp_rates(struct hostapd_data *hapd, u8 *eid)
+ 			*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_VHT_PHY;
+ 	}
+ 
++#ifdef CONFIG_IEEE80211AX
++	if (hapd->iconf->ieee80211ax && hapd->iconf->require_he) {
++		count++;
++		if (count > 8)
++			*pos++ = 0x80 | BSS_MEMBERSHIP_SELECTOR_HE_PHY;
++	}
++#endif /* CONFIG_IEEE80211AX */
++
+ 	if (h2e_required) {
+ 		count++;
+ 		if (count > 8)
+@@ -4779,6 +4794,15 @@ static int check_assoc_ies(struct hostapd_data *hapd, struct sta_info *sta,
+ 					 elems.he_capabilities_len);
+ 		if (resp != WLAN_STATUS_SUCCESS)
+ 			return resp;
++
++		if (hapd->iconf->require_he && !(sta->flags & WLAN_STA_HE)) {
++			hostapd_logger(hapd, sta->addr,
++				       HOSTAPD_MODULE_IEEE80211,
++				       HOSTAPD_LEVEL_INFO,
++				       "Station does not support mandatory HE PHY - reject association");
++			return WLAN_STATUS_DENIED_HE_NOT_SUPPORTED;
++		}
++
+ 		if (is_6ghz_op_class(hapd->iconf->op_class)) {
+ 			if (!(sta->flags & WLAN_STA_HE)) {
+ 				hostapd_logger(hapd, sta->addr,
+diff --git a/src/common/ieee802_11_defs.h b/src/common/ieee802_11_defs.h
+index 6ded79dec..93275c03e 100644
+--- a/src/common/ieee802_11_defs.h
++++ b/src/common/ieee802_11_defs.h
+@@ -1285,6 +1285,7 @@ struct ieee80211_ampe_ie {
+ #define HT_OPER_PARAM_PCO_PHASE				((u16) BIT(11))
+ /* B36..B39 - Reserved */
+ 
++#define BSS_MEMBERSHIP_SELECTOR_HE_PHY 122
+ #define BSS_MEMBERSHIP_SELECTOR_VHT_PHY 126
+ #define BSS_MEMBERSHIP_SELECTOR_HT_PHY 127
+ #define BSS_MEMBERSHIP_SELECTOR_SAE_H2E_ONLY 123

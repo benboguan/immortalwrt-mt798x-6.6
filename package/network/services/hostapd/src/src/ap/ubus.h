@@ -46,6 +46,7 @@ void hostapd_ubus_add_bss(struct hostapd_data *hapd);
 void hostapd_ubus_free_bss(struct hostapd_data *hapd);
 void hostapd_ubus_add_vlan(struct hostapd_data *hapd, struct hostapd_vlan *vlan);
 void hostapd_ubus_remove_vlan(struct hostapd_data *hapd, struct hostapd_vlan *vlan);
+bool hostapd_ubus_object_exists(void);
 
 int hostapd_ubus_handle_event(struct hostapd_data *hapd, struct hostapd_ubus_request *req);
 void hostapd_ubus_handle_link_measurement(struct hostapd_data *hapd, const u8 *data, size_t len);
@@ -100,6 +101,10 @@ static inline void hostapd_ubus_add_vlan(struct hostapd_data *hapd, struct hosta
 }
 
 static inline void hostapd_ubus_remove_vlan(struct hostapd_data *hapd, struct hostapd_vlan *vlan)
+{
+}
+
+bool hostapd_ubus_object_exists(void)
 {
 }
 
