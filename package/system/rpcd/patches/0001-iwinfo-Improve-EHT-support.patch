@@ -1,0 +1,59 @@
+--- a/iwinfo.c
++++ b/iwinfo.c
+@@ -498,6 +498,7 @@ rpc_iwinfo_add_rateinfo(struct
+ 		blobmsg_add_u32(&buf, "mcs", r->mcs);
+ 		blobmsg_add_u32(&buf, "nss", r->nss);
+ 		blobmsg_add_u32(&buf, "eht_gi", r->eht_gi);
++		blobmsg_add_u32(&buf, "eht_dcm", r->eht_dcm);
+ 	}
+ }
+ 
+@@ -514,6 +515,8 @@ rpc_iwinfo_assoclist(struct
+ 	void *c = NULL, *d, *e;
+ 	struct blob_attr *tb[__RPC_A_MAX];
+ 	bool found = false;
++	void *mlo;
++	int j;
+ 
+ 	blobmsg_parse(rpc_assoclist_policy, __RPC_A_MAX, tb,
+ 	              blob_data(msg), blob_len(msg));
+@@ -581,6 +584,39 @@ rpc_iwinfo_assoclist(struct
+ 			rpc_iwinfo_add_rateinfo(&a->tx_rate);
+ 			blobmsg_close_table(&buf, e);
+ 
++			if (a->mlo_enable) {
++				char mld_mac[18];
++
++				blobmsg_add_u8(&buf, "mlo_enable", 1);
++
++				snprintf(mld_mac, sizeof(mld_mac),
++				         "%02X:%02X:%02X:%02X:%02X:%02X",
++				         a->mld_mac[0], a->mld_mac[1], a->mld_mac[2],
++				         a->mld_mac[3], a->mld_mac[4], a->mld_mac[5]);
++				blobmsg_add_string(&buf, "mld_mac", mld_mac);
++				blobmsg_add_u8(&buf, "mlo_link_id", a->mlo_link_id);
++				blobmsg_add_u8(&buf, "mlo_num_links", a->mlo_num_links);
++
++				mlo = blobmsg_open_array(&buf, "mlo_links");
++				for (j = 0; j < a->mlo_num_links && j < 3; j++) {
++					void *link = blobmsg_open_table(&buf, NULL);
++					void *sub;
++
++					blobmsg_add_u8(&buf, "link_id", j);
++
++					sub = blobmsg_open_table(&buf, "rx");
++					rpc_iwinfo_add_rateinfo(&a->mlo_rx_rate[j]);
++					blobmsg_close_table(&buf, sub);
++
++					sub = blobmsg_open_table(&buf, "tx");
++					rpc_iwinfo_add_rateinfo(&a->mlo_tx_rate[j]);
++					blobmsg_close_table(&buf, sub);
++
++					blobmsg_close_table(&buf, link);
++				}
++				blobmsg_close_array(&buf, mlo);
++			}
++
+ 			found = true;
+ 			if (!macaddr)
+ 				blobmsg_close_table(&buf, d);
