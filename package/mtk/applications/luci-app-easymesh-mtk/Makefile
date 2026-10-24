@@ -12,7 +12,7 @@ PKG_LICENSE:=GPL-2.0
 PKG_MAINTAINER:=MTK EasyMesh maintainers
 
 LUCI_TITLE:=LuCI support for MediaTek EasyMesh (MAP Turnkey)
-LUCI_DEPENDS:=+luci-base +mapd +wapp +1905daemon
+LUCI_DEPENDS:=+luci-base +libmapd +libwpactrl +mapd +wapp +1905daemon +kmod-mapfilter
 LUCI_PKGARCH:=all
 
 include $(TOPDIR)/feeds/luci/luci.mk
