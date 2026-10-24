@@ -249,6 +249,19 @@ macaddr_add() {
 	echo $oui:$nic
 }
 
+macaddr_add_first_byte() {
+	local mac="$1"
+	local add="$2"
+	local first_hex rest new_first
+
+	[ -z "$mac" ] || [ "${mac//[0-9a-fA-F:]/}" != "" ] && return 1
+	first_hex="${mac%%:*}"
+	rest="${mac#*:}"
+
+	new_first=$(printf "%02x" $(( (0x$first_hex + add) & 0xFF )))
+	echo "${new_first}:${rest}"
+}
+
 macaddr_generate_from_mmc_cid() {
 	local mmc_dev=$1
 
