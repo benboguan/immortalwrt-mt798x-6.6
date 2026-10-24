@@ -1,0 +1,51 @@
+--- a/mt_wifi/profiles/ap_profile.c
++++ b/mt_wifi/profiles/ap_profile.c
+@@ -2537,6 +2537,48 @@
+ 	}
+ #endif /* CONFIG_STA_SUPPORT */
+ 
++	/* RRMNeighbor */
++#ifdef CONFIG_AP_SUPPORT
++	if (RTMPGetKeyParameter("RRMNeighbor", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++			 (macptr && loop < MAX_MBSSID_NUM(pAd));
++			 macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++
++			Enable = os_str_tol(macptr, 0, 10);
++			pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, loop)].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(NULL, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
++				"(bDot11kRRMNeighborRepTSFEnable[%d]=%d)\n", loop,
++				pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, loop)].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable);
++		}
++	} else {
++		for (loop = 0; loop < MAX_MBSSID_NUM(pAd); loop++)
++			pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, loop)].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable = FALSE;
++	}
++#endif /* CONFIG_AP_SUPPORT */
++#ifdef CONFIG_STA_SUPPORT
++		MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
++			"pAd->MSTANum=%d\n", pAd->MSTANum);
++	if (RTMPGetKeyParameter("RRMNeighbor", tmpbuf, 255, buffer, TRUE)) {
++		for (loop = 0, macptr = rstrtok(tmpbuf, ";");
++			(macptr && loop < pAd->MSTANum);
++			macptr = rstrtok(NULL, ";"), loop++) {
++			LONG Enable;
++
++			Enable = os_str_tol(macptr, 0, 10);
++			pAd->StaCfg[loop].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable =
++				(Enable > 0) ? TRUE : FALSE;
++			MTWF_DBG(pAd, DBG_CAT_PROTO, CATPROTO_RRM, DBG_LVL_INFO,
++				"(STA-bDot11kRRMNeighborRepTSFEnable[%d]=%d)\n", loop,
++				pAd->StaCfg[loop].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable);
++		}
++	} else {
++		for (loop = 0; loop < pAd->MSTANum; loop++)
++			pAd->StaCfg[loop].wdev.RrmCfg.bDot11kRRMNeighborRepTSFEnable = FALSE;
++	}
++#endif /* CONFIG_STA_SUPPORT */
++
+ 	if (RTMPGetKeyParameter("RegDomain", tmpbuf, 255, buffer, TRUE)) {
+ 		if (!strncmp(tmpbuf, "Global", 6))
+ 		    pAd->reg_domain = REG_GLOBAL;

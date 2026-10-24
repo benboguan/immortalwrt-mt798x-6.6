@@ -1914,10 +1914,15 @@ define Device/hiveton_h5000m
   DEVICE_ALT0_VENDOR := Airpi
   DEVICE_ALT0_MODEL := H5000M
   DEVICE_DTS := mt7987a-hiveton-h5000m
-  DEVICE_DTS_DIR := ../dts
-  DEVICE_PACKAGES := kmod-hwmon-pwmfan kmod-usb3 mt7987-2p5g-phy-firmware \
-	kmod-mt7996e kmod-mt7992-23-firmware f2fsck mkf2fs automount
-  KERNEL_LOADADDR := 0x40000000
+  DEVICE_DTS_DIR := $(DTS_DIR)/
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt798x-2p5g-phy blkid e2fsprogs f2fsck mkf2fs \
+	kmod-hwmon-pwmfan kmod-usb3 kmod-fs-ext4 kmod-mmc kmod-fs-f2fs kmod-fs-vfat
+  KERNEL_LOADADDR := 0x40080000
+  KERNEL := kernel-bin | lzma | fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
   IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += hiveton_h5000m
@@ -2524,26 +2529,36 @@ TARGET_DEVICES += mediatek_mt7986b-rfb
 
 define Device/mediatek_mt7987a-rfb
   DEVICE_VENDOR := MediaTek
-  DEVICE_MODEL := MT7987A rfb
+  DEVICE_MODEL := MT7987A rfb (DT-overlay)
   DEVICE_DTS := mt7987a-rfb
   DEVICE_DTS_OVERLAY:= \
-	mt7987a-rfb-spim-nand \
-	mt7987a-rfb-spim-nor \
-	mt7987a-rfb-emmc \
-	mt7987a-rfb-sd \
-	mt7987a-rfb-eth0-an8801sb \
-	mt7987a-rfb-eth0-an8855 \
-	mt7987a-rfb-eth0-e2p5g \
-	mt7987a-rfb-eth0-mt7531 \
-	mt7987a-rfb-eth1-i2p5g \
-	mt7987a-rfb-eth2-an8801sb \
-	mt7987a-rfb-eth2-e2p5g \
-	mt7987a-rfb-eth2-sfp \
-	mt7987a-rfb-eth2-usb
-  DEVICE_DTS_DIR := ../dts
+	mt7987-spim-nand \
+	mt7987-spim-nand-nmbm \
+	mt7987-spim-nor \
+	mt7987-emmc \
+	mt7987-sd \
+	mt7987-netsys-eth0-an8801sb \
+	mt7987-netsys-eth0-an8811hb \
+	mt7987-netsys-eth0-an8811hb-gpio8 \
+	mt7987-netsys-eth0-an8855 \
+	mt7987-netsys-eth0-an8855-gsw \
+	mt7987-netsys-eth0-e2p5g \
+	mt7987-netsys-eth0-mt7531 \
+	mt7987-netsys-eth0-mt7531-gsw \
+	mt7987-netsys-eth1-i2p5g \
+	mt7987-netsys-eth2-an8801sb \
+	mt7987-netsys-eth2-an8811hb \
+	mt7987-netsys-eth2-e2p5g \
+	mt7987-netsys-eth2-sfp \
+	mt7987-netsys-eth2-usb \
+	mt7987-spidev \
+	filogic-wifi7 \
+	filogic-wifi8 \
+	filogic-binfile
+  DEVICE_DTS_DIR := $(DTS_DIR)/
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x4ff00000
-  DEVICE_PACKAGES := mt7987-2p5g-phy-firmware kmod-sfp
+DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt798x-2p5g-phy kmod-sfp blkid mkf2fs
   KERNEL_LOADADDR := 0x40000000
   KERNEL := kernel-bin | gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \
@@ -2552,24 +2567,8 @@ define Device/mediatek_mt7987a-rfb
   KERNEL_INITRAMFS_SUFFIX := .itb
   KERNEL_IN_UBI := 1
   IMAGE_SIZE := $$(shell expr 64 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
-  IMAGES := sysupgrade.itb
-  IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
-  ARTIFACTS := \
-	snand-preloader.bin \
-	snand-bl31-uboot.fip \
-	sdcard.img.gz
-  ARTIFACT/snand-preloader.bin	:= mt7987-bl2 spim-nand0-ubi-comb
-  ARTIFACT/snand-bl31-uboot.fip	:= mt7987-bl31-uboot rfb-spim-nand
-  ARTIFACT/sdcard.img.gz	:= mt798x-gpt sdmmc |\
-				   pad-to 17k | mt7987-bl2 sdmmc-comb |\
-				   pad-to 6656k | mt7987-bl31-uboot rfb-sd |\
-				$(if $(CONFIG_TARGET_ROOTFS_INITRAMFS),\
-				  pad-to 12M | append-image-stage initramfs.itb | check-size 44m |\
-				) \
-				$(if $(CONFIG_TARGET_ROOTFS_SQUASHFS),\
-				  pad-to 64M | append-image squashfs-sysupgrade.itb | check-size |\
-				) \
-				  gzip
+  IMAGES := sysupgrade.bin
+  IMAGE/sysupgrade.bin := sysupgrade-tar | append-metadata
 endef
 TARGET_DEVICES += mediatek_mt7987a-rfb
 
@@ -2594,7 +2593,7 @@ define Device/mediatek_mt7988a-rfb
   DEVICE_DTS_DIR := $(DTS_DIR)/
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x45f00000
-  DEVICE_PACKAGES := mt7988-2p5g-phy-firmware kmod-sfp kmod-phy-aquantia
+  DEVICE_PACKAGES := mt798x-2p5g-phy-firmware-internal kmod-mt798x-2p5g-phy kmod-sfp kmod-phy-aquantia
   KERNEL_LOADADDR := 0x46000000
   KERNEL := kernel-bin | gzip
   KERNEL_INITRAMFS := kernel-bin | lzma | \

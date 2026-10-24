@@ -1,0 +1,87 @@
+--- a/mt_wifi/profiles/cmm_profile.c
++++ b/mt_wifi/profiles/cmm_profile.c
+@@ -1243,6 +1243,84 @@ static void rtmp_read_ap_client_from_file
+ 		}
+ 	}
+ #endif /* #ifdef DOT11_HE_AX */
++
++#ifdef DOT11_EHT_BE
++	/* ApCliPpOfdmaDlEnable */
++	if (RTMPGetKeyParameter("ApCliPpOfdmaDlEnable", tmpbuf, 128, buffer, FALSE)) {
++		UCHAR mu_dl_ofdma = 0;
++
++		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < MAX_APCLI_NUM); macptr = rstrtok(NULL, ";"), i++) {
++			mu_dl_ofdma = os_str_tol(macptr, 0, 10);
++
++			if (IF_COMBO_HAVE_AP_STA(pAd)) {
++				wdev = &pAd->StaCfg[i].wdev;
++			}
++
++			if (wdev) {
++				wlan_config_set_pp_dl_ofdma(wdev, mu_dl_ofdma);
++				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
++						"APCLI[%d] ApCliPpOfdmaDlEnable = %d\n", i, mu_dl_ofdma);
++			}
++		}
++	}
++
++	/* ApCliPpOfdmaUlEnable */
++	if (RTMPGetKeyParameter("ApCliPpOfdmaUlEnable", tmpbuf, 128, buffer, FALSE)) {
++		UCHAR mu_ul_ofdma = 0;
++
++		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < MAX_APCLI_NUM); macptr = rstrtok(NULL, ";"), i++) {
++			mu_ul_ofdma = os_str_tol(macptr, 0, 10);
++
++			if (IF_COMBO_HAVE_AP_STA(pAd)) {
++				wdev = &pAd->StaCfg[i].wdev;
++			}
++
++			if (wdev) {
++				wlan_config_set_pp_ul_ofdma(wdev, mu_ul_ofdma);
++				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
++						"APCLI[%d] ApCliPpOfdmaUlEnable = %d\n", i, mu_ul_ofdma);
++			}
++		}
++	}
++
++	/* ApCliPpMuMimoDlEnable */
++	if (RTMPGetKeyParameter("ApCliPpMuMimoDlEnable", tmpbuf, 128, buffer, FALSE)) {
++		UCHAR mu_dl_mimo = 0;
++
++		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < MAX_APCLI_NUM); macptr = rstrtok(NULL, ";"), i++) {
++			mu_dl_mimo = os_str_tol(macptr, 0, 10);
++
++			if (IF_COMBO_HAVE_AP_STA(pAd)) {
++				wdev = &pAd->StaCfg[i].wdev;
++			}
++
++			if (wdev) {
++				wlan_config_set_pp_dl_mu_mimo(wdev, mu_dl_mimo);
++				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
++						"APCLI[%d] ApCliPpMuMimoDlEnable = %d\n", i, mu_dl_mimo);
++			}
++		}
++	}
++
++	/* ApCliPpMuMimoUlEnable */
++	if (RTMPGetKeyParameter("ApCliPpMuMimoUlEnable", tmpbuf, 128, buffer, FALSE)) {
++		UCHAR mu_ul_mimo = 0;
++
++		for (i = 0, macptr = rstrtok(tmpbuf, ";"); (macptr && i < MAX_APCLI_NUM); macptr = rstrtok(NULL, ";"), i++) {
++			mu_ul_mimo = os_str_tol(macptr, 0, 10);
++
++			if (IF_COMBO_HAVE_AP_STA(pAd)) {
++				wdev = &pAd->StaCfg[i].wdev;
++			}
++
++			if (wdev) {
++				wlan_config_set_pp_ul_mu_mimo(wdev, mu_ul_mimo);
++				MTWF_DBG(pAd, DBG_CAT_CFG, CATCFG_PROFILE, DBG_LVL_INFO,
++						"APCLI[%d] ApCliPpMuMimoUlEnable = %d\n", i, mu_ul_mimo);
++			}
++		}
++	}
++#endif /* #ifdef DOT11_EHT_BE */
+ }
+ #endif /* APCLI_SUPPORT */
+ 

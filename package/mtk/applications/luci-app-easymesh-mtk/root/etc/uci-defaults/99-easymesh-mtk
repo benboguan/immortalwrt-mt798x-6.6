@@ -1,0 +1,69 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+#
+# Create the /etc/config/mapd section skeleton the EasyMesh page needs, and the
+# 1905d_cfg "map" section used for the MAP version / AL MAC.
+# Runs once at first boot (and after a firmware upgrade with keep-config).
+
+[ -n "$IPKG_INSTROOT" ] && exit 0
+
+. /lib/functions.sh
+
+cfg_get() {
+	uci -q get "$1" 2>/dev/null | tail -n1
+}
+
+add_named_section() {
+	# $1 = package, $2 = section name
+	uci -q get "$1.$2" >/dev/null 2>&1 && return 0
+	uci add "$1" "$2" >/dev/null 2>&1
+	return 0
+}
+
+set_default() {
+	# $1 = uci key, $2 = value
+	local cur
+	cur="$(cfg_get "$1")"
+	[ -n "$cur" ] && return 0
+	uci set "$1=$2" 2>/dev/null
+	return 0
+}
+
+add_named_section mapd mapd_cfg
+add_named_section mapd mapd_user
+add_named_section mapd mapd_strng
+add_named_section mapd dpp_cfg
+
+set_default mapd.mapd_cfg.DeviceRole 2
+set_default mapd.mapd_cfg.SteerEnable 1
+set_default mapd.mapd_cfg.BhPriority2G 3
+set_default mapd.mapd_cfg.BhPriority5GL 1
+set_default mapd.mapd_cfg.BhPriority5GH 1
+set_default mapd.mapd_cfg.BhPriority6G 1
+set_default mapd.mapd_cfg.APSteerRssiTh -54
+set_default mapd.mapd_cfg.CUOverloadTh_2G 70
+set_default mapd.mapd_cfg.CUOverloadTh_5G_L 80
+set_default mapd.mapd_cfg.CUOverloadTh_5G_H 80
+set_default mapd.mapd_cfg.ChPlanningEnable 1
+set_default mapd.mapd_cfg.NetworkOptimizationEnabled 1
+set_default mapd.mapd_cfg.NtwrkOptConnectWaitTime 45
+set_default mapd.mapd_cfg.NtwrkOptDisconnectWaitTime 45
+set_default mapd.mapd_cfg.BandSwitchTime 120
+set_default mapd.mapd_cfg.NetworkOptPrefer5Gover2G 0
+set_default mapd.mapd_cfg.AutoBHSwitching 1
+
+set_default mapd.mapd_user.DeviceRole "$(cfg_get mapd.mapd_cfg.DeviceRole)"
+set_default mapd.mapd_user.SteerEnable "$(cfg_get mapd.mapd_cfg.SteerEnable)"
+set_default mapd.mapd_user.APSteerRssiTh "$(cfg_get mapd.mapd_cfg.APSteerRssiTh)"
+
+set_default mapd.dpp_cfg.allowed_role 0
+set_default mapd.dpp_cfg.presence_band_priority 5g
+
+add_named_section 1905d_cfg map
+set_default 1905d_cfg.map.almac 02:00:00:00:00:01
+set_default 1905d_cfg.map.map_ver R3
+
+uci commit mapd 2>/dev/null
+uci commit 1905d_cfg 2>/dev/null
+
+exit 0

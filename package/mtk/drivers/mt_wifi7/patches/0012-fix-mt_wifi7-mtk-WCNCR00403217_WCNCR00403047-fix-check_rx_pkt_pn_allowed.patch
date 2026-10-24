@@ -1,0 +1,14 @@
+Index: mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
++++ mt_wifi7/mt_wifi/os/linux/cfg80211/cfg80211_apcli.c
+@@ -686,6 +686,9 @@ VOID CFG80211DRV_ApClientKeyAdd(VOID *pA
+ 	}
+ #endif /*defined(CONFIG_MAP_SUPPORT) */
+ 
++	MTWF_DBG(pAd, DBG_CAT_SEC, CATSEC_KEY, DBG_LVL_OFF,
++				"Reset PN counter from  %s \n", __func__);
++	pMacEntry->CCMP_BC_PN[pKeyInfo->KeyId] = 0;
+ #ifdef WH_EVENT_NOTIFIER
+ 	if (pMacEntry && tr_entry && (tr_entry->PortSecured == WPA_802_1X_PORT_SECURED)) {
+ 		EventHdlr pEventHdlrHook = NULL;

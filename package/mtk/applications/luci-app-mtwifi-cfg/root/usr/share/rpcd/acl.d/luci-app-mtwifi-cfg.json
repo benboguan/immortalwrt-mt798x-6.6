@@ -1,0 +1,17 @@
+{
+	"luci-app-mtwifi-cfg": {
+		"description": "Grant access to mtwifi configuration and disconnect commands",
+		"read": {
+			"file": {
+				"/usr/sbin/iwpriv": ["exec"],
+				"/usr/sbin/mwctl": ["exec"]
+			}
+		},
+		"write": {
+			"file": {
+				"/usr/sbin/iwpriv": ["exec"],
+				"/usr/sbin/mwctl": ["exec"]
+			}
+		}
+	}
+}

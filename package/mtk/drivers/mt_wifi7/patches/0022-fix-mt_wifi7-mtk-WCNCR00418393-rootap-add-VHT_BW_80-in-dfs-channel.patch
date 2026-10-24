@@ -1,0 +1,19 @@
+Index: mt_wifi7/mt_wifi/common/cmm_rdm_mt.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/common/cmm_rdm_mt.c
++++ mt_wifi7/mt_wifi/common/cmm_rdm_mt.c
+@@ -4978,6 +4978,14 @@ BOOLEAN DfsBypassRadarStateCheck(struct
+ 						"non-dfs ch switch to non-dfs ch, skip CAC\n ");
+ 				return TRUE;
+ 			}
++		} else if (wdev_bw == VHT_BW_80) {
++			if ((vht_cent_ch_freq(OriChannel, wdev_bw, ch_band) ==
++			     vht_cent_ch_freq(NewChannel, wdev_bw, ch_band)) &&
++			    vht80_channel_group(pAd, NewChannel, wdev)) {
++				MTWF_DBG(pAd, DBG_CAT_CHN, CATCHN_DFS, DBG_LVL_INFO,
++						"in the same group, skip CAC in bw80\n ");
++				return TRUE;
++			}
+ 		}
+ 	}
+ #endif

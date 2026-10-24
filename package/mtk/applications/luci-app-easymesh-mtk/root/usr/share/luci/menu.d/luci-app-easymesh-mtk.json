@@ -1,0 +1,41 @@
+{
+	"admin/network/easymesh": {
+		"title": "EasyMesh",
+		"order": 55,
+		"action": { "type": "firstchild" },
+		"depends": {
+			"acl": [ "luci-app-easymesh-mtk" ],
+			"fs": { "/usr/bin/mapd": "executable" }
+		}
+	},
+
+	"admin/network/easymesh/settings": {
+		"title": "Basic Settings",
+		"order": 10,
+		"action": { "type": "view", "path": "easymesh-mtk/settings" }
+	},
+
+	"admin/network/easymesh/onboarding": {
+		"title": "Onboarding",
+		"order": 20,
+		"action": { "type": "view", "path": "easymesh-mtk/onboarding" }
+	},
+
+	"admin/network/easymesh/mlo": {
+		"title": "MLO Settings",
+		"order": 30,
+		"action": { "type": "view", "path": "easymesh-mtk/mlo" }
+	},
+
+	"admin/network/easymesh/status": {
+		"title": "Status",
+		"order": 40,
+		"action": { "type": "view", "path": "easymesh-mtk/status" }
+	},
+
+	"admin/network/easymesh/clients": {
+		"title": "clients",
+		"order": 50,
+		"action": { "type": "view", "path": "easymesh-mtk/clients" }
+	}
+}

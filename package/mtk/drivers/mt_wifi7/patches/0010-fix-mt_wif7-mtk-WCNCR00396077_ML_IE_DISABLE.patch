@@ -1,0 +1,65 @@
+Index: mt_wifi7/mt_wifi/include/rtmp.h
+===================================================================
+--- mt_wifi7.orig/mt_wifi/include/rtmp.h
++++ mt_wifi7/mt_wifi/include/rtmp.h
+@@ -2914,6 +2914,7 @@ struct wifi_dev {
+ 	BOOLEAN bMgmtQAutoRate;
+ #ifdef DOT11_EHT_BE
+ 	UCHAR apcli_mlo_diable;
++	BOOLEAN ap_mlo_disable;
+ #endif
+ /* station mld device */
+ 	struct mld_dev *mld_dev;
+Index: mt_wifi7/mt_wifi/profiles/ap_profile.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/profiles/ap_profile.c
++++ mt_wifi7/mt_wifi/profiles/ap_profile.c
+@@ -1000,6 +1000,7 @@ static void rtmp_read_mld_group_idx_from
+ 	CHAR *macptr;
+ 	u8 mld_grp;
+ 	BSS_STRUCT *pMbss = NULL;
++	struct wifi_dev *wdev = NULL;
+ 
+ 	for (i = 0, macptr = rstrtok(Buffer, ";"); macptr;
+ 			macptr = rstrtok(NULL, ";"), i++) {
+@@ -1010,17 +1011,23 @@ static void rtmp_read_mld_group_idx_from
+ 				break;
+ 
+ 			pMbss = &pAd->ApCfg.MBSSID[i];
+-
++			wdev = &pAd->ApCfg.MBSSID[PF_TO_BSS_IDX(pAd, i)].wdev;
+ 			if ((mld_grp < BMGR_MAX_MLD_GRP_CNT) && (mld_grp != BMGR_INVALID_MLD_GRP)) {
+ 				pMbss->mld_grp_idx = mld_grp;
+ 				pMbss->mld_grp_by_cfg = TRUE;
+ 				pMbss->unique_mld_addr_enable = TRUE;
++				if (mld_grp == 0)
++					wdev->ap_mlo_disable = TRUE;
++				else
++					wdev->ap_mlo_disable = FALSE;				
+ 				wlan_config_set_crit_upd_mode(&pMbss->wdev, CRIT_UPD_MODE_FLAG_FW_CMD_ONLY);
+ 				MTWF_PRINT("BSS%d mld_grp_idx=%d\n",
+ 					i, pMbss->mld_grp_idx);
+-			} else
++			} else {
++				wdev->ap_mlo_disable = TRUE;
+ 				MTWF_PRINT("INVALID mld_grp_idx: %d (larger than max=%d)\n",
+ 					mld_grp, MAX_MLD_GROUP_NUM);
++			}
+ 		}
+ 	}
+ }
+Index: mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/protocol/be/mgmt_eht.c
++++ mt_wifi7/mt_wifi/protocol/be/mgmt_eht.c
+@@ -58,6 +58,10 @@ uint8_t *eht_build_multi_link_ie(
+ 	} else {
+ 		struct query_mld_info mld_query = {0};
+ 
++		if (wdev->ap_mlo_disable) {
++			return pos; 
++		}
++
+ 		mld_query.query_type = ml_type;
+ 		mld_query.ie.mld_sta_idx = mld_sta_idx;
+ 		mld_query.ie.ml_ie = ml_ie;

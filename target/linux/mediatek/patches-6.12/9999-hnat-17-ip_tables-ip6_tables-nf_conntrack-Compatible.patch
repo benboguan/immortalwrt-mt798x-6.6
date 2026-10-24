@@ -1,0 +1,394 @@
+--- a/net/netfilter/nft_counter.c
++++ b/net/netfilter/nft_counter.c
+@@ -15,6 +15,78 @@
+ #include <net/netfilter/nf_tables.h>
+ #include <net/netfilter/nf_tables_core.h>
+ #include <net/netfilter/nf_tables_offload.h>
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
++
++/* HNAT descriptor, must match drivers/net/ethernet/mediatek/nf_hnat_mtk.h */
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 tops : 6;
++	u32 is_decap : 1;
++	u32 cdrt : 8;
++	u32 is_decrypt : 1;
++	u32 is_pppoe : 1;
++	u32 resv3 : 2;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++
++#define HNAT_MAGIC_TAG 0x6789
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define skb_hnat_reason(skb) (((struct hnat_desc *)(skb->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define is_magic_tag_valid(skb) (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG)
+ 
+ struct nft_counter {
+ 	u64_stats_t	bytes;
+@@ -41,6 +113,25 @@
+ {
+ 	struct u64_stats_sync *nft_sync;
+ 	struct nft_counter *this_cpu;
++	struct nf_conn *ct;
++	struct nf_conn_acct *acct;
++	struct nf_conn_counter *conn_counter;
++	enum ip_conntrack_info ctinfo;
++	s64 bytes = 0;
++	s64 packets = 0;
++
++	if (unlikely(is_magic_tag_valid(pkt->skb) &&
++		     skb_hnat_reason(pkt->skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)) {
++		ct = nf_ct_get(pkt->skb, &ctinfo);
++		if (ct) {
++			acct = nf_conn_acct_find(ct);
++			if (acct) {
++				conn_counter = acct->counter;
++				bytes = atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes, 0);
++				packets = atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets, 0);
++			}
++		}
++	}
+ 
+ 	local_bh_disable();
+ 	this_cpu = this_cpu_ptr(priv->counter);
+@@ -49,6 +140,8 @@
+ 	u64_stats_update_begin(nft_sync);
+ 	u64_stats_add(&this_cpu->bytes, pkt->skb->len);
+ 	u64_stats_inc(&this_cpu->packets);
++	u64_stats_add(&this_cpu->bytes, bytes);
++	u64_stats_add(&this_cpu->packets, packets);
+ 	u64_stats_update_end(nft_sync);
+ 
+ 	local_bh_enable();
+--- a/include/net/netfilter/nf_conntrack_acct.h	2024-01-04 22:35:10.790631711 +0800
++++ b/include/net/netfilter/nf_conntrack_acct.h	2024-01-06 00:57:34.678787219 +0800
+@@ -14,6 +14,8 @@
+ struct nf_conn_counter {
+ 	atomic64_t packets;
+ 	atomic64_t bytes;
++	atomic64_t diff_packets;
++	atomic64_t diff_bytes;
+ };
+ 
+ struct nf_conn_acct {
+--- a/net/ipv4/netfilter/ip_tables.c
++++ b/net/ipv4/netfilter/ip_tables.c
+@@ -26,6 +26,78 @@
+ #include <linux/netfilter_ipv4/ip_tables.h>
+ #include <net/netfilter/nf_log.h>
+ #include "../../netfilter/xt_repldata.h"
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
++
++/* HNAT descriptor, must match drivers/net/ethernet/mediatek/nf_hnat_mtk.h */
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 tops : 6;
++	u32 is_decap : 1;
++	u32 cdrt : 8;
++	u32 is_decrypt : 1;
++	u32 is_pppoe : 1;
++	u32 resv3 : 2;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++
++#define HNAT_MAGIC_TAG 0x6789
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define skb_hnat_reason(skb) (((struct hnat_desc *)((skb)->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define is_magic_tag_valid(skb) (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG)
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+@@ -290,7 +362,12 @@ unsigned int ipt_do_table(void
+ 	const struct xt_table_info *private;
+ 	struct xt_action_param acpar;
+ 	unsigned int addend;
+-
++
++	struct nf_conn *ct;
++	struct nf_conn_acct *acct;
++	struct nf_conn_counter *conn_counter;
++	enum ip_conntrack_info ctinfo;
++
+ 	/* Initialization */
+ 	WARN_ON(!(table->valid_hooks & (1 << hook)));
+ 	local_bh_disable();
+@@ -301,9 +378,23 @@
+ 	e = get_entry(table_base, private->hook_entry[hook]);
+ 	if (ipt_handle_default_rule(e, &verdict)) {
+ 		struct xt_counters *counter;
+-
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
++
++		if (unlikely(is_magic_tag_valid(skb) &&
++			     skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)) {
++			ct = nf_ct_get(skb, &ctinfo);
++			if (ct) {
++				acct = nf_conn_acct_find(ct);
++				if (acct) {
++					conn_counter = acct->counter;
++					ADD_COUNTER(*counter,
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes, 0),
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets, 0));
++				}
++			}
++		}
++
+ 		local_bh_enable();
+ 		return verdict;
+ 	}
+@@ -359,6 +450,19 @@
+ 
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
++		if (unlikely(is_magic_tag_valid(skb) &&
++			     skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)) {
++			ct = nf_ct_get(skb, &ctinfo);
++			if (ct) {
++				acct = nf_conn_acct_find(ct);
++				if (acct) {
++					conn_counter = acct->counter;
++					ADD_COUNTER(*counter,
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes, 0),
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets, 0));
++				}
++			}
++		}
+ 
+ 		t = ipt_get_target_c(e);
+ 		WARN_ON(!t->u.kernel.target);
+--- a/net/ipv6/netfilter/ip6_tables.c
++++ b/net/ipv6/netfilter/ip6_tables.c
+@@ -30,6 +30,78 @@
+ #include <linux/netfilter/x_tables.h>
+ #include <net/netfilter/nf_log.h>
+ #include "../../netfilter/xt_repldata.h"
++#include <net/netfilter/nf_conntrack.h>
++#include <net/netfilter/nf_conntrack_acct.h>
++
++/* HNAT descriptor, must match drivers/net/ethernet/mediatek/nf_hnat_mtk.h */
++#if defined(CONFIG_MEDIATEK_NETSYS_V3)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 16;
++	u32 bssid : 8;
++	u32 usr_info : 16;
++	u32 tid : 4;
++	u32 is_fixedrate : 1;
++	u32 is_prior : 1;
++	u32 is_sp : 1;
++	u32 hf : 1;
++	u32 amsdu : 1;
++	u32 tops : 6;
++	u32 is_decap : 1;
++	u32 cdrt : 8;
++	u32 is_decrypt : 1;
++	u32 is_pppoe : 1;
++	u32 resv3 : 2;
++	u32 magic_tag_protect : 16;
++} __packed;
++#elif defined(CONFIG_MEDIATEK_NETSYS_RX_V2)
++struct hnat_desc {
++	u32 entry : 15;
++	u32 filled : 3;
++	u32 crsn : 5;
++	u32 resv1 : 3;
++	u32 sport : 4;
++	u32 resv2 : 1;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 wdmaid : 2;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++	u32 resv5 : 20;
++	u32 magic_tag_protect : 16;
++} __packed;
++#else
++struct hnat_desc {
++	u32 entry : 14;
++	u32 crsn : 5;
++	u32 sport : 4;
++	u32 alg : 1;
++	u32 iface : 8;
++	u32 filled : 3;
++	u32 resv : 1;
++	u32 magic_tag_protect : 16;
++	u32 wdmaid : 8;
++	u32 rxid : 2;
++	u32 wcid : 10;
++	u32 bssid : 6;
++} __packed;
++#endif
++
++#define HNAT_MAGIC_TAG 0x6789
++#define HIT_BIND_KEEPALIVE_DUP_OLD_HDR 0x15
++#define skb_hnat_reason(skb) (((struct hnat_desc *)((skb)->head))->crsn)
++#define skb_hnat_magic_tag(skb) (((struct hnat_desc *)((skb)->head))->magic_tag_protect)
++#define is_magic_tag_valid(skb) (skb_hnat_magic_tag(skb) == HNAT_MAGIC_TAG)
+ 
+ MODULE_LICENSE("GPL");
+ MODULE_AUTHOR("Netfilter Core Team <coreteam@netfilter.org>");
+@@ -260,7 +332,12 @@
+ 	const struct xt_table_info *private;
+ 	struct xt_action_param acpar;
+ 	unsigned int addend;
+-
++
++	struct nf_conn *ct;
++	struct nf_conn_acct *acct;
++	struct nf_conn_counter *conn_counter;
++	enum ip_conntrack_info ctinfo;
++
+ 	/* Initialization */
+ 	stackidx = 0;
+ 	indev = state->in ? state->in->name : nulldevname;
+@@ -319,6 +396,20 @@
+ 
+ 		counter = xt_get_this_cpu_counter(&e->counters);
+ 		ADD_COUNTER(*counter, skb->len, 1);
++
++		if (unlikely(is_magic_tag_valid(skb) &&
++			     skb_hnat_reason(skb) == HIT_BIND_KEEPALIVE_DUP_OLD_HDR)) {
++			ct = nf_ct_get(skb, &ctinfo);
++			if (ct) {
++				acct = nf_conn_acct_find(ct);
++				if (acct) {
++					conn_counter = acct->counter;
++					ADD_COUNTER(*counter,
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_bytes, 0),
++						    atomic64_xchg(&conn_counter[CTINFO2DIR(ctinfo)].diff_packets, 0));
++				}
++			}
++		}
+ 
+ 		t = ip6t_get_target_c(e);
+ 		WARN_ON(!t->u.kernel.target);
+--- a/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
++++ b/drivers/net/ethernet/mediatek/mtk_hnat/hnat_debugfs.c
+@@ -1342,6 +1342,8 @@ static int hnat_nf_acct_update(struct
+ 				counter = acct->counter;
+ 				atomic64_add(bytes, &counter[dir].bytes);
+ 				atomic64_add(packets, &counter[dir].packets);
++				atomic64_add(bytes, &counter[dir].diff_bytes);
++				atomic64_add(packets, &counter[dir].diff_packets);
+ 			}
+ 
+ 			/* avoid compiler warnings */

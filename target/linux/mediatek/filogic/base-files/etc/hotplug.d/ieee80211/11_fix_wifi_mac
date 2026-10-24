@@ -133,7 +133,7 @@ case "$board" in
 	hiveton,h5000m)
 		base_mac=$(macaddr_generate_from_mmc_cid mmcblk0)
 		[ "$PHYNBR" = "0" ] && macaddr_add $base_mac 2 > /sys${DEVPATH}/macaddress
-		[ "$PHYNBR" = "1" ] && macaddr_add $base_mac 3 > /sys${DEVPATH}/macaddress
+		[ "$PHYNBR" = "1" ] && macaddr_add_first_byte $base_mac 2 > /sys${DEVPATH}/macaddress
 		;;
 	iptime,ax3000q)
 		addr=$(mtd_get_mac_binary "Factory" 0x4)

@@ -1,0 +1,665 @@
+msgid ""
+msgstr "Content-Type: text/plain; charset=UTF-8\n"
+
+msgid "EasyMesh"
+msgstr "EasyMesh"
+
+msgid "Basic Settings"
+msgstr "基础设置"
+
+msgid "Onboarding"
+msgstr "入网引导"
+
+msgid "Status"
+msgstr "运行状态"
+
+msgid "clients"
+msgstr "客户端"
+
+msgid "MediaTek MAP Turnkey. The device role, channel planning and client steering settings below are stored in /etc/config/mapd."
+msgstr "MediaTek MAP Turnkey。以下设备角色、信道规划与客户端引导设置保存在 /etc/config/mapd 中。"
+
+msgid "General"
+msgstr "常规"
+
+msgid "Enable EasyMesh"
+msgstr "启用 EasyMesh"
+
+msgid "Work Mode"
+msgstr "工作模式"
+
+msgid "Router"
+msgstr "路由"
+
+msgid "Bridge"
+msgstr "桥接"
+
+msgid "Device role"
+msgstr "设备角色"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "Controller"
+msgstr "控制器"
+
+msgid "Agent"
+msgstr "代理节点"
+
+msgid "Changing the role requires a restart of the EasyMesh daemons."
+msgstr "修改角色后需要重启 EasyMesh 守护进程。"
+
+msgid "MAP version"
+msgstr "MAP 版本"
+
+msgid "All devices in the mesh must use the same MAP version. Use R3 for MAP R4 capable devices, DPP onboarding requires R3."
+msgstr "同一 Mesh 内所有设备必须使用相同的 MAP 版本。支持 MAP R4 的设备请使用 R3，DPP 入网需要 R3。"
+
+msgid "AP steering RSSI threshold"
+msgstr "AP 引导 RSSI 阈值"
+
+msgid "Minimum RSSI (dBm) below which the controller considers steering a client."
+msgstr "低于该 RSSI (dBm) 时控制器会考虑引导客户端。"
+
+msgid "Client steering"
+msgstr "客户端引导"
+
+msgid "Centralized steering of clients between the mesh devices."
+msgstr "在 Mesh 设备之间集中引导客户端。"
+
+msgid "2.4 GHz channel load limit"
+msgstr "2.4 GHz 信道负载上限"
+
+msgid "Channel utilisation (%) above which the band counts as overloaded."
+msgstr "信道利用率（%）超过此值时，该频段视为过载。"
+
+msgid "5 GHz low channel load limit"
+msgstr "5 GHz 低频段信道负载上限"
+
+msgid "5 GHz high channel load limit"
+msgstr "5 GHz 高频段信道负载上限"
+
+msgid "Backhaul"
+msgstr "回程"
+
+msgid "2.4 GHz backhaul priority"
+msgstr "2.4 GHz 回程优先级"
+
+msgid "Never"
+msgstr "从不"
+
+msgid "Highest"
+msgstr "最高"
+
+msgid "Medium"
+msgstr "中等"
+
+msgid "Lowest"
+msgstr "最低"
+
+msgid "5 GHz low backhaul priority"
+msgstr "5 GHz 低频段回程优先级"
+
+msgid "5 GHz high backhaul priority"
+msgstr "5 GHz 高频段回程优先级"
+
+msgid "6 GHz backhaul priority"
+msgstr "6 GHz 回程优先级"
+
+msgid "Automatic Ethernet / Wi-Fi backhaul switching"
+msgstr "自动切换以太网 / Wi-Fi 回程"
+
+msgid "Agents fall back to a wireless backhaul when the Ethernet link goes down."
+msgstr "当以太网链路断开时，代理节点将回退到无线回程。"
+
+msgid "Advanced"
+msgstr "高级"
+
+msgid "Network optimization"
+msgstr "网络优化"
+
+msgid "Periodically re-evaluates the backhaul link of every agent. Disable it before triggering a backhaul steer or a band switch."
+msgstr "定期重新评估每个代理节点的回程链路。在触发回程引导或频段切换前请先禁用。"
+
+msgid "Optimization delay after join"
+msgstr "加入后的优化延迟"
+
+msgid "Seconds to wait after a new device joins before evaluating the backhaul."
+msgstr "新设备加入后等待多少秒再评估回程。"
+
+msgid "Optimization delay after leave"
+msgstr "离开后的优化延迟"
+
+msgid "Seconds to wait after a device leaves before evaluating the backhaul."
+msgstr "设备离开后等待多少秒再评估回程。"
+
+msgid "Backhaul retry delay"
+msgstr "回程重试延迟"
+
+msgid "Seconds before retrying a higher priority backhaul, 0 to never retry."
+msgstr "重试更高优先级回程前的等待秒数，0 表示不重试。"
+
+msgid "Prefer 5 GHz backhaul"
+msgstr "优先使用 5 GHz 回程"
+
+msgid "Force a backhaul re-evaluation when an agent stays on 2.4 GHz."
+msgstr "当代理节点停留在 2.4 GHz 时强制重新评估回程。"
+
+msgid "Automatic channel planning"
+msgstr "自动信道规划"
+
+msgid "The controller moves all agents to a common channel per band."
+msgstr "控制器将全部代理节点移动到每个频段的公共信道。"
+
+msgid "Preferred 2.4 GHz channel"
+msgstr "首选 2.4 GHz 信道"
+
+msgid "Leave empty for automatic selection."
+msgstr "留空表示自动选择。"
+
+msgid "Preferred 5 GHz channel"
+msgstr "首选 5 GHz 信道"
+
+msgid "Channel planning idle time"
+msgstr "信道规划空闲时间"
+
+msgid "Seconds without traffic before channel planning may run again."
+msgstr "无流量持续多少秒后允许再次运行信道规划。"
+
+msgid "DHCP control"
+msgstr "DHCP 控制"
+
+msgid "The controller manages the DHCP server setting of its agents."
+msgstr "控制器管理其代理节点的 DHCP 服务器设置。"
+
+msgid "EasyMesh status"
+msgstr "EasyMesh 状态"
+
+msgid "Runtime state of the MAP Turnkey daemons and of the current mesh."
+msgstr "MAP Turnkey 守护进程与当前 Mesh 的运行状态。"
+
+msgid "Overview"
+msgstr "概览"
+
+msgid "State"
+msgstr "状态"
+
+msgid "running"
+msgstr "运行中"
+
+msgid "stopped"
+msgstr "已停止"
+
+msgid "Startup"
+msgstr "开机启动"
+
+msgid "enabled at boot"
+msgstr "已设为开机启动"
+
+msgid "disabled at boot"
+msgstr "未设为开机启动"
+
+msgid "Device role"
+msgstr "设备角色"
+
+msgid "Controller"
+msgstr "控制器"
+
+msgid "Agent"
+msgstr "代理节点"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "MAP version"
+msgstr "MAP 版本"
+
+msgid "AL MAC"
+msgstr "AL MAC"
+
+msgid "Control socket"
+msgstr "控制套接字"
+
+msgid "DPP allowed role"
+msgstr "DPP 允许角色"
+
+msgid "Daemons"
+msgstr "守护进程"
+
+msgid "Backhaul link metric"
+msgstr "回程链路指标"
+
+msgid "Topology"
+msgstr "拓扑"
+
+msgid "mapd log"
+msgstr "mapd 日志"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "(no data)"
+msgstr "（无数据）"
+
+msgid "EasyMesh onboarding"
+msgstr "EasyMesh 入网引导"
+
+msgid "Onboarding joins an agent to the mesh. Use WPS for a quick setup or DPP for a secure QR-code based setup."
+msgstr "入网引导用于将代理节点加入 Mesh。快速配置可使用 WPS，安全配置可使用 DPP 二维码方式。"
+
+msgid "WPS push button"
+msgstr "WPS 按钮"
+
+msgid "Start WPS on both the controller and the agent. The agent scans 5 GHz first, keep at least one non-hidden 2.4 GHz or 5 GHz fronthaul BSS for WPS."
+msgstr "在控制器和代理节点上同时启动 WPS。代理节点会优先扫描 5 GHz，请至少保留一个非隐藏的 2.4 GHz 或 5 GHz 前传 BSS 用于 WPS。"
+
+msgid "Start WPS push button"
+msgstr "启动 WPS 按钮"
+
+msgid "DPP (Wi-Fi Easy Connect)"
+msgstr "DPP（Wi-Fi Easy Connect）"
+
+msgid "DPP requires MAP version R3. On the agent press \"Retrieve DPP URI\", then paste that URI on the controller and press \"Add DPP URI & start\". Multiple URIs can be added one after another."
+msgstr "DPP 需要 MAP R3 版本。在代理节点上点击“获取 DPP URI”，然后将该 URI 粘贴到控制器上并点击“添加 DPP URI 并启动”。可以依次添加多个 URI。"
+
+msgid "DPP presence band"
+msgstr "DPP 存在通告频段"
+
+msgid "5 GHz first"
+msgstr "优先 5 GHz"
+
+msgid "2.4 GHz first"
+msgstr "优先 2.4 GHz"
+
+msgid "Band on which DPP presence announcements are sent. Takes effect after a restart."
+msgstr "发送 DPP 存在通告所使用的频段。重启后生效。"
+
+msgid "DPP URI"
+msgstr "DPP URI"
+
+msgid "Current device role: %s"
+msgstr "当前设备角色：%s"
+
+msgid "Controller"
+msgstr "控制器"
+
+msgid "Agent"
+msgstr "代理节点"
+
+msgid "Auto"
+msgstr "自动"
+
+msgid "Retrieve DPP URI"
+msgstr "获取 DPP URI"
+
+msgid "Add DPP URI & start"
+msgstr "添加 DPP URI 并启动"
+
+msgid "Restart"
+msgstr "重启"
+
+msgid "Re-run the MAP Turnkey bring-up script. Required after a device role or MAP version change, and after changing more than four MBSS."
+msgstr "重新运行 MAP Turnkey 启动脚本。在修改设备角色或 MAP 版本后，以及修改超过四个 MBSS 后必须执行。"
+
+msgid "Restart EasyMesh"
+msgstr "重启 EasyMesh"
+
+msgid "WPS push button started on %s."
+msgstr "已在 %s 上启动 WPS 按钮。"
+
+msgid "DPP bootstrap URI retrieved, copy it to the controller."
+msgstr "已获取 DPP 引导 URI，请将其复制到控制器。"
+
+msgid "DPP onboarding started on the controller."
+msgstr "已在控制器上启动 DPP 入网。"
+
+msgid "EasyMesh daemons are restarting, this may take a few seconds."
+msgstr "EasyMesh 守护进程正在重启，可能需要几秒钟。"
+
+msgid "DPP presence band updated."
+msgstr "DPP 存在通告频段已更新。"
+
+msgid "Paste a DPP URI (starting with \"DPP:\") first."
+msgstr "请先粘贴一个以“DPP:”开头的 DPP URI。"
+
+msgid "Failed: %s"
+msgstr "失败：%s"
+
+msgid "unknown error"
+msgstr "未知错误"
+
+msgid "no DPP URI available"
+msgstr "没有可用的 DPP URI"
+
+msgid "unexpected reply"
+msgstr "意外的响应"
+
+msgid "Connected Clients"
+msgstr "已连接客户端"
+
+msgid "All clients currently associated to the EasyMesh network. Signal bars reflect RSSI. Rates show RX/TX in Mbps. This list refreshes automatically every 10 seconds."
+msgstr "当前连接到 EasyMesh 网络的所有客户端。信号条反映 RSSI，速率为 RX/TX（Mbps）。列表每 10 秒自动刷新。"
+
+msgid "Hostname / IP"
+msgstr "主机名 / IP"
+
+msgid "MAC Address"
+msgstr "MAC 地址"
+
+msgid "Band"
+msgstr "频段"
+
+msgid "Signal"
+msgstr "信号"
+
+msgid "RX / TX"
+msgstr "接收 / 发送"
+
+msgid "Type"
+msgstr "类型"
+
+msgid "Backhaul"
+msgstr "回程"
+
+msgid "Client"
+msgstr "客户端"
+
+msgid "Refresh"
+msgstr "刷新"
+
+msgid "No clients connected."
+msgstr "当前没有已连接的客户端。"
+
+msgid "%d client(s) connected"
+msgstr "已连接 %d 个客户端"
+
+msgid "Excellent"
+msgstr "极佳"
+
+msgid "Good"
+msgstr "良好"
+
+msgid "Fair"
+msgstr "一般"
+
+msgid "Weak"
+msgstr "较弱"
+
+msgid "Very Weak"
+msgstr "极弱"
+
+msgid "Client list refreshed."
+msgstr "客户端列表已刷新。"
+
+msgid "Driver config"
+msgstr "驱动配置"
+
+msgid "No wireless device"
+msgstr "没有无线设备"
+
+msgid "No wifi-device section found in /etc/config/wireless. Driver MAP parameters cannot be configured here."
+msgstr "/etc/config/wireless 中未找到 wifi-device section，无法在此配置驱动 MAP 参数。"
+
+msgid "Driver / Radio: %s"
+msgstr "驱动 / Radio：%s"
+
+msgid "MAP driver mode"
+msgstr "MAP 驱动模式"
+
+msgid "Disabled"
+msgstr "禁用"
+
+msgid "MAP Turnkey"
+msgstr "MAP Turnkey"
+
+msgid "BS 2.0"
+msgstr "BS 2.0（独立频段引导）"
+
+msgid "API Mode"
+msgstr "API 模式"
+
+msgid "Cert"
+msgstr "Cert 认证模式"
+
+msgid "Driver MapMode. 1 = EasyMesh/MAP Turnkey, 2 = Standalone Band Steering (BS 2.0), 3 = API Mode, 4 = Cert. Requires driver reload / reboot."
+msgstr "驱动 MapMode。1 = EasyMesh/MAP Turnkey，2 = 独立频段引导（BS 2.0），3 = API 模式，4 = Cert 认证模式。需要重载驱动或重启设备。"
+
+msgid "SR Mesh Uplink Mode"
+msgstr "Mesh 上行链路空间复用模式"
+
+msgid "Enabled"
+msgstr "启用"
+
+msgid "Only used when CFG_SUPPORT_FALCON_SR is enabled."
+msgstr "仅在启用 CFG_SUPPORT_FALCON_SR 时有效。"
+
+msgid "MAP statistics"
+msgstr "MAP 统计"
+
+msgid "Only used when EM_PLUS_SUPPORT is enabled."
+msgstr "仅在启用 EM_PLUS_SUPPORT 时有效。"
+
+msgid "Accept 3-address MAP frames"
+msgstr "接受 3 地址 MAP 帧"
+
+msgid "Only used when CONFIG_MAP_3ADDR_SUPPORT is enabled."
+msgstr "仅在启用 CONFIG_MAP_3ADDR_SUPPORT 时有效。"
+
+msgid "MAP load balance"
+msgstr "MAP 负载均衡"
+
+msgid "Driver MAP balance flag."
+msgstr "驱动 MAP 负载均衡标志。"
+
+msgid "Spatial Reuse"
+msgstr "空间复用"
+
+msgid "Enable Wi-Fi 6 Spatial Reuse. 0 = no SR, 1 = enable SR. Currently verified only on AX4200 Panther platform."
+msgstr "启用 Wi-Fi 6 空间复用。0 = 不启用，1 = 启用。目前仅在 AX4200 Panther 平台验证过。"
+
+msgid "Spatial Reuse mode"
+msgstr "空间复用模式"
+
+msgid "Single AP Mode"
+msgstr "单 AP 模式"
+
+msgid "Mesh Mode"
+msgstr "Mesh 模式"
+
+msgid "0 = SR in Single AP Mode, 1 = SR in Mesh Mode."
+msgstr "0 = 单 AP 模式 SR，1 = Mesh 模式 SR。"
+
+msgid "Dynamic OBSS PD"
+msgstr "动态 OBSS PD"
+
+msgid "Enable Dynamic OBSS PD to increase SR reuse range stronger than the ED threshold."
+msgstr "启用动态 OBSS PD，使 SR 复用范围强于 ED 阈值。"
+
+msgid "MLO/MLD Configuration"
+msgstr "MLO/MLD 配置"
+
+msgid "Configure MLO/MLD for 802.11be Multi-Link Devices (MLD). Multi-link group IDs range from 1 to 16, single-link group IDs from 17 to 48. All BSSes in the same MLD group must share the same SSID, password and security settings."
+msgstr "为 802.11be 多链路设备（MLD）配置 MLO/MLD。多链路组 ID 范围为 1~16，单链路组 ID 范围为 17~48。同一 MLD 组内所有 BSS 必须使用相同的 SSID、密码与安全配置。"
+
+msgid "Other"
+msgstr "其它"
+
+msgid "Radio"
+msgstr "射频"
+
+msgid "MLO Settings"
+msgstr "MLO 设置"
+
+msgid "Global MLD Settings"
+msgstr "全局 MLD 设置"
+
+msgid "Enable MLD"
+msgstr "启用 MLD"
+
+msgid "Enable Multi-Link Operation for this device. Only supported on 802.11be (Wi-Fi 7) SKUs."
+msgstr "为本设备启用多链路操作（MLO）。仅 802.11be（Wi-Fi 7）平台支持。"
+
+msgid "AP MLD Groups"
+msgstr "AP MLD 组"
+
+msgid "Add AP MLD Configuration"
+msgstr "添加 AP MLD 配置"
+
+msgid "Each entry defines one AP MLD group. Interfaces selected in the same group are affiliated to the same AP MLD. SSID, password and security settings must match for all interfaces in a group."
+msgstr "每个条目定义一个 AP MLD 组。被选入同一组的接口会绑定到同一个 AP MLD。同一组内所有接口的 SSID、密码与安全配置必须一致。"
+
+msgid "APCLI MLD Groups (STA)"
+msgstr "APCLI MLD 组（STA）"
+
+msgid "Add APCLI MLD Configuration"
+msgstr "添加 APCLI MLD 配置"
+
+msgid "Each entry defines one APCLI MLD group used for the wireless backhaul STA (bSTA). After creating the STA MLD, authentication, association and EAPOL handshakes happen only on the primary link, but data can be transferred on all links."
+msgstr "每个条目定义一个用于无线回传 STA（bSTA）的 APCLI MLD 组。创建 STA MLD 后，认证、关联与 EAPOL 握手仅在主链路上进行，但数据可以在所有链路上传输。"
+
+msgid "Enable"
+msgstr "启用"
+
+msgid "SSID"
+msgstr "SSID"
+
+msgid "Interface list"
+msgstr "接口列表"
+
+msgid "Select the interfaces that belong to this AP MLD group. An interface can only join one MLD group."
+msgstr "选择属于该 AP MLD 组的接口。每个接口只能加入一个 MLD 组。"
+
+msgid "Select the APCLI interfaces that belong to this STA MLD group. An interface can only join one MLD group."
+msgstr "选择属于该 STA MLD 组的 APCLI 接口。每个接口只能加入一个 MLD 组。"
+
+msgid "No wireless interface found"
+msgstr "未找到无线接口"
+
+msgid "Address"
+msgstr "地址"
+
+msgid "Optional MLD MAC address. Leave empty for automatic assignment."
+msgstr "可选的 MLD MAC 地址。留空则自动分配。"
+
+msgid "Auth Mode"
+msgstr "认证模式"
+
+msgid "Enhanced Open"
+msgstr "增强开放（Enhanced Open）"
+
+msgid "WPA2-PSK"
+msgstr "WPA2-PSK"
+
+msgid "WPA3-SAE"
+msgstr "WPA3-SAE"
+
+msgid "WPA3 Transition"
+msgstr "WPA3 过渡模式"
+
+msgid "Encryption"
+msgstr "加密方式"
+
+msgid "MFPC"
+msgstr "MFPC"
+
+msgid "Management Frame Protection Capable."
+msgstr "支持管理帧保护。"
+
+msgid "MFPR"
+msgstr "MFPR"
+
+msgid "Management Frame Protection Required."
+msgstr "要求管理帧保护。"
+
+msgid "MLD group ID"
+msgstr "MLD 组 ID"
+
+msgid "Multi-link groups: 1-16, Single-link groups: 17-48."
+msgstr "多链路组：1~16；单链路组：17~48。"
+
+msgid "BSS MLD Group IDs"
+msgstr "BSS 的 MLD 组 ID"
+
+msgid "No BSS found"
+msgstr "未找到 BSS"
+
+msgid "No BSS configuration found in /etc/config/mapd."
+msgstr "在 /etc/config/mapd 中未找到 BSS 配置。"
+
+msgid "Assign each BSS to an MLD group. BSSes with the same group ID are affiliated to the same MLD. Leave empty to disable MLD for this BSS."
+msgstr "为每个 BSS 分配 MLD 组。具有相同组 ID 的 BSS 会绑定到同一个 MLD。留空表示该 BSS 不启用 MLD。"
+
+msgid "Multi-link groups: 1-16, Single-link groups: 17-48. Leave empty to disable MLD for this BSS."
+msgstr "多链路组：1~16；单链路组：17~48。留空表示该 BSS 不启用 MLD。"
+
+msgid "e.g. 1"
+msgstr "例如 1"
+
+msgid "Network Optimization for MLD"
+msgstr "MLD 网络优化"
+
+msgid "Use user BH priority in network optimization"
+msgstr "在网络优化中使用用户设置的回传优先级"
+
+msgid "When enabled, network optimization gives preference to the BH priorities set by the user."
+msgstr "启用后，网络优化会优先考虑用户设置的回传优先级。"
+
+msgid "MLD BH priority override"
+msgstr "MLD 回传优先级覆盖"
+
+msgid "Set to 1 in MLD controller to let network optimization choose the best primary backhaul for each MLD agent."
+msgstr "在 MLD 控制器中设为 1，让网络优化为每个 MLD 代理选择最佳主回传。"
+
+msgid "Behavior & Limitations"
+msgstr "行为与限制"
+
+msgid "Dynamic MLD regrouping"
+msgstr "MLD 动态重组"
+
+msgid "When MLD groups are changed, hostapd is reloaded on all mesh devices, and all stations (including agents) will disconnect and reconnect."
+msgstr "修改 MLD 分组后，所有 Mesh 设备上的 hostapd 会重新加载，所有站点（包括代理）都会断开并重新连接。"
+
+msgid "Band steering for MLD clients"
+msgstr "MLD 客户端频段引导"
+
+msgid "Band steering is not supported for MLD clients. MLD clients are expected to be connected on multiple links already."
+msgstr "MLD 客户端不支持频段引导。MLD 客户端通常已经建立多链路连接，切换主链路意义不大。"
+
+msgid "Backhaul priority for MLD"
+msgstr "MLD 回传优先级"
+
+msgid "For MLO-capable SKUs, backhaul priority has no effect. All backhaul links are treated as highest priority (1). WPS registrar only provides profiles for the band on which the WPS handshake occurred."
+msgstr "对于支持 MLO 的平台，回传优先级无效。所有回传链路均视为最高优先级（1）。WPS registrar 只提供 WPS 握手所在频段的 profiles。"
+
+msgid "MLD scan and link selection"
+msgstr "MLD 扫描与链路选择"
+
+msgid "For MLO-capable SKUs, scanning is performed on 5G, 6G and 2.4G with equal priority. Best AP score combines individual band scores and cumulative MLD score (X+Y+Z). The primary link is preferably formed on 6G to avoid DFS interruptions."
+msgstr "对于支持 MLO 的平台，扫描在 5G、6G、2.4G 上等优先级进行。最佳 AP 评分结合各频段个人评分与累计 MLD 评分（X+Y+Z）。主链路优先形成在 6G，以避免 DFS 中断。"
+
+msgid "Divergent channel planning"
+msgstr "分离信道规划"
+
+msgid "Divergent channel planning is not supported when the mesh network contains MLD devices, because all links of an MLD must operate on the same channel."
+msgstr "当 Mesh 网络中存在 MLD 设备时，不支持分离信道规划，因为 MLD 的所有链路必须在同一信道上工作。"
+
+msgid "WTS / UCI configuration"
+msgstr "WTS / UCI 配置"
+
+msgid "In wts_bss_info_config, add the MLD Group ID column at the end. All BSSes in the same MLD group must share the same SSID, password, auth mode and encryption type. In UCI, set <code>option mld_groupID '1'</code> in the corresponding interface section."
+msgstr "在 wts_bss_info_config 末尾添加 MLD Group ID 列。同一 MLD 组内所有 BSS 必须使用相同的 SSID、密码、认证模式与加密方式。在 UCI 中，在对应接口 section 设置 <code>option mld_groupID '1'</code>。"
+
+msgid "Debug"
+msgstr "调试"
+
+msgid "Runtime MLD information"
+msgstr "运行时 MLD 信息"
+
+msgid "To check the current MLD grouping at runtime, use the following command on the device console:"
+msgstr "如需查看设备当前实际的 MLD 分组，请在设备控制台执行以下命令："
+
+msgid "MLD CLI commands"
+msgstr "MLD CLI 命令"
+
+msgid "Useful commands for MLD debugging:"
+msgstr "用于 MLD 调试的常用命令："

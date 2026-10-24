@@ -1,0 +1,49 @@
+Index: mt_wifi7/mt_wifi/protocol/ax/config_he.c
+===================================================================
+--- mt_wifi7.orig/mt_wifi/protocol/ax/config_he.c
++++ mt_wifi7/mt_wifi/protocol/ax/config_he.c
+@@ -22,28 +22,28 @@ static VOID he_cfg_mu_edca_init(struct m
+ {
+ 	/*AC_BK*/
+ 	mu_edca->mu_ac_rec[ACI_AC_BK].acm = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_BK].aifsn = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_BK].ecw_min = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_BK].ecw_max = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_BK].mu_edca_timer = 0;
++	mu_edca->mu_ac_rec[ACI_AC_BK].aifsn = 15;
++	mu_edca->mu_ac_rec[ACI_AC_BK].ecw_min = 10;
++	mu_edca->mu_ac_rec[ACI_AC_BK].ecw_max = 10;
++	mu_edca->mu_ac_rec[ACI_AC_BK].mu_edca_timer = 255;
+ 	/*AC_BE*/
+ 	mu_edca->mu_ac_rec[ACI_AC_BE].acm = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_BE].aifsn = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_BE].ecw_min = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_BE].ecw_max = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_BE].mu_edca_timer = 0;
++	mu_edca->mu_ac_rec[ACI_AC_BE].aifsn = 15;
++	mu_edca->mu_ac_rec[ACI_AC_BE].ecw_min = 10;
++	mu_edca->mu_ac_rec[ACI_AC_BE].ecw_max = 10;
++	mu_edca->mu_ac_rec[ACI_AC_BE].mu_edca_timer = 255;
+ 	/*AC_VI*/
+ 	mu_edca->mu_ac_rec[ACI_AC_VI].acm = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_VI].aifsn = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_VI].ecw_min = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_VI].ecw_max = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_VI].mu_edca_timer = 0;
++	mu_edca->mu_ac_rec[ACI_AC_VI].aifsn = 15;
++	mu_edca->mu_ac_rec[ACI_AC_VI].ecw_min = 10;
++	mu_edca->mu_ac_rec[ACI_AC_VI].ecw_max = 10;
++	mu_edca->mu_ac_rec[ACI_AC_VI].mu_edca_timer = 255;
+ 	/*AC_VO*/
+ 	mu_edca->mu_ac_rec[ACI_AC_VI].acm = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_VO].aifsn = 0;
+-	mu_edca->mu_ac_rec[ACI_AC_VO].ecw_min = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_VO].ecw_max = 15;
+-	mu_edca->mu_ac_rec[ACI_AC_VO].mu_edca_timer = 0;
++	mu_edca->mu_ac_rec[ACI_AC_VO].aifsn = 15;
++	mu_edca->mu_ac_rec[ACI_AC_VO].ecw_min = 10;
++	mu_edca->mu_ac_rec[ACI_AC_VO].ecw_max = 10;
++	mu_edca->mu_ac_rec[ACI_AC_VO].mu_edca_timer = 255;
+ }
+ 
+ VOID he_cfg_init(struct he_cfg *obj)

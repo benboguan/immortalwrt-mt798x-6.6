@@ -1,0 +1,25 @@
+Index: linux-6.6.86/net/wireless/Kconfig
+===================================================================
+--- linux-6.6.86.orig/net/wireless/Kconfig
++++ linux-6.6.86/net/wireless/Kconfig
+@@ -1,6 +1,6 @@
+ # SPDX-License-Identifier: GPL-2.0-only
+ config WIRELESS_EXT
+-	bool
++	def_bool y
+ 
+ config WEXT_CORE
+ 	def_bool y
+@@ -12,10 +12,10 @@ config WEXT_PROC
+ 	depends on WEXT_CORE
+ 
+ config WEXT_SPY
+-	bool
++	def_bool y
+ 
+ config WEXT_PRIV
+-	bool
++	def_bool y
+ 
+ config CFG80211
+ 	tristate "cfg80211 - wireless configuration API"

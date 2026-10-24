@@ -1,0 +1,11 @@
+--- a/mt_wifi/include/rtmp_comm.h
++++ b/mt_wifi/include/rtmp_comm.h
+@@ -329,7 +329,7 @@
+ #define MODE_HE_EXTSU_REMAPPING  6
+ 
+ #define IS_HE_MODE(mode)\
+-	((mode >= MODE_HE) && (mode <= MODE_HE_MU))
++	(((mode) >= MODE_HE) && ((mode) <= MODE_HE_MU) && (mode) != MODE_EHT)
+ 
+ enum HE_LTF_TYPE {
+ 	HE_LTF_X1,

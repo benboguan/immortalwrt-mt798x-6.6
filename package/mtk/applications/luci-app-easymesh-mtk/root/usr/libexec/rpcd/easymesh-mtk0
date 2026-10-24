@@ -1,0 +1,342 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-2.0
+#
+# rpcd backend for the LuCI EasyMesh (MediaTek MAP Turnkey) application.
+# Exposes the ubus object "easymesh".  rpcd passes every parameter declared in
+# "list" as a positional argument, for example:
+#
+#   ubus call easymesh get_status
+#   ubus call easymesh get_uri     '{"ifname":"ra0"}'
+#   ubus call easymesh set         '{"key":"DeviceRole","value":"1"}'
+#   ubus call easymesh action      '{"action":"wps","band":"5g"}'
+#   ubus call easymesh restart
+
+MAPD_CTRL=/tmp/mapd_ctrl
+
+json_escape() {
+	printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\r\n' | tr '\011' ' '
+}
+
+kv() {
+	printf '"%s":"%s",' "$1" "$(json_escape "$2")"
+}
+
+run() {
+	timeout 4 "$@" 2>/dev/null | tr -d '\r' | grep -v '^$' | head -n 20
+}
+
+cfg_get() {
+	uci -q get "$1" 2>/dev/null | tail -n1
+}
+
+daemon_state() {
+	if pgrep -f "$1" >/dev/null 2>&1; then
+		printf 'running'
+	else
+		printf 'stopped'
+	fi
+}
+
+wireless_ifnames() {
+	uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-device$/\1/p'
+}
+
+first_ifname() {
+	local section name
+	for section in $(wireless_ifnames); do
+		name="$(cfg_get "wireless.$section.path")"
+		[ -n "$name" ] || name="$(cfg_get "wireless.$section.ifname")"
+		[ -n "$name" ] || name="$(cfg_get "wireless.$section.name")"
+		[ -n "$name" ] && { printf '%s' "$name"; return 0; }
+	done
+	printf 'ra0'
+}
+
+all_ifnames() {
+	local section name found=""
+	for section in $(wireless_ifnames); do
+		name="$(cfg_get "wireless.$section.path")"
+		[ -n "$name" ] || name="$(cfg_get "wireless.$section.ifname")"
+		[ -n "$name" ] || name="$(cfg_get "wireless.$section.name")"
+		[ -n "$name" ] && found="$found $name"
+	done
+	[ -n "$found" ] || found=" ra0"
+	printf '%s' "$found"
+}
+
+set_daemons() {
+	# $1 = start|stop.  /etc/init.d/easymesh owns the lifecycle
+	# (the vendor bring-up scripts have no "stop" action).
+	local s
+	if [ -x /etc/init.d/easymesh ]; then
+		/etc/init.d/easymesh "$1" >/dev/null 2>&1
+		return $?
+	fi
+	if [ "$1" = start ]; then
+		for s in /usr/bin/map_restart.sh /usr/bin/EasyMesh_openwrt.sh /usr/bin/EasyMesh_openwrt5x.sh /usr/bin/EasyMesh.sh; do
+			if [ -x "$s" ]; then
+				"$s" >/dev/null 2>&1 &
+				return 0
+			fi
+		done
+	fi
+	for s in easymesh easymesh_bridge mapd wappd 1905d 1905daemon wapp; do
+		[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" "$1" >/dev/null 2>&1
+	done
+	return 0
+}
+
+restart_easymesh() {
+	local s
+	# The MAP Turnkey bring-up script knows the platform specific order and also
+	# regenerates mapd_cfg from mapd_user.cfg / mapd_default.cfg.
+	if [ -x /etc/init.d/easymesh ]; then
+		/etc/init.d/easymesh restart >/dev/null 2>&1 &
+		return 0
+	fi
+	for s in /usr/bin/map_restart.sh /usr/bin/EasyMesh_openwrt.sh /usr/bin/EasyMesh_openwrt5x.sh /usr/bin/EasyMesh.sh; do
+		if [ -x "$s" ]; then
+			"$s" >/dev/null 2>&1 &
+			return 0
+		fi
+	done
+	for s in easymesh easymesh_bridge mapd wappd 1905d 1905daemon wapp; do
+		[ -x "/etc/init.d/$s" ] && /etc/init.d/"$s" stop >/dev/null 2>&1
+	done
+	sleep 1
+	for s in wapp wappd 1905d 1905daemon mapd easymesh_bridge easymesh; do
+		if [ -x "/etc/init.d/$s" ]; then
+			/etc/init.d/"$s" start >/dev/null 2>&1
+			return 0
+		fi
+	done
+	return 1
+}
+
+get_status() {
+	local role enable mapver log svc
+	role="$(cfg_get mapd.mapd_cfg.DeviceRole)"
+	[ -n "$role" ] || role="$(cfg_get mapd.mapd_user.DeviceRole)"
+	[ -n "$role" ] || role="2"
+	enable="$(cfg_get mapd.mapd_cfg.Enable)"
+	[ -n "$enable" ] || enable="1"
+	mapver="$(cfg_get 1905d_cfg.map.map_ver)"
+	[ -n "$mapver" ] || mapver="R3"
+	log=""
+	[ -r /tmp/mapd_log ] && log="$(tail -n 40 /tmp/mapd_log 2>/dev/null)"
+	svc=0
+	if ls /etc/rc.d/S*easymesh /etc/rc.d/S*mapd /etc/rc.d/S*1905* /etc/rc.d/S*wapp* >/dev/null 2>&1; then
+		svc=1
+	fi
+
+	printf '{'
+	kv role "$role"
+	kv enable "$enable"
+	kv svc_enabled "$svc"
+	kv map_ver "$mapver"
+	kv mapd "$(daemon_state mapd)"
+	kv p1905 "$(daemon_state p1905_managerd)"
+	kv wapp "$(daemon_state wapp)"
+	if [ -S "$MAPD_CTRL" ]; then
+		kv socket up
+	else
+		kv socket down
+	fi
+	kv almac "$(cfg_get 1905d_cfg.map.almac)"
+	kv dpp_role "$(cfg_get mapd.dpp_cfg.allowed_role)"
+	kv bh_status "$(run mapd_cli "$MAPD_CTRL" show_bh_link_metric)"
+	kv topology "$(run mapd_cli "$MAPD_CTRL" dump_topology_v1)"
+	kv mapd_log "$log"
+	printf '"ok":true}'
+}
+
+get_uri() {
+	local ifname="$1" uri
+	[ -n "$ifname" ] || ifname="$(first_ifname)"
+	uri="$(run mapd_cli "$MAPD_CTRL" get_dpp_uri | tail -n1)"
+	case "$uri" in
+		DPP:*) ;;
+		*) uri="$(run wappctrl "$ifname" dpp dpp_bootstrap_get_uri 1 | tail -n1)" ;;
+	esac
+	printf '{"uri":"%s","ifname":"%s","ok":true}' "$(json_escape "$uri")" "$(json_escape "$ifname")"
+}
+
+set_option() {
+	local key="$1" value="$2" target mirror s
+
+	case "$key" in
+		DeviceRole)
+			case "$value" in 0|1|2) ;; *) return 2 ;; esac
+			target=mapd.mapd_cfg.DeviceRole
+			;;
+		SteerEnable)
+			case "$value" in 0|1) ;; *) return 2 ;; esac
+			target=mapd.mapd_cfg.SteerEnable
+			;;
+		APSteerRssiTh)
+			case "$value" in -[0-9]|-[0-9][0-9]|-[0-9][0-9][0-9]) ;; *) return 2 ;; esac
+			target=mapd.mapd_cfg.APSteerRssiTh
+			;;
+		BhPriority2G|BhPriority5GL|BhPriority5GH|BhPriority6G)
+			case "$value" in 0|1|2|3) ;; *) return 2 ;; esac
+			target="mapd.mapd_cfg.$key"
+			;;
+		Enable|ChPlanningEnable|NetworkOptimizationEnabled|AutoBHSwitching|DhcpCtl|NetworkOptPrefer5Gover2G)
+			case "$value" in 0|1) ;; *) return 2 ;; esac
+			target="mapd.mapd_cfg.$key"
+			;;
+		CUOverloadTh_2G|CUOverloadTh_5G_L|CUOverloadTh_5G_H|CUOverloadTh_6G|BandSwitchTime|NtwrkOptPostCACTriggerTime|NetworkOptPrefer5Gover2GRetryCnt)
+			case "$value" in ''|*[!0-9]*) return 2 ;; esac
+			target="mapd.mapd_cfg.$key"
+			;;
+		ChPlanningUserPreferredChannel2G|ChPlanningUserPreferredChannel5G|ChPlanningUserPreferredChannel6G)
+			case "$value" in ''|*[!0-9]*) return 2 ;; esac
+			target="mapd.mapd_cfg.$key"
+			;;
+		ChPlanningIdleByteCount|ChPlanningIdleTime|NtwrkOptConnectWaitTime|NtwrkOptDisconnectWaitTime)
+			case "$value" in ''|*[!0-9]*) return 2 ;; esac
+			target="mapd.mapd_cfg.$key"
+			;;
+		map_ver)
+			case "$value" in R1|R2|R3|R4|R5|R6) ;; *) return 2 ;; esac
+			target=1905d_cfg.map.map_ver
+			;;
+		allowed_role)
+			case "$value" in 0|1|2) ;; *) return 2 ;; esac
+			target=mapd.dpp_cfg.allowed_role
+			;;
+		presence_band_priority)
+			case "$value" in 2g|5g) ;; *) return 2 ;; esac
+			target=mapd.dpp_cfg.presence_band_priority
+			;;
+		*)
+			return 2
+			;;
+	esac
+
+	uci set "$target=$value" >/dev/null 2>&1 || return 3
+
+	# The MAP daemons read mapd_user for user overrides: keep it in sync.
+	case "$target" in
+		mapd.mapd_cfg.*)
+			mirror="mapd.mapd_user.${target#mapd.mapd_cfg.}"
+			uci set "$mirror=$value" >/dev/null 2>&1
+			;;
+	esac
+
+	# A device role change also selects the DPP allowed role:
+	#   auto/agent/controller  ->  0/1/2
+	if [ "$key" = DeviceRole ]; then
+		case "$value" in
+			0) uci set mapd.dpp_cfg.allowed_role=0 >/dev/null 2>&1 ;;
+			1) uci set mapd.dpp_cfg.allowed_role=2 >/dev/null 2>&1 ;;
+			2) uci set mapd.dpp_cfg.allowed_role=1 >/dev/null 2>&1 ;;
+		esac
+	fi
+
+	uci commit mapd >/dev/null 2>&1
+	uci commit 1905d_cfg >/dev/null 2>&1
+
+	# "Enable" also (de)activates the MAP turnkey daemons at runtime; the
+	# boot-time state is handled by the enable/disable method (init.d state).
+	if [ "$key" = Enable ]; then
+		if [ "$value" = 1 ]; then
+			set_daemons start
+		else
+			set_daemons stop
+		fi
+	fi
+
+	printf '{"ok":true}'
+}
+
+set_enabled() {
+	# $1 = 1 enable at boot, $1 = 0 disable at boot
+	local s n
+	if [ -x /etc/init.d/easymesh ]; then
+		if [ "$1" = 1 ]; then
+			/etc/init.d/easymesh enable >/dev/null 2>&1
+		else
+			/etc/init.d/easymesh disable >/dev/null 2>&1
+		fi
+	fi
+	for s in /etc/init.d/mapd /etc/init.d/1905d /etc/init.d/1905daemon /etc/init.d/wappd /etc/init.d/wapp /etc/init.d/easymesh_bridge; do
+		[ -x "$s" ] || continue
+		if [ "$1" = 1 ]; then
+			"$s" enable >/dev/null 2>&1
+		else
+			"$s" disable >/dev/null 2>&1
+		fi
+	done
+	n="$(ls /etc/rc.d/S*mapd /etc/rc.d/S*1905* /etc/rc.d/S*wapp* /etc/rc.d/S*easymesh 2>/dev/null | wc -l)"
+	if [ "$1" = 1 ]; then
+		printf '{"ok":true,"enabled":"%s"}' "$n"
+	else
+		printf '{"ok":true,"enabled":"0"}'
+	fi
+}
+
+do_wps() {
+	local dev tried=""
+	for dev in $(all_ifnames); do
+		run wappctrl "$dev" wps_pbc >/dev/null
+		tried="$tried $dev"
+	done
+	printf '{"ok":true,"ifname":"%s"}' "$(json_escape "$tried")"
+}
+
+do_dpp_enroll() {
+	local uri="$1" dev
+	case "$uri" in
+		DPP:*) ;;
+		*) printf '{"ok":false,"error":"not a DPP URI"}'; return 0 ;;
+	esac
+	dev="$(first_ifname)"
+	run wappctrl "$dev" dpp dpp_qr_code "$uri" >/dev/null
+	run wappctrl "$dev" dpp dpp_start >/dev/null
+	printf '{"ok":true}'
+}
+
+main() {
+	case "$1" in
+		list)
+			# rpcd passes every declared parameter as a positional argument,
+			# so no JSON parsing is needed on this side.
+			printf '{"get_status":{},"get_uri":{"ifname":""},"set":{"key":"","value":""},"action":{"action":"","band":"","uri":""},"restart":{},"enable":{},"disable":{}}'
+			;;
+		call)
+			case "$2" in
+				get_status) get_status ;;
+				get_uri)    get_uri "$3" ;;
+				set)
+					if [ -z "$3" ]; then
+						printf '{"ok":false,"error":"missing key"}'
+					else
+						set_option "$3" "$4" || printf '{"ok":false,"error":"rejected"}'
+					fi
+					;;
+				action)
+					case "$3" in
+						wps)        do_wps "$4" ;;
+						dpp_enroll) do_dpp_enroll "$4" ;;
+						*)          printf '{"ok":false,"error":"unknown action"}' ;;
+					esac
+					;;
+				restart)
+					restart_easymesh && printf '{"ok":true}' || printf '{"ok":false,"error":"no EasyMesh init script found"}'
+					;;
+				enable)  set_enabled 1 ;;
+				disable) set_daemons stop; set_enabled 0 ;;
+				*)
+					printf '{"ok":false,"error":"unknown method"}'
+					;;
+			esac
+			;;
+		*)
+			printf '{"ok":false,"error":"usage: easymesh-mtk {list|call}"}'
+			;;
+	esac
+}
+
+main "$@"
+exit 0

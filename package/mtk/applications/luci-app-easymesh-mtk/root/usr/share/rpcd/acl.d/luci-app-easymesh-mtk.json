@@ -1,0 +1,35 @@
+{
+	"luci-app-easymesh-mtk": {
+		"description": "Grant access to the MediaTek EasyMesh (MAP Turnkey) control interface",
+		"read": {
+			"ubus": {
+				"easymesh-mtk": [ "get_status", "get_clients", "get_uri" ]
+			},
+			"uci": [ "mapd", "1905d_cfg", "wireless" ],
+			"file": {
+				"/etc/map/wts_bss_info_config": [ "read" ],
+				"/etc/map/restirct_steer_config": [ "read" ],
+				"/etc/map/sp_rule.cfg": [ "read" ],
+				"/tmp/dump_ch_scan.txt": [ "read" ],
+				"/tmp/dump_ch_score.txt": [ "read" ],
+				"/tmp/dump_de.txt": [ "read" ],
+				"/tmp/easymesh_events.log": [ "read" ],
+				"/tmp/dhcp.leases": [ "read" ]
+			}
+		},
+		"write": {
+			"file": {
+				"/usr/libexec/rpcd/easymesh-mtk": [ "exec" ],
+				"/etc/map/wts_bss_info_config": [ "write" ],
+				"/etc/map/restirct_steer_config": [ "write" ],
+				"/etc/map/sp_rule.cfg": [ "write" ],
+				"/etc/map/1905d.cfg": [ "write" ],
+				"/etc/dpp_cfg.txt": [ "write" ]
+			},
+			"ubus": {
+				"easymesh-mtk": [ "set", "action", "restart", "enable", "disable" ]
+			},
+			"uci": [ "mapd", "1905d_cfg", "wireless" ]
+		}
+	}
+}

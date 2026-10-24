@@ -1,0 +1,32 @@
+--- a/mt_osal_cfg80211.c
++++ b/mt_osal_cfg80211.c
+@@ -2125,6 +2125,8 @@ static int mt_cfg80211_ops_set_chanwidth(
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_80P80;
+ 	else if (chandef->width == NL80211_CHAN_WIDTH_160)
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_160;
++	else if (chandef->width == NL80211_CHAN_WIDTH_320)
++		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_320;
+ 	else {
+ 		MT_DEBUG_TRACE("ERROR! channel bandwidth: %d not support.\n", chandef->width);
+ 		return -EOPNOTSUPP;
+@@ -2193,6 +2195,8 @@ static int mt_cfg80211_ops_chan_switch(
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_80P80;
+ 	else if (chandef->width == NL80211_CHAN_WIDTH_160)
+ 		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_160;
++	else if (chandef->width == NL80211_CHAN_WIDTH_320)
++		chaninfo.ChanType = MT_NL80211_CHAN_WIDTH_320;
+ 	else {
+ 		MT_DEBUG_TRACE("ERROR! channel bandwidth: %d not support.\n", chandef->width);
+ 		return -EOPNOTSUPP;
+@@ -2948,9 +2952,9 @@ static int mt_cfg80211_ops_survey_get(
+ 	survey->filled |= SURVEY_INFO_TIME_BUSY;
+ 	survey->filled |= SURVEY_INFO_NOISE_DBM;
+ #if defined(CFG_CFG80211_VERSION) && (KERNEL_VERSION(6, 1, 0) <= CFG_CFG80211_VERSION)
+-	survey->filled |= SURVEY_INFO_TIME_BSS_RX;
++	survey->filled |= SURVEY_INFO_TIME_BSS_RX | SURVEY_INFO_TIME;
+ #endif
+-	survey->filled |=  SURVEY_INFO_TIME_TX | SURVEY_INFO_TIME_RX | SURVEY_INFO_TIME;
++	survey->filled |= SURVEY_INFO_TIME_TX | SURVEY_INFO_TIME_RX;
+ 
+ 	survey->channel = chan;
+ 	survey->time_busy = div_u64(mt_chan_survey_info.busytime, 1000);

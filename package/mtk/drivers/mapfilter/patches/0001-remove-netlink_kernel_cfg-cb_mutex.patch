@@ -1,0 +1,10 @@
+--- a/mtkmapfilter.c
++++ b/mtkmapfilter.c
+@@ -922,7 +922,6 @@ struct netlink_kernel_cfg nl_kernel_cfg = {
+ 	.groups = 0,
+ 	.flags = 0,
+ 	.input = recv_nlmsg,
+-	.cb_mutex = NULL,
+ 	.bind = NULL,
+ };
+ #endif

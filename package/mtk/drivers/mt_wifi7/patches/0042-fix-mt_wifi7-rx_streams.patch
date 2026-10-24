@@ -1,0 +1,11 @@
+--- a/mt_wifi/ap/ap_cfg.c
++++ b/mt_wifi/ap/ap_cfg.c
+@@ -14611,7 +14611,7 @@ static INT show_apcfg_info(RTMP_ADAPTER
+ #ifdef DOT11_EHT_BE
+ 	/*EHT_TxStream */ /*EHT_RxStream */
+ 	apcfg_para_setting.ht_tx_streams = wlan_config_get_eht_tx_nss(wdev);
+-	apcfg_para_setting.ht_rx_streams = wlan_config_get_eht_tx_nss(wdev);
++	apcfg_para_setting.ht_rx_streams = wlan_config_get_eht_rx_nss(wdev);
+ 
+ 	ret = snprintf(pos, end-pos,
+ 		"%-24s%-16d%d\n"
