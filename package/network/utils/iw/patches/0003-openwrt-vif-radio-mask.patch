@@ -1,3 +1,14 @@
+From bd7df358028f10327ec3b6066f3d4af2c7436159 Mon Sep 17 00:00:00 2001
+From: Shayne Chen <shayne.chen@mediatek.com>
+Date: Mon, 21 Oct 2024 19:00:13 +0800
+Subject: [PATCH 10/17] openwrt: vif radio mask
+
+---
+ interface.c | 63 +++++++++++++++++++++++++++++++++++++++++++++++++++--
+ 1 file changed, 61 insertions(+), 2 deletions(-)
+
+diff --git a/interface.c b/interface.c
+index 65a4006..778b10d 100644
 --- a/interface.c
 +++ b/interface.c
 @@ -226,6 +226,43 @@ nla_put_failure:
@@ -77,11 +88,10 @@
  	NL80211_CMD_NEW_INTERFACE, 0, CIB_NETDEV, handle_interface_add, NULL);
  
  static int handle_interface_del(struct nl80211_state *state,
-@@ -498,6 +544,19 @@ static int print_iface_handler(struct nl
- 			printf("\n");
+@@ -499,6 +545,19 @@ static int print_iface_handler(struct nl_msg *msg, void *arg)
  		}
  	}
-+
+ 
 +	if (tb_msg[NL80211_ATTR_VIF_RADIO_MASK]) {
 +		uint32_t mask = nla_get_u32(tb_msg[NL80211_ATTR_VIF_RADIO_MASK]);
 +		int i;
@@ -94,6 +104,10 @@
 +			printf("\n");
 +		}
 +	}
- 
++
  	return NL_SKIP;
  }
+ 
+-- 
+2.45.2
+

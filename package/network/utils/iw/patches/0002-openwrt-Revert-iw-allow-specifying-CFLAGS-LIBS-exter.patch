@@ -1,19 +1,15 @@
-From 1f3706d10812d70adefe32fe0d7d3a3ec25374f0 Mon Sep 17 00:00:00 2001
-From: Hauke Mehrtens <hauke@hauke-m.de>
-Date: Sun, 21 Nov 2021 00:02:57 +0100
-Subject: Revert "iw: allow specifying CFLAGS/LIBS externally"
+From e5b050def68e3e7adbe67a7ee64a069246a275e6 Mon Sep 17 00:00:00 2001
+From: Shayne Chen <shayne.chen@mediatek.com>
+Date: Mon, 21 Oct 2024 18:57:09 +0800
+Subject: [PATCH 09/17] openwrt: Revert iw: allow specifying CFLAGS/LIBS
+ externally
 
-This reverts commit 1325244b77d56fd7a16d1e35fdae0efc151920b1.
-
-The OpenWrt build system provides the CFLAGS and LIBS names from the 
-package Makefile to overwrite them for libnl-tiny. This is not possible 
-after this upstream change which we revert here any more
-
-Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
 ---
  Makefile | 20 ++++++++++----------
  1 file changed, 10 insertions(+), 10 deletions(-)
 
+diff --git a/Makefile b/Makefile
+index 2652fac..07289a9 100644
 --- a/Makefile
 +++ b/Makefile
 @@ -47,30 +47,30 @@ NLLIBNAME = libnl-1
@@ -66,3 +62,6 @@ Signed-off-by: Hauke Mehrtens <hauke@hauke-m.de>
  endif # NO_PKG_CONFIG
  
  ifeq ($(V),1)
+-- 
+2.45.2
+
