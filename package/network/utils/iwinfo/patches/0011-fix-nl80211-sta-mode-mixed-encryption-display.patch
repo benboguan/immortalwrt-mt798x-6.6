@@ -1,0 +1,139 @@
+--- a/iwinfo_nl80211.c
++++ b/iwinfo_nl80211.c
+@@ -982,6 +982,79 @@ #define nl80211_hostapd_query
+ 	__nl80211_hostapd_query(ifname, ##__VA_ARGS__, NULL)
+ 
+ 
++/*
++ * Read the per-interface configuration file of wpa_supplicant to obtain the complete set of configuration declarations
++ * key_mgmt / proto. wpa_cli STATUS only reflects the currently successfully negotiated AKM,
++ * It is insufficient to reflect mixed modes such as sae-mixed.
++ */
++static int __nl80211_wpasupp_conf_query(const char *ifname, ...)
++{
++	va_list ap, ap_cur;
++	char *search, *dest, *key, *val, buf[512], path[PATH_MAX];
++	int len, mode, found = 0;
++	FILE *fp = NULL;
++
++	if (nl80211_get_mode(ifname, &mode))
++		return 0;
++
++	if (mode != IWINFO_OPMODE_CLIENT &&
++	    mode != IWINFO_OPMODE_ADHOC &&
++	    mode != IWINFO_OPMODE_MESHPOINT)
++		return 0;
++
++	snprintf(path, sizeof(path), "/var/run/wpa-supplicant-%s.conf", ifname);
++	fp = fopen(path, "r");
++
++	if (!fp) {
++		/* back SDK lua */
++		snprintf(path, sizeof(path), "/var/run/wpa_supplicant/wpa_supplicant-%s.conf", ifname);
++		fp = fopen(path, "r");
++	}
++
++	if (!fp)
++		return 0;
++
++	va_start(ap, ifname);
++
++	va_copy(ap_cur, ap);
++	while ((search = va_arg(ap_cur, char *)) != NULL) {
++		dest = va_arg(ap_cur, char *);
++		len  = va_arg(ap_cur, int);
++		memset(dest, 0, len);
++	}
++	va_end(ap_cur);
++
++	while (fgets(buf, sizeof(buf), fp)) {
++		key = strtok(buf, " =\t\n");
++		val = strtok(NULL, "\n");
++
++		if (!key || !val || !*key || *key == '#')
++			continue;
++
++		va_copy(ap_cur, ap);
++		while ((search = va_arg(ap_cur, char *)) != NULL) {
++			dest = va_arg(ap_cur, char *);
++			len  = va_arg(ap_cur, int);
++
++			if (!strcmp(search, key)) {
++				strncpy(dest, val, len - 1);
++				found++;
++				break;
++			}
++		}
++		va_end(ap_cur);
++	}
++
++	fclose(fp);
++	va_end(ap);
++
++	return found;
++}
++
++#define nl80211_wpasupp_conf_query(ifname, ...) \
++	__nl80211_wpasupp_conf_query(ifname, ##__VA_ARGS__, NULL)
++
++
+ static inline int nl80211_wpactl_recv(int sock, char *buf, int blen)
+ {
+ 	fd_set rfds;
+@@ -1972,14 +2045,54 @@ static int nl80211_get_encryption(const char *ifname
+ 	char *p;
+ 	int opmode;
+ 	uint8_t wpa_version = 0;
+-	char wpa[2], wpa_key_mgmt[64], wpa_pairwise[16], wpa_groupwise[16];
++	char wpa[2], proto[16], wpa_key_mgmt[64], wpa_pairwise[16], wpa_groupwise[16];
+ 	char auth_algs[2], wep_key0[27], wep_key1[27], wep_key2[27], wep_key3[27];
+ 	char mode[16];
+ 
+ 	struct iwinfo_crypto_entry *c = (struct iwinfo_crypto_entry *)buf;
+ 
+ 	/* WPA supplicant */
++	if (nl80211_wpasupp_conf_query(ifname,
++				"proto",    proto,         sizeof(proto),
++				"key_mgmt", wpa_key_mgmt,  sizeof(wpa_key_mgmt),
++				"pairwise", wpa_pairwise,  sizeof(wpa_pairwise),
++				"group",    wpa_groupwise, sizeof(wpa_groupwise)))
++	{
++		int proto_version = 0;
++		c->wpa_version = 0;
++
++		if (wpa_key_mgmt[0])
++		{
++			if (!strcmp(proto, "RSN"))
++				proto_version = 2;
++			else if (!strcmp(proto, "WPA"))
++				proto_version = 1;
++			else
++				proto_version = 3;
++
++			for (p = strtok(wpa_key_mgmt, " \t"); p != NULL; p = strtok(NULL, " \t"))
++			{
++				if (!strncmp(p, "WPA-", 4))
++					p += 4;
++
++				if (!strncmp(p, "FT-", 3))
++					p += 3;
++
++				parse_wpa_suites(p, proto_version, &c->wpa_version, &c->auth_suites);
++			}
++
++			c->enabled = c->wpa_version ? 1 : 0;
++		}
++
++		if (wpa_pairwise[0])
++			parse_wpa_ciphers(wpa_pairwise, &c->pair_ciphers);
++
++		if (wpa_groupwise[0])
++			parse_wpa_ciphers(wpa_groupwise, &c->group_ciphers);
++
++		return 0;
++	}
+-	if (nl80211_wpactl_query(ifname,
++	else if (nl80211_wpactl_query(ifname,
+ 			"pairwise_cipher", wpa_pairwise,  sizeof(wpa_pairwise),
+ 			"group_cipher",    wpa_groupwise, sizeof(wpa_groupwise),
+ 			"key_mgmt",        wpa_key_mgmt,  sizeof(wpa_key_mgmt),
