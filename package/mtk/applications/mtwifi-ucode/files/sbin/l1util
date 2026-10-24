@@ -1,0 +1,102 @@
+#!/usr/bin/env ucode
+'use strict';
+
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * l1util - L1 profile (/etc/wireless/l1profile.dat) 查询工具
+ *
+ * Copyright (C) 2023 hanwckf <hanwckf@vip.qq.com>
+ * Copyright (C) 2025-2026 nanchuci <nanchuci023@gmail.com>
+ *
+ * files/l1util/l1util (Lua) 的 ucode 重写。用法保持不变：
+ *   l1util list | dump | get <dev> <prop> | idx2if <idx> |
+ *          if2zone <ifname> | if2dat <ifname> | zone2if <zone> |
+ *          if2dbdcidx <ifname>
+ *
+ * 与 Lua 版的差异：dump 输出 JSON（Lua 版用 inspect.lua 的 Lua 字面量），
+ * 因为 ucode 原生支持 JSON，不再需要 inspect.lua。
+ */
+
+import * as l1dat from 'mtwifi.l1dat';
+
+const L1_DAT_PATH = l1dat.L1_DAT_PATH;
+
+let l1dat_devs = l1dat.load(L1_DAT_PATH);
+
+if (!l1dat_devs) {
+	warn(`l1util: cannot read ${L1_DAT_PATH}\n`);
+	exit(1);
+}
+
+function usage() {
+	printf(`Usage: l1util list | dump | get <dev> <prop> | idx2if <idx> | if2zone <ifname> | if2dat <ifname> | zone2if <zone> | if2dbdcidx <ifname>\n`);
+};
+
+function show_devs() {
+	printf('%s\n', join(' ', l1dat.list(l1dat_devs)));
+};
+
+function dump_l1dat() {
+	printf('%.J\n', l1dat_devs[l1dat.DEV_RINDEX]);
+};
+
+function get_dev_prop(dev, prop) {
+	let value = l1dat_devs[l1dat.DEV_RINDEX][dev]?.[prop];
+
+	if (value != null)
+		printf('%s\n', value);
+};
+
+const action = {
+	list: () => show_devs(),
+
+	dump: () => dump_l1dat(),
+
+	get: (dev, prop) => get_dev_prop(dev, prop),
+
+	if2zone: (ifname) => printf('%s\n', l1dat.ifname_to_zone(l1dat_devs, ifname) ?? ''),
+
+	if2dat: (ifname) => printf('%s\n', l1dat.ifname_to_datpath(l1dat_devs, ifname) ?? ''),
+
+	zone2if: (zone) => {
+		let zones = l1dat.zone_to_ifname(l1dat_devs, zone);
+
+		if (zones)
+			printf('%s %s %s %s %s\n', zones.main_ifname, zones.ext_ifname,
+				zones.apcli_ifname, zones.wds_ifname, zones.mesh_ifname);
+	},
+
+	idx2if: (idx) => {
+		let ifname = l1dat.ifname_by_idx(l1dat_devs, idx);
+
+		if (ifname != null)
+			printf('%s\n', ifname);
+	},
+
+	if2dbdcidx: (ifname) => {
+		let idx = l1dat.dbdc_idx(l1dat_devs, ifname);
+
+		if (idx != null)
+			printf('%s\n', idx);
+	},
+};
+
+let cmd = ARGV[0];
+let args = slice(ARGV, 1);
+
+if (!cmd || !action[cmd]) {
+	usage();
+	exit(1);
+}
+
+switch (length(args)) {
+case 0:
+	action[cmd]();
+	break;
+case 1:
+	action[cmd](args[0]);
+	break;
+default:
+	action[cmd](args[0], args[1]);
+	break;
+}

@@ -1,0 +1,247 @@
+#!/usr/bin/env ucode
+'use strict';
+
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * mtwifi UCI config generator ("wifi config" detection)
+ *
+ * Copyright (C) 2024 OpenWrt.org
+ * Copyright (C) 2026 nanchuci <nanchuci023@gmail.com>
+ *
+ * 取代旧的 /lib/wifi/mtwifi.sh:detect_mtwifi()（shell + l1util 子进程）。
+ * 由 /sbin/wifi config 通过 detect_mtwifi() 调用：
+ *
+ *     ucode /lib/wifi/mtwifi.uc | uci -q batch
+ *
+ * 命名与官方 wifi-scripts/lib/wifi/mac80211.uc 保持一致：
+ *   - wifi-device 段为 radio0/radio1/...
+ *   - 每个段带 type=mtwifi、phy=、band=、channel=、htmode=、country=
+ *   - 额外写入 MTK 私有的 devname=（L1 profile 里的 INDEX_mainidx[_subidx]）
+ *
+ * 同时按官方 wifi-detect.uc 的风格补全 /etc/board.json 的 wlan 条目
+ * （只补缺失的，不覆盖已存在的；官方 wifi-detect.uc 每次 wifi config
+ * 都会重写 wlan.phy* 条目，所以这里写的只是兜底）。
+ *
+ * 已存在的 wifi-device 段（不论段名是不是 radioN，只要 type=mtwifi 且
+ * 指向同一个 devname）不会被改动，重复执行是幂等的。
+ */
+
+import * as fs from 'fs';
+import * as uci from 'uci';
+import * as l1dat from 'mtwifi.l1dat';
+import { trim, log } from 'mtwifi.common';
+
+const BOARD_FILE = '/etc/board.json';
+const L1_DAT_PATH = l1dat.L1_DAT_PATH;
+
+/* 旧 detect 脚本的默认值（band -> htmode / 频点 / SSID / noscan） */
+const BAND_DEFAULTS = {
+	'2g': { htmode: 'EHT40', channel: 'auto', ssid: 'ImmortalWrt-2.4G', noscan: '1', phy_idx: 0 },
+	'5g': { htmode: 'EHT160', channel: '36', ssid: 'ImmortalWrt-5G', noscan: '0', phy_idx: 1 },
+	'6g': { htmode: 'EHT320', channel: '37', ssid: 'ImmortalWrt-6G', noscan: '0', phy_idx: 2 },
+};
+
+function phy_of_ifname(ifname) {
+	if (!ifname)
+		return null;
+
+	let link = fs.readlink(`/sys/class/net/${ifname}/phy80211`);
+
+	if (link)
+		return fs.basename(link);
+
+	let name = trim(fs.readfile(`/sys/class/net/${ifname}/phy80211/name`) ?? '');
+
+	return length(name) ? name : null;
+};
+
+function phy_index(phy) {
+	return +trim(fs.readfile(`/sys/class/ieee80211/${phy}/index`) ?? '0');
+};
+
+/* 与官方 wifi-detect.uc 的 phy_path() 一致 */
+function phy_path(phy) {
+	let devpath = fs.realpath(`/sys/class/ieee80211/${phy}/device`);
+
+	if (!devpath)
+		return null;
+
+	devpath = replace(devpath, /^\/sys\/devices\//, '');
+	if (match(devpath, /^platform\/.*\/pci/))
+		devpath = replace(devpath, /^platform\//, '');
+
+	let dev_phys = map(fs.glob(`/sys/class/ieee80211/${phy}/device/ieee80211/*`), fs.basename);
+	sort(dev_phys, (a, b) => phy_index(a) - phy_index(b));
+
+	let ofs = index(dev_phys, phy);
+	if (ofs > 0)
+		devpath += `+${ofs}`;
+
+	return devpath;
+};
+
+function band_of(dev) {
+	if (dev.band != null && length(trim(dev.band)))
+		return lc(trim(dev.band));
+
+	let base = dev.main_ifname ?? dev.ext_ifname ?? '';
+	if (substr(base, 0, 3) == 'rax') return '6g';
+	if (substr(base, 0, 3) == 'rai') return '5g';
+	if (substr(base, 0, 2) == 'ra')  return '2g';
+
+	return (dev.subidx ?? 1) == 1 ? '2g' : '5g';
+};
+
+/*
+ * 生成 ifname 后缀递增：ra0 + 0 → ra0；ra0 + 1 → ra1。
+ * PDF 没有规定多 BSS 的命名，但物理名必须唯一且由 L1 根名派生。
+ */
+function bump_ifname(base, used) {
+	if (!base || used <= 0)
+		return base;
+
+	let m = match(base, /^([a-zA-Z]+)(\d+)$/);
+	return m ? m[1] + (int(m[2]) + used) : base + used;
+};
+
+function existing_devices(config) {
+	let by_devname = {};
+	let names = {};
+
+	for (let name, section in config) {
+		if (section['.type'] != 'wifi-device')
+			continue;
+
+		names[name] = true;
+
+		/*
+		 * 新配置用 devname 选项；旧配置（段名就是 devname）通过
+		 * “段名出现在 L1 profile 里”来识别。
+		 */
+		if (section.devname)
+			by_devname[section.devname] = name;
+		else if (section.type == 'mtwifi')
+			by_devname[name] = name;
+	}
+
+	return { by_devname, names };
+};
+
+function merge_board(board, devs) {
+	board.wlan ??= {};
+
+	for (let phy, info in devs) {
+		let entry = board.wlan[phy];
+
+		if (entry?.path != null)
+			continue;
+
+		entry = board.wlan[phy] = entry ?? {};
+		entry.path ??= info.path;
+		entry.info ??= { mtwifi: true, bands: {}, radios: [] };
+
+		for (let band in info.bands) {
+			let name = uc(band);
+			let width = +replace(BAND_DEFAULTS[band]?.htmode ?? 'EHT40', /^[A-Z]+/, '');
+
+			entry.info.bands[name] ??= {
+				mtwifi: true,
+				max_width: width,
+				modes: [ 'EHT20' ],
+				default_channel: BAND_DEFAULTS[band]?.channel == 'auto'
+					? 1 : +BAND_DEFAULTS[band]?.channel,
+			};
+		}
+	}
+};
+
+function main() {
+	let l1 = l1dat.load(L1_DAT_PATH);
+
+	if (!l1) {
+		/* 非 MTK 平台（没有 L1 profile）：什么都不输出 */
+		return 0;
+	}
+
+	let config = uci.cursor().get_all('wireless') ?? {};
+	let existing = existing_devices(config);
+	let board = json(fs.readfile(BOARD_FILE) ?? '{}') ?? {};
+	let idx = 0;
+	let commit = false;
+	let out = [];
+	let phys = {};
+	let bss_used = {};
+
+	for (let devname in l1dat.list(l1)) {
+		let dev = l1[l1dat.DEV_RINDEX][devname];
+
+		if (!dev)
+			continue;
+
+		let band = band_of(dev);
+		let defaults = BAND_DEFAULTS[band] ?? BAND_DEFAULTS['2g'];
+		let phy = phy_of_ifname(dev.main_ifname) ?? `phy${defaults.phy_idx}`;
+
+		/* 该 devname 已经配置过（新段名或旧段名） */
+		if (existing.by_devname[devname])
+			continue;
+
+		while (existing.names[`radio${idx}`])
+			idx++;
+
+		let name = `radio${idx}`;
+		let iface = `default_${name}`;
+		let path = phy_path(phy);
+
+		existing.names[name] = true;
+		existing.by_devname[devname] = name;
+
+		phys[phy] ??= { path, bands: {} };
+		phys[phy].bands[band] = true;
+		bss_used[band] ??= 0;
+		let ifname = bump_ifname(dev.main_ifname, bss_used[band]);
+
+		push(out, `set wireless.${name}=wifi-device`);
+		push(out, `set wireless.${name}.type='mtwifi'`);
+		push(out, `set wireless.${name}.devname='${devname}'`);
+		push(out, `set wireless.${name}.phy='${phy}'`);
+
+		if (path)
+			push(out, `set wireless.${name}.path='${path}'`);
+
+		push(out, `set wireless.${name}.band='${band}'`);
+		push(out, `set wireless.${name}.channel='${defaults.channel}'`);
+		push(out, `set wireless.${name}.htmode='${defaults.htmode}'`);
+		push(out, `set wireless.${name}.country='${board.wlan?.defaults?.country ?? 'CN'}'`);
+		push(out, `set wireless.${name}.txpower='100'`);
+		push(out, `set wireless.${name}.mu_beamformer='1'`);
+		push(out, `set wireless.${name}.noscan='${defaults.noscan}'`);
+		push(out, `set wireless.${name}.dbdc_main='${(dev.subidx ?? 1) == 1 ? 1 : 0}'`);
+
+		push(out, `set wireless.${iface}=wifi-iface`);
+		push(out, `set wireless.${iface}.device='${name}'`);
+		push(out, `set wireless.${iface}.network='lan'`);
+		push(out, `set wireless.${iface}.ifname='${ifname}'`);
+		push(out, `set wireless.${iface}.mode='ap'`);
+		push(out, `set wireless.${iface}.ssid='${defaults.ssid}'`);
+		push(out, `set wireless.${iface}.encryption='none'`);
+		push(out, `set wireless.${iface}.disabled='0'`);
+		push(out, `set wireless.${iface}.bss_load_update_period='0'`);
+		push(out, '');
+
+		commit = true;
+		idx++;
+	}
+
+	if (commit) {
+		merge_board(board, phys);
+		fs.writefile(BOARD_FILE, sprintf('%.J\n', board));
+		push(out, 'commit wireless');
+	}
+
+	printf('%s\n', join('\n', out));
+
+	return 0;
+};
+
+exit(main());
