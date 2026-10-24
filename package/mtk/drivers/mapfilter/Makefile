@@ -7,7 +7,7 @@ include $(TOPDIR)/rules.mk
 include $(INCLUDE_DIR)/kernel.mk
 
 PKG_NAME:=mapfilter
-PKG_REVISION:=df064e
+PKG_REVISION:=70fcdd
 PKG_SOURCE:=$(PKG_NAME)-$(PKG_REVISION).tar.bz2
 
 include $(INCLUDE_DIR)/package.mk
