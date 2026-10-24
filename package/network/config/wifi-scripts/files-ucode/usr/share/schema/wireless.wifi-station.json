@@ -11,6 +11,10 @@
 				"type": "string"
 			}
 		},
+		"network": {
+			"description": "Specifies service / network interface associated with the vid.",
+			"type": "string"
+		},
 		"mac": {
 			"description": "The station's MAC addresses",
 			"type": "array",

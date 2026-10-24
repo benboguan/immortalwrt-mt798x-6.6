@@ -26,7 +26,24 @@ function print_assoclist(stations) {
 			printf('%10d Pkts.\n', bitrate.packets);
 		}
 		let expected_throughput = station.expected_throughput;
-		printf(`\texpected throughput: ${expected_throughput == 'unknown' ? 'unknown' : expected_throughput + ' MBit/s'}\n\n`);
+		printf(`\texpected throughput: ${expected_throughput == 'unknown' ? 'unknown' : expected_throughput + ' MBit/s'}\n`);
+
+		/* === MLO === */
+		if (station.mlo_enable) {
+			printf(`\tMLO: yes  MLD: ${station.mld_mac}  links: ${station.mlo_num_links}  setup link: ${station.mlo_link_id}\n`);
+			for (let j = 0; j < station.mlo_num_links && j < 3; j++) {
+				let rx = station.mlo_rx_rate[j];
+				let tx = station.mlo_tx_rate[j];
+				if (rx)
+					printf(`\t  link[%d] RX: %8.1f MBit/s  EHT-GI %s  EHT-DCM %d\n`,
+					       j, rx.rate / 1000, rx.eht_gi, rx.eht_dcm);
+				if (tx)
+					printf(`\t  link[%d] TX: %8.1f MBit/s  EHT-GI %s  EHT-DCM %d\n`,
+					       j, tx.rate / 1000, tx.eht_gi, tx.eht_dcm);
+			}
+		}
+
+		printf('\n');
 	}
 }
 
@@ -92,29 +109,38 @@ function print_scan(cells) {
 			printf('\t\tSecondary Channel Offset: %s\n', cell.ht.secondary_chan_off);
 			printf('\t\tChannel Width: %s\n', cell.ht.chan_width);
 		}
-		
+
 		if (cell.vht) {
 			printf('\t  VHT Operation:\n');
-			printf('\t\tCenter Frequency 1: %d\n', cell.vht.center_chan_1);
-			printf('\t\tCenter Frequency 2: %s\n', cell.vht.center_chan_2);
-			printf('\t\tChannel Width: %s\n', cell.vht.chan_width);
+			if (cell.vht.center_chan_1)
+				printf('\t\tCenter Frequency 1: %d\n', cell.vht.center_chan_1);
+			if (cell.vht.center_chan_2)
+				printf('\t\tCenter Frequency 2: %d\n', cell.vht.center_chan_2);
+			if (cell.vht.chan_width)
+				printf('\t\tChannel Width: %s\n', cell.vht.chan_width);
 		}
 
 		if (cell.he) {
 			printf('\t  HE Operation:\n');
-			printf('\t\tCenter Frequency 1: %d\n', cell.he.center_chan_1);
-			printf('\t\tCenter Frequency 2: %s\n', cell.he.center_chan_2);
-			printf('\t\tChannel Width: %s\n', cell.he.chan_width);
+			if (cell.he.center_chan_1)
+				printf('\t\tCenter Frequency 1: %d\n', cell.he.center_chan_1);
+			if (cell.he.center_chan_2)
+				printf('\t\tCenter Frequency 2: %d\n', cell.he.center_chan_2);
+			if (cell.he.chan_width)
+				printf('\t\tChannel Width: %s\n', cell.he.chan_width);
 		}
 
 		if (cell.eht) {
 			printf('\t  EHT Operation:\n');
-			printf('\t\tCenter Frequency 1: %d\n', cell.eht.center_chan_1);
-			printf('\t\tCenter Frequency 2: %s\n', cell.eht.center_chan_2);
-			printf('\t\tChannel Width: %s\n', cell.eht.chan_width);
+			if (cell.eht.center_chan_1)
+				printf('\t\tCenter Frequency 1: %d\n', cell.eht.center_chan_1);
+			if (cell.eht.center_chan_2)
+				printf('\t\tCenter Frequency 2: %d\n', cell.eht.center_chan_2);
+			if (cell.eht.chan_width)
+				printf('\t\tChannel Width: %s\n', cell.eht.chan_width);
 		}
 
-		printf('\n'); 
+		printf('\n');
 	}
 }
 
@@ -170,7 +196,7 @@ if (length(ARGV) == 2 && iwinfo.ifaces[ARGV[0]])
 	for (let cmd, cb in commands)
 		if (substr(cmd, 0, length(ARGV[1])) == ARGV[1]) {
 			let ret = cb[0](ARGV[0]);
-			
+
 			if (pretty)
 				cb[1](ret);
 			else

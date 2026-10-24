@@ -79,7 +79,7 @@ function device_country_code(config) {
 	if (!exists(config, 'country_code'))
 		return;
 
-	if (config.hw_mode != 'a')
+	if (config.hw_mode != 'a' || config.band != '5g')
 		delete config.ieee80211h;
 	append_vars(config, [ 'country_code', 'country3', 'ieee80211h' ]);
 	if (config.ieee80211d)
@@ -148,6 +148,18 @@ function device_rates(config) {
 	append_vars(config, [ 'beacon_rate', 'supported_rates', 'basic_rates' ]);
 }
 
+function he_bss_color_random() {
+	let f = fs.open("/dev/urandom", "r");
+
+	if (!f)
+		return -1;
+
+	let color = (ord(f.read(1)) % 63) + 1;
+	f.close();
+
+	return color;
+}
+
 function device_htmode_append(config) {
 	config.channel_offset = config.band == '6g' ? 1 : 0;
 
@@ -158,7 +170,7 @@ function device_htmode_append(config) {
 			config.ieee80211n = 1;
 			config.ht_capab = '';
 		}
-		if (config.htmode in [ 'HT40', 'HT40+', 'HT40-', 'VHT40', 'VHT80', 'VHT160', 'HE40', 'HE80', 'HE160', 'EHT40', 'EHT80', 'EHT160' ]) {
+		if (config.htmode in [ 'HT40', 'HT40+', 'HT40-', 'VHT40', 'VHT40+', 'VHT40-', 'VHT80', 'VHT160', 'HE40', 'HE40+', 'HE40-', 'HE80', 'HE160', 'EHT40', 'EHT40+', 'EHT40-', 'EHT80', 'EHT160' ]) {
 			config.ieee80211n = 1;
 			if (!config.channel)
 				config.ht_capab = '[HT40+]';
@@ -245,6 +257,9 @@ function device_htmode_append(config) {
 	case 'VHT160':
 	case 'HE160':
 	case 'EHT160':
+	case 'EHT320':
+	case 'EHT320-1':
+	case 'EHT320-2':
 		let vht_oper_centr_freq_seg0_idx_map = [[ 64, 50 ], [ 128, 114 ], [ 177, 163 ]];
 		if (config.band == '6g')
 			vht_oper_centr_freq_seg0_idx_map = [
@@ -276,9 +291,17 @@ function device_htmode_append(config) {
 			break;
 
 		case 'EHT320':
+		case 'EHT320-1':
+		case 'EHT320-2':
 			let eht_center_seg0_map = [
-				[ 61, 31 ], [ 125, 95 ], [ 189, 159 ], [ 221, 191 ]
+				[ 61, 31 ], [ 125, 95 ], [ 189, 159 ]
 			];
+
+			if (config.htmode == 'EHT320-2' || (config.htmode == 'EHT320' && config.channel > 189)) {
+				eht_center_seg0_map = [
+					[ 93, 63 ], [ 157, 127 ], [ 221, 191 ]
+				];
+			}
 
 			for (let k, v in eht_center_seg0_map)
 				if (config.channel <= v[0]) {
@@ -286,7 +309,7 @@ function device_htmode_append(config) {
 					break;
 				}
 			config.op_class = 137;
-			config.eht_oper_chwidth = 7;
+			config.eht_oper_chwidth = 9;
 
 			/*
 			 * Set HE operation values for 160MHz backward compatibility
@@ -298,6 +321,17 @@ function device_htmode_append(config) {
 				config.he_oper_centr_freq_seg0_idx = config.eht_oper_centr_freq_seg0_idx - 16;
 			else
 				config.he_oper_centr_freq_seg0_idx = config.eht_oper_centr_freq_seg0_idx + 16;
+
+			switch(config.htmode) {
+				case 'EHT320':
+					config.eht_bw320_offset = 0;
+					break;
+
+				case 'EHT320-1':
+				case 'EHT320-2':
+					config.eht_bw320_offset = 1;
+					break;
+			}
 			break;
 
 		case 'HE40':
@@ -323,7 +357,7 @@ function device_htmode_append(config) {
 		set_default(config, 'tx_queue_data2_burst', '2.0');
 
 		let vht_capab = phy_capabilities.vht_capa;
-		
+
 		config.vht_capab = '';
 		if (vht_capab & 0x10 && config.rxldpc)
 			config.vht_capab += '[RXLDPC]';
@@ -419,6 +453,12 @@ function device_htmode_append(config) {
 				config.he_spr_sr_control |= 1 << 2;
 			if (!config.he_spr_psr_enabled)
 				config.he_spr_sr_control |= 1;
+			if (!config.he_bss_color)
+				config.he_bss_color = he_bss_color_random();
+
+			if (config.he_bss_coolor == -1)
+				delete config.he_bss_color;
+
 			append_vars(config, [ 'he_bss_color', 'he_spr_non_srg_obss_pd_max_offset', 'he_spr_sr_control' ]);
 		}
 
@@ -430,12 +470,15 @@ function device_htmode_append(config) {
 			config.he_mu_beamformer = false;
 		if (!(he_phy_cap[7] & 0x1))
 			config.he_spr_psr_enabled = false;
-		if (!(he_mac_cap[0] & 0x1))
+		if (!(he_mac_cap[0] & 0x4))
+			config.he_twt_responder = false;
+		if (!config.he_twt_responder)
 			config.he_twt_required= false;
 
 		append_vars(config, [
 			'ieee80211ax', 'he_oper_chwidth', 'he_oper_centr_freq_seg0_idx',
-			'he_su_beamformer', 'he_su_beamformee', 'he_mu_beamformer', 'he_twt_required',
+			'he_su_beamformer', 'he_su_beamformee', 'he_mu_beamformer',
+			'he_twt_required', 'he_twt_responder',
 			'he_default_pe_duration', 'he_rts_threshold', 'he_mu_edca_qos_info_param_count',
 			'he_mu_edca_qos_info_q_ack', 'he_mu_edca_qos_info_queue_request', 'he_mu_edca_qos_info_txop_request',
 			'he_mu_edca_ac_be_aifsn', 'he_mu_edca_ac_be_aci', 'he_mu_edca_ac_be_ecwmin',
@@ -449,18 +492,36 @@ function device_htmode_append(config) {
 	}
 
 	if (wildcard(config.htmode, 'EHT*')) {
+		let eht_phy_cap = phy_capabilities.eht_phy_cap;
+
 		config.ieee80211be = true;
-		append_vars(config, [ 'ieee80211be' ]);
+
+		if (!(eht_phy_cap[0] & 0x20))
+			config.eht_su_beamformer = false;
+		if (!(eht_phy_cap[0] & 0x40))
+			config.eht_su_beamformee = false;
+		if (!(eht_phy_cap[7] & 0x70))
+			config.eht_mu_beamformer = false;
+
+		append_vars(config, [
+			'ieee80211be', 'eht_su_beamformer', 'eht_su_beamformee',
+			'eht_mu_beamformer',
+		]);
 
 		if (config.hw_mode == 'a')
 			append_vars(config, [ 'eht_oper_chwidth', 'eht_oper_centr_freq_seg0_idx' ]);
+
+		if (config.band == "6g") {
+			config.stationary_ap = true;
+			append_vars(config, [ 'he_6ghz_reg_pwr_type', 'eht_bw320_offset']);
+		}
 	}
 
 	append_vars(config, [ 'tx_queue_data2_burst', 'stationary_ap' ]);
 }
 
 function device_extended_features(data, flag) {
-	return !!(data[flag / 8] | (1 << (flag % 8)));
+	return !!(data[flag / 8] & (1 << (flag % 8)));
 }
 
 function device_capabilities(config) {
@@ -473,16 +534,26 @@ function device_capabilities(config) {
 	phy_capabilities.vht_capa = band.vht_capa ?? 0;
 	phy_capabilities.he_mac_cap = [];
 	phy_capabilities.he_phy_cap = [];
+	phy_capabilities.eht_phy_cap = [];
 	for (let iftype in band.iftype_data) {
 		if (!iftype.iftypes.ap)
 			continue;
 		phy_capabilities.he_mac_cap = iftype.he_cap_mac;
 		phy_capabilities.he_phy_cap = iftype.he_cap_phy;
+		phy_capabilities.eht_phy_cap = iftype.eht_cap_phy;
 	}
 
 	phy_features.ftm_responder = device_extended_features(phy.extended_features, NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
 	phy_features.radar_background = device_extended_features(phy.extended_features, NL80211_EXT_FEATURE_RADAR_BACKGROUND);
 	phy_features.cipher_gcmp256 = WLAN_CIPHER_SUITE_GCMP_256 in (phy.cipher_suites ?? []);
+}
+
+function device_mtk_options(config) {
+	if (config.pp_bitmap)
+		append('punct_bitmap', config.pp_bitmap);
+
+	if (config.ht_coex)
+		append_vars(config, [ 'obss_interval' ]);
 }
 
 function generate(config) {
@@ -514,7 +585,7 @@ function generate(config) {
 		append_vars(config, [ 'airtime_mode' ]);
 
 	/* assoc/thresholds */
-	append_vars(config, [ 'rssi_reject_assoc_rssi', 'rssi_reject_assoc_timeout', 'rssi_ignore_probe_request', 'iface_max_num_sta' ]);
+	append_vars(config, [ 'rssi_reject_assoc_rssi', 'rssi_reject_assoc_timeout', 'rssi_ignore_probe_request', 'iface_max_num_sta', 'no_probe_resp_if_max_sta' ]);
 
 	/* ACS / Radar*/
 	if (!phy_features.radar_background || config.band != '5g')
@@ -547,6 +618,9 @@ function generate(config) {
 	/* raw options */
 	for (let raw in config.hostapd_options)
 		append_raw(raw);
+
+	/* MTK internal options */
+	device_mtk_options(config);
 }
 
 let iface_idx = 0;

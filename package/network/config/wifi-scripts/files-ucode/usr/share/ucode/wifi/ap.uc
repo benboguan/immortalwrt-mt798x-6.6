@@ -30,10 +30,13 @@ function iface_setup(config) {
 
 	config.bridge = config.network_bridge;
 	config.snoop_iface = config.network_ifname;
-	if (!config.wds)
+	if (!config.wds) {
 		config.wds_bridge = null;
-	else
+	} else {
+		if (!config.wds_bridge)
+			config.wds_bridge = config.bridge;
 		config.wds_sta = true;
+	}
 
 	if (!config.idx)
 		append('interface', config.ifname);
@@ -48,7 +51,7 @@ function iface_setup(config) {
 
 	append('bssid', config.macaddr);
 	config.ssid2 = config.ssid;
-	config.wmm_enabled = 1;
+	config.wmm_enabled = config.wmm;
 	append_string_vars(config, [ 'ssid2' ]);
 
 	append_vars(config, [
@@ -243,9 +246,12 @@ function iface_wps(config) {
 
 		append_vars(config, [
 			'wps_state', 'device_type', 'device_name', 'config_methods', 'wps_independent', 'eap_server',
-			'ap_pin', 'ap_setup_locked', 'upnp_iface'
+			'ap_pin', 'ap_setup_locked', 'upnp_iface', 'uuid'
 		]);
 	}
+
+	if (config.wps_pushbutton)
+		append_raw('wps_cred_add_sae=1');
 }
 
 function iface_rrm(config) {
@@ -317,7 +323,7 @@ function iface_vlan(interface, config, vlans) {
 
 	if (!config.vlan_possible || !config.dynamic_vlan)
 		return;
-	
+
 	set_default(config, 'vlan_no_bridge', !config.vlan_bridge);
 
 	append_vars(config, [
@@ -518,9 +524,9 @@ function iface_hs20(config) {
 function iface_interworking(config) {
 	if (!config.iw_enabled)
 		return;
-	
+
 	config.interworking = true;
-	
+
 	if (config.domain_name)
 		config.domain_name = join(',', config.domain_name);
 
@@ -532,6 +538,14 @@ function iface_interworking(config) {
 		'venue_type', 'network_auth_type', 'gas_address3', 'roaming_consortium', 'anqp_elem', 'nai_realm',
 		'venue_name', 'venue_url', 'domain_name', 'anqp_3gpp_cell_net',
 	]);
+}
+
+function iface_mtk_options(config) {
+	append_vars(config, [ 'unsol_bcast_probe_resp_interval' ,
+			      'fils_discovery_min_interval',
+			      'fils_discovery_max_interval',
+			      'rssi_reject_assoc_timeout', 'reliable_11r',
+			      'group_cipher', 'assocresp_elements' ]);
 }
 
 export function generate(interface, data, config, vlans, stas, phy_features) {
@@ -612,11 +626,13 @@ export function generate(interface, data, config, vlans, stas, phy_features) {
 	for (let raw in config.hostapd_bss_options)
 		append_raw(raw);
 
-	if (config.mlo) {
+	iface_mtk_options(config);
+
+	/* if (config.mlo) {
 		append_raw('mld_ap=1');
 		if (data.config.radio != null)
 			append_raw('mld_link_id=' + data.config.radio);
-	}
+	} */
 
 	if (config.default_macaddr)
 		append_raw('#default_macaddr');

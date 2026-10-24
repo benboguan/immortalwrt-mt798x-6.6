@@ -270,6 +270,11 @@
 			"type": "boolean",
 			"default": true
 		},
+		"dpp": {
+			"description": "Enable the DPP AKM in addition to the one selected by encryption",
+			"type": "boolean",
+			"default": false
+		},
 		"domain_match": {
 			"type": "array",
 			"items": {
@@ -449,7 +454,8 @@
 		"ieee80211w": {
 			"description": "Enables MFP (802.11w) support (0 = disabled, 1 = optional, 2 = required). Requires the 'full' version of wpad/hostapd and support from the Wi-Fi driver",
 			"type": "number",
-			"enum": [ 0, 1, 2 ]
+			"enum": [ 0, 1, 2 ],
+			"default": 0
 		},
 		"ieee80211w_max_timeout": {
 			"type": "alias",
@@ -1089,7 +1095,11 @@
 		"uesa": {
 			"description": "Unauthenticated emergency service accessible",
 			"type": "boolean",
-			"default": false			
+			"default": false
+		},
+		"uuid": {
+			"description": "Device UUID used by WPS",
+			"type": "string"
 		},
 		"utf8_ssid": {
 			"description": "Whether the SSID is to be interpreted using UTF-8 encoding",
@@ -1230,6 +1240,90 @@
 		"wps_pushbutton": {
 			"description": "Support WPS pushbutton",
 			"type": "boolean"
+		},
+		"interworking": {
+			"description": "interworking",
+			"type": "boolean",
+			"default": false
+		},
+		"unsol_bcast_probe_resp_interval": {
+			"description": "unsol_bcast_probe_resp_interval",
+			"type": "number"
+		},
+		"fils_discovery_min_interval": {
+			"description": "fils_discovery_min_interval",
+			"type": "number"
+		},
+		"fils_discovery_max_interval": {
+			"description": "fils_discovery_max_interval",
+			"type": "number"
+		},
+		"rssi_reject_assoc_timeout": {
+			"description": "Association retry delay in seconds allowed by the STA if RSSI has not met the threshold",
+			"type": "number",
+			"minimum": 0,
+			"maximum": 255
+		},
+		"sae_groups": {
+			"description": "sae_groups",
+			"type": "array",
+			"items": {
+				"type": "number"
+			}
+		},
+		"owe_groups": {
+			"description": "owe_groups",
+			"type": "array",
+			"items": {
+				"type": "number"
+			}
+		},
+		"wpa_pairwise": {
+			"description": "pairwise cipher",
+			"type": "array",
+			"items": {
+				"type": "string"
+			}
+		},
+		"group_cipher": {
+			"description": "Group cipher",
+			"type": "string"
+		},
+		"group_mgmt_cipher": {
+			"type": "alias",
+			"default": "ieee80211w_mgmt_cipher"
+		},
+		"disable_ht": {
+			"description": "Disable HT mode for STA",
+			"type": "boolean"
+		},
+		"disable_vht": {
+			"description": "Disable VHT mode for STA",
+			"type": "boolean"
+		},
+		"disable_he": {
+			"description": "Disable HE mode for STA",
+			"type": "boolean"
+		},
+		"disable_eht": {
+			"description": "Disable EHT mode for STA",
+			"type": "boolean"
+		},
+		"rsn_overriding": {
+			"description": "RSN overriding for STA",
+			"type": "number",
+			"enum": [ 0, 1, 2 ],
+			"default": 2
+		},
+		"assocresp_elements": {
+			"description": "Configuration for MTK vendor element in association response",
+			"type": "string",
+			"default": "dd07000ce700000000"
+		},
+		"wmm": {
+			"description": "WMM for AP interface",
+			"type": "boolean",
+			"default": true
 		}
 	}
 }

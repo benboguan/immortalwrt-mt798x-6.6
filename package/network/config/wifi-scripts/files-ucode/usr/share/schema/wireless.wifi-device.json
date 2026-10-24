@@ -76,7 +76,7 @@
 		"beamformee_antennas": {
 			"description": "Beamformee antenna override",
 			"type": "number",
-			"default": 4
+			"default": 5
 		},
 		"beamformer_antennas": {
 			"description": "Beamformer antenna override",
@@ -150,6 +150,21 @@
 		},
 		"dsss_cck_40": {
 			"description": "DSSS/CCK Mode in 40 MHz allowed in Beacon, Measurement Pilot and Probe Response frames",
+			"type": "boolean",
+			"default": true
+		},
+		"eht_mu_beamformer": {
+			"description": "EHT multiple user beamformer support",
+			"type": "boolean",
+			"default": true
+		},
+		"eht_su_beamformee": {
+			"description": "EHT single user beamformee support",
+			"type": "boolean",
+			"default": true
+		},
+		"eht_su_beamformer": {
+			"description": "EHT single user beamformer support",
 			"type": "boolean",
 			"default": true
 		},
@@ -334,6 +349,11 @@
 			"type": "boolean",
 			"default": false
 		},
+		"he_twt_responder": {
+			"description": "Whether TWT (HE) responder is enabled.",
+			"type": "boolean",
+			"default": true
+		},
 		"hostapd_options": {
 			"type": "array",
 			"items": {
@@ -355,9 +375,9 @@
 			"type": "string",
 			"enum": [
 				"NOHT", "HT20", "HT40-", "HT40+", "HT40",
-				"VHT20", "VHT40", "VHT80", "VHT160",
-				"HE20", "HE40", "HE80", "HE160",
-				"EHT20", "EHT40", "EHT80", "EHT160", "EHT320" ]
+				"VHT20", "VHT40", "VHT40-", "VHT40+", "VHT80", "VHT160",
+				"HE20", "HE40", "HE40-", "HE40+", "HE80", "HE160",
+				"EHT20", "EHT40", "EHT40-", "EHT40+", "EHT80", "EHT160", "EHT320", "EHT320-1", "EHT320-2" ]
 		},
 		"hwmode": {
 			"type": "alias",
@@ -534,6 +554,10 @@
 			"type": "number",
 			"default": 1
 		},
+		"no_probe_resp_if_max_sta": {
+			"description": "Do not answer probe requests if iface_max_num_sta was reached",
+			"type": "boolean"
+		},
 		"noscan": {
 			"description": "Do not scan for overlapping BSSs in HT40+/- mode.",
 			"type": "boolean",
@@ -563,7 +587,7 @@
 		"require_mode": {
 			"description": "Sets the minimum client capability level mode that connecting clients must support to be allowed to connect",
 			"type": "string",
-			"enum": [ "n", "ac", "ax" ]
+			"enum": [ "n", "ac", "ax", "be" ]
 		},
 		"rnr_beacon": {
 			"description": "",
@@ -740,6 +764,19 @@
 			"description": "VHT TXOP PS mode",
 			"type": "boolean",
 			"default": true
+		},
+		"pp_bitmap": {
+			"description": "PP bitmap",
+			"type": "number"
+		},
+		"obss_interval": {
+			"description": "obss_interval",
+			"type": "number",
+			"default": 300
+		},
+		"eht_bw320_offset": {
+			"description": "EHT BW320 offset",
+			"type": "number"
 		}
 	}
 }

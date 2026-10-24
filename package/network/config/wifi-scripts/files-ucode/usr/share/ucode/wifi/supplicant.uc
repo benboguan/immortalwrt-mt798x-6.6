@@ -57,12 +57,30 @@ export function ratelist(rates) {
 	return join(",", map(rates, (rate) => ratestr(rate)));
 };
 
+function sta_global_mtk_options(config) {
+	append_vars(config, [ 'rsn_overriding' ]);
+	append_raw('wps_cred_add_sae=1');
+
+	if (config.auth_type in [ 'sae', 'psk-sae', 'psk-sae-compat' ])
+		append_vars(config, [ 'sae_groups', 'sae_pwe' ]);
+
+	/* if (config.auth_type in [ 'owe' ])
+		append_vars(config, [ 'owe_groups' ]); */
+};
+
+function sta_network_mtk_options(config) {
+	network_append_vars(config, [ 'disable_he', 'disable_eht' ]);
+
+	if (config.ieee80211w)
+		network_append('group_mgmt', config.ieee80211w_mgmt_cipher);
+};
+
 function setup_sta(data, config) {
 	iface.parse_encryption(config, data);
 
 	if (config.auth_type in [ 'sae', 'owe', 'eap2', 'eap192' ])
 		config.ieee80211w = 2;
-	else if (config.auth_type in [ 'psk-sae' ] && !config.ieee80211w)
+	else if (config.auth_type in [ 'psk-sae', 'eap-eap2' ] && !config.ieee80211w)
 		config.ieee80211w = 1;
 	if ((wildcard(data.htmode, 'EHT*') || wildcard(data.htmode, 'HE*')) &&
 		config.rsn_override)
@@ -144,6 +162,7 @@ function setup_sta(data, config) {
 
 	case 'eap':
 	case 'eap2':
+	case 'eap-eap2':
 	case 'eap192':
 		iface.wpa_key_mgmt(config);
 		set_default(config, 'erp', config.fils);
@@ -235,6 +254,8 @@ function setup_sta(data, config) {
 		'ht40', 'beacon_int', 'ieee80211w', 'rates', 'mesh_basic_rates', 'mcast_rate',
 		'bssid_blacklist', 'bssid_whitelist', 'erp', 'eap', 'phase2',
 	]);
+
+	sta_network_mtk_options(config);
 }
 
 
@@ -291,6 +312,7 @@ export function generate(config_list, data, interface) {
 	append_vars(interface.config, [ 'country', 'beacon_int', 'freq_list' ]);
 
 	setup_sta(data.config, interface.config);
+	sta_global_mtk_options(interface.config);
 
 	let file_name = `/var/run/wpa-supplicant-${interface.config.ifname}.conf`;
 	if (fs.stat(file_name))

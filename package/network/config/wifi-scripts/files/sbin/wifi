@@ -64,11 +64,14 @@ wifi_detect_notice() {
 wifi_config() {
 	ucode /usr/share/hostap/wifi-detect.uc
 	[ ! -f /etc/config/wireless ] && touch /etc/config/wireless
-	ucode /lib/wifi/mac80211.uc | uci -q batch
 
+	# 不再硬编码 mac80211，纯 mtwifi 平台也能跑 wifi config。
 	for driver in $DRIVERS; do (
 		if eval "type detect_$driver" 2>/dev/null >/dev/null; then
 			eval "detect_$driver" || echo "$driver: Detect failed" >&2
+		elif [ -f "/lib/wifi/$driver.uc" ]; then
+			ucode "/lib/wifi/$driver.uc" | uci -q batch \
+				|| echo "$driver: Detect failed" >&2
 		else
 			echo "$driver: Hardware detection not supported" >&2
 		fi

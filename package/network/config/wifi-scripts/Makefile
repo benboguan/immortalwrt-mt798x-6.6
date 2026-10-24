@@ -9,11 +9,17 @@ include $(TOPDIR)/rules.mk
 
 PKG_NAME:=wifi-scripts
 PKG_VERSION:=1.0
-PKG_RELEASE:=1
+PKG_RELEASE:=3
 PKG_LICENSE:=GPL-2.0
 
 PKG_MAINTAINER:=Felix Fietkau <nbd@nbd.name>
-PKG_CONFIG_DEPENDS:=CONFIG_WIFI_SCRIPTS_UCODE
+PKG_CONFIG_DEPENDS:= \
+	CONFIG_PACKAGE_wifi-profile \
+	CONFIG_PACKAGE_wifi-script \
+	CONFIG_PACKAGE_mtwifi-ucode \
+	CONFIG_PACKAGE_mtwifi-cfg \
+	CONFIG_WIFI_SCRIPT_SUPPORT \
+	CONFIG_WIFI_SCRIPTS_UCODE
 
 include $(INCLUDE_DIR)/package.mk
 
@@ -51,6 +57,17 @@ endif
 ifeq ($(CONFIG_WIFI_SCRIPTS_WPS_BUTTON_DISABLED),y)
 	rm -f $(1)/etc/rc.button/wps
 endif
+	$(if $(or $(CONFIG_PACKAGE_wifi-profile),$(CONFIG_WIFI_SCRIPT_SUPPORT)), \
+		rm -f $(1)/sbin/wifi)
+	$(if $(CONFIG_PACKAGE_wifi-script), \
+		rm -f $(1)/lib/wifi/mac80211.uc; \
+		rm -f $(1)/lib/netifd/hostapd.sh; \
+		rm -f $(1)/lib/netifd/netifd-wireless.sh; \
+		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
+	$(if $(or $(CONFIG_PACKAGE_mtwifi-ucode),$(CONFIG_PACKAGE_mtwifi-cfg)), \
+		rm -f $(1)/lib/wifi/mac80211.uc; \
+		rm -f $(1)/lib/netifd/hostapd.sh; \
+		rm -f $(1)/lib/netifd/wireless/mac80211.sh)
 endef
 
 $(eval $(call BuildPackage,wifi-scripts))

@@ -14,8 +14,141 @@ export let phys;
 let interfaces;
 let wireless_status;
 
+/* ======================================================================
+ * MediaTek vendor extension
+ *
+ * ======================================================================
+ */
+const MTK_VENDOR_ID = 0x0ce7;
+const MTK_SUBCMD_GET_STA = 0xea;
+
+/* mtk_nl80211_vendor_attrs_sta */
+const MTK_ATTR_STA_MAC  = 2;
+const MTK_ATTR_STA_INFO = 3;
+
+const MTK_STA_OFF = {
+	rx_bytes:        16,
+	tx_bytes:        24,
+	rx_packets:      32,
+	tx_packets:      40,
+	rssi:            48,
+	snr:             52,
+	tx_rate:         56,
+	rx_rate:         64,
+	cap_phymode:     72,
+	mlo_enable:      73,
+	mld_mac:         74,
+	signal_strength: 80,
+	tx_dcm:          304,
+	rx_dcm:          305,
+	mlo_link_base:   112,
+};
+
+const MTK_MLO_LINK_SIZE = 64;
+const MTK_MLO_OFF = {
+	valid:        0,
+	link_address: 1,
+	rx_bytes:     8,
+	tx_bytes:     16,
+	rx_packets:   24,
+	tx_packets:   32,
+	tx_rate:      48,
+	rx_rate:      56,
+};
+
+function mac_to_bytes(mac) {
+	let bytes = [];
+	for (let p in split(mac, ':'))
+		push(bytes, hex(p));
+	return bytes;
+}
+
+function read_u32(buf, off) {
+    if (off + 3 >= length(buf))
+        return 0;
+    let val = buf[off] | (buf[off+1] << 8) |
+              (buf[off+2] << 16) | (buf[off+3] << 24);
+    return val & 0xFFFFFFFF;
+}
+
+function read_u64(buf, off) {
+	return read_u32(buf, off) + read_u32(buf, off + 4) * 4294967296;
+}
+
+function bytes_to_mac(b, off) {
+	return sprintf('%02x:%02x:%02x:%02x:%02x:%02x',
+		b[off+0], b[off+1], b[off+2], b[off+3], b[off+4], b[off+5]);
+}
+
+function get_mtk_sta_info(ifname, mac) {
+	let mac_bytes = mac_to_bytes(mac);
+	if (length(mac_bytes) != 6)
+		return null;
+
+	let attrs = {};
+	attrs[nl80211.const.NL80211_ATTR_VENDOR_ID] = MTK_VENDOR_ID;
+	attrs[nl80211.const.NL80211_ATTR_VENDOR_SUBCMD] = MTK_SUBCMD_GET_STA;
+	attrs[nl80211.const.NL80211_ATTR_VENDOR_DATA] = {
+		[MTK_ATTR_STA_MAC]: mac_bytes,
+	};
+
+	let ret = nl80211.request(
+		nl80211.const.NL80211_CMD_VENDOR,
+		nl80211.const.NLM_F_ACK,
+		{ dev: ifname, ...attrs }
+	);
+
+	if (!ret)
+		return null;
+
+	let vdata = ret[nl80211.const.NL80211_ATTR_VENDOR_DATA];
+	if (!vdata)
+		return null;
+
+	let raw = vdata[MTK_ATTR_STA_INFO];
+	if (!raw || length(raw) < MTK_STA_OFF.mlo_link_base + MTK_MLO_LINK_SIZE)
+		return null;
+
+	let info = {
+		mac: mac,
+		rx_bytes: read_u64(raw, MTK_STA_OFF.rx_bytes),
+		tx_bytes: read_u64(raw, MTK_STA_OFF.tx_bytes),
+		rx_packets: read_u64(raw, MTK_STA_OFF.rx_packets),
+		tx_packets: read_u64(raw, MTK_STA_OFF.tx_packets),
+		rssi: [ raw[MTK_STA_OFF.rssi+0], raw[MTK_STA_OFF.rssi+1],
+		        raw[MTK_STA_OFF.rssi+2], raw[MTK_STA_OFF.rssi+3] ],
+		snr:  [ raw[MTK_STA_OFF.snr+0], raw[MTK_STA_OFF.snr+1],
+		        raw[MTK_STA_OFF.snr+2], raw[MTK_STA_OFF.snr+3] ],
+		tx_rate: read_u64(raw, MTK_STA_OFF.tx_rate),
+		rx_rate: read_u64(raw, MTK_STA_OFF.rx_rate),
+		mlo_enable: raw[MTK_STA_OFF.mlo_enable],
+		mld_mac: bytes_to_mac(raw, MTK_STA_OFF.mld_mac),
+		tx_dcm: raw[MTK_STA_OFF.tx_dcm],
+		rx_dcm: raw[MTK_STA_OFF.rx_dcm],
+		mlo_links: [],
+	};
+
+	for (let i = 0; i < 3; i++) {
+		let base = MTK_STA_OFF.mlo_link_base + i * MTK_MLO_LINK_SIZE;
+		if (base + MTK_MLO_LINK_SIZE > length(raw))
+			break;
+		push(info.mlo_links, {
+			valid:        raw[base + MTK_MLO_OFF.valid],
+			link_address: bytes_to_mac(raw, base + MTK_MLO_OFF.link_address),
+			rx_bytes:     read_u64(raw, base + MTK_MLO_OFF.rx_bytes),
+			tx_bytes:     read_u64(raw, base + MTK_MLO_OFF.tx_bytes),
+			rx_packets:   read_u64(raw, base + MTK_MLO_OFF.rx_packets),
+			tx_packets:   read_u64(raw, base + MTK_MLO_OFF.tx_packets),
+			tx_rate:      read_u64(raw, base + MTK_MLO_OFF.tx_rate),
+			rx_rate:      read_u64(raw, base + MTK_MLO_OFF.rx_rate),
+		});
+	}
+
+	return info;
+}
+
 function find_phy(wiphy) {
-	for (let k,  phy in phys)
+	for (let k, phy in phys)
 		if (phy && phy.wiphy == wiphy)
 			return phy;
 	return null;
@@ -46,7 +179,7 @@ function get_max_power(iface) {
 		if (band)
 			for (let freq in band.freqs)
 				if (freq.freq == iface.wiphy_freq)
-					return freq.max_tx_power;;
+					return freq.max_tx_power;
 	return 0;
 }
 
@@ -63,7 +196,7 @@ function get_hardware_id(iface) {
 		let data = [];
 		for (let lookup in [ 'vendor', 'device', 'subsystem_vendor', 'subsystem_device' ])
 			push(data, trim(readfile(path + lookup), '\n'));
-		
+
 		for (let device in wifi_devices.pci) {
 			let match = 0;
 			for (let i = 0; i < 4; i++)
@@ -97,6 +230,15 @@ export let ifaces = {};
 
 export function update() {
 	phys = nl80211.request(nl80211.const.NL80211_CMD_GET_WIPHY, nl80211.const.NLM_F_DUMP, { split_wiphy_dump: true });
+
+	/* MTK 平台 PHY 回退枚举 */
+	if (!length(phys)) {
+		for (let idx = 0; idx < 4; idx++) {
+			if (stat(`/sys/class/ieee80211/phy${idx}/device/uevent`))
+				push(phys, { wiphy: idx, name: `phy${idx}` });
+		}
+	}
+
 	interfaces = nl80211.request(nl80211.const.NL80211_CMD_GET_INTERFACE, nl80211.const.NLM_F_DUMP);
 	wireless_status = ubus.call('network.wireless', 'status');
 
@@ -278,6 +420,7 @@ function assoc_flags(data) {
 			eht_mcs: 'EHT-MCS',
 			eht_nss: 'EHT-NSS',
 			eht_gi: 'EHT-GI',
+			eht_dcm: 'EHT-DCM',
 		},
 	};
 
@@ -344,9 +487,12 @@ function hwmodelist(name) {
 }
 
 export function assoclist(dev) {
+	if (!ifaces[dev])
+		return {};
+
 	let stations = ifaces[dev].assoclist;
 	let ret = {};
-	
+
 	for (let station in stations) {
 		let sta = {
 			mac: uc(station.mac),
@@ -367,7 +513,62 @@ export function assoclist(dev) {
 				flags: assoc_flags(station.sta_info.tx_bitrate ?? {}),
 			},
 			expected_throughput: format_expected_throughput(station.sta_info.expected_throughput ?? 0),
+			connected_time: station.sta_info.connected_time ?? 0,
+			rx_bytes: station.sta_info.rx_bytes ?? 0,
+			tx_bytes: station.sta_info.tx_bytes ?? 0,
+			/* MLO 默认字段 */
+			mlo_enable: 0,
+			mld_mac: null,
+			mlo_link_id: 0,
+			mlo_num_links: 0,
+			mlo_rx_rate: [],
+			mlo_tx_rate: [],
+			eht_dcm: 0,
 		};
+
+		/* === MTK MLO 扩展：通过 vendor command 查询 === */
+		let mtk = get_mtk_sta_info(dev, sta.mac);
+		if (mtk) {
+			sta.eht_dcm = mtk.rx_dcm;
+
+			if (!sta.noise && mtk.snr) {
+				let best = 0;
+				for (let s in mtk.snr)
+					if (s > best) best = s;
+				if (best)
+					sta.noise = sta.signal - best;
+			}
+
+			if (mtk.mlo_enable) {
+				sta.mlo_enable = 1;
+				sta.mld_mac = mtk.mld_mac;
+				sta.mlo_link_id = 0;
+				sta.mlo_num_links = 0;
+
+				for (let i = 0; i < length(mtk.mlo_links); i++) {
+					let link = mtk.mlo_links[i];
+					if (!link.valid)
+						continue;
+					if (sta.mlo_num_links == 0)
+						sta.mlo_link_id = i;
+
+					/* MTK 上报速率单位 Mbps，iwinfo 内部用 kbps */
+					push(sta.mlo_rx_rate, {
+						rate: link.rx_rate * 1000,
+						is_eht: 1,
+						eht_dcm: mtk.rx_dcm,
+						eht_gi: station.sta_info.rx_bitrate?.eht_gi ?? 0,
+					});
+					push(sta.mlo_tx_rate, {
+						rate: link.tx_rate * 1000,
+						is_eht: 1,
+						eht_dcm: mtk.tx_dcm,
+						eht_gi: station.sta_info.tx_bitrate?.eht_gi ?? 0,
+					});
+					sta.mlo_num_links++;
+				}
+			}
+		}
 		ret[sta.mac] = sta;
 	}
 
@@ -382,9 +583,11 @@ export function freqlist(name) {
 		no_ht40_plus: 'NO_HT40+',
 		no_80mhz: 'NO_80MHZ',
 		no_160mhz: 'NO_160MHZ',
+		no_320mhz: 'NO_320MHZ',
 		indoor_only: 'INDOOR_ONLY',
 		no_ir: 'NO_IR',
 		no_he: 'NO_HE',
+		no_eht: 'NO_EHT',
 		radar: 'RADAR_DETECTION',
 	};
 
@@ -407,12 +610,14 @@ export function freqlist(name) {
 				channel: format_channel(freq.freq),
 				flags: [],
 				active: iface.wiphy_freq == freq.freq,
+				no_ir: freq.no_ir ? 1 : 0,
+				no_outdoor: freq.indoor_only ? 1 : 0,
 			};
-	
+
 			for (let k, v in freq_flags)
 				if (freq[k])
 					push(channel.flags, v);
-			
+
 			push(channels, channel);
 		}
 	}
@@ -422,7 +627,7 @@ export function freqlist(name) {
 
 export function info(name) {
 	let order = [];
-	for (let iface, data in ifaces) 
+	for (let iface, data in ifaces)
 		push(order, iface);
 
 	let list = [];
@@ -497,20 +702,20 @@ export function htmodelist(name) {
 };
 
 export function txpowerlist(name) {
+	let dbm_list = [0, 8, 11, 14, 17, 19, 20];
+	let mw_list  = [1, 6, 12, 25, 50, 79, 100];
 	let iface = ifaces[name];
-	let max_power = iface.max_power / 100;
 	let match = iface.wiphy_tx_power_level / 100;
 	let list = [];
 
-	for (let power = 0; power <= max_power; power++) {
-		let txpower = {
-			dbm: power,
-			mw: dbm2mw(power),
-			active: power == match,
-		};
-		push(list, txpower);
+	for (let i = 0; i < 7; i++) {
+		push(list, {
+			dbm: dbm_list[i],
+			mw: mw_list[i],
+			active: dbm_list[i] == match,
+		});
 	}
-	
+
 	return list;
 };
 
@@ -519,33 +724,38 @@ export function countrylist(dev) {
 
 	let list = {
 		active: iface.country,
-		countries, 
+		countries,
 	};
 
 	return list;
 };
 
 function scan_extension(ext, cell) {
-	const eht_chan_width = [ '20 MHz', '40 MHz', '80 MHz', '160 MHz', '320 MHz'];
+	const eht_chan_width = [ '20 MHz', '40 MHz', '80 MHz', '160 MHz', '320 MHz' ];
 
 	switch(ord(ext, 0)) {
 	case 36:
-		let offset = 7;
+		cell.he = {};
 
-		if (!(ord(ext, 3) & 0x2))
-			break;
+		if (cell.band == '6') {
+			let offset = 7;
 
-		if (ord(ext, 2) & 0x40)
-			offset += 3;
+			if (ord(ext, 2) & 0x40)
+				offset += 3;
 
-		if (ord(ext, 2) & 0x80)
-			offset += 1;
+			if (ord(ext, 2) & 0x80)
+				offset += 1;
 
-		cell.he = {
-			chan_width: eht_chan_width[ord(ext, offset + 1) & 0x3],
-			center_chan_1: ord(ext, offset + 2),
-			center_chan_2: ord(ext, offset + 3),
-		};
+			cell.he.chan_width = eht_chan_width[ord(ext, offset + 1) & 0x3];
+			cell.he.center_chan_1 = ord(ext, offset + 2);
+			cell.he.center_chan_2 = ord(ext, offset + 3);
+		} else if (cell.vht) {
+			cell.he.chan_width = cell.vht.chan_width;
+			cell.he.center_chan_1 = cell.vht.center_chan_1;
+			cell.he.center_chan_2 = cell.vht.center_chan_2;
+		} else if (cell.ht) {
+			cell.he.chan_width = cell.ht.chan_width;
+		}
 		break;
 
 	case 106:
@@ -574,23 +784,24 @@ export function scan(dev) {
 		scan_ssids: [ '' ],
 	};
 
-	let res = nl80211.request(nl80211.const.NL80211_CMD_TRIGGER_SCAN, 0, params);
-	if (res === false) {
-		printf("Unable to trigger scan: " + nl80211.error() + "\n");
-		exit(1);
+	nl80211.request(nl80211.const.NL80211_CMD_TRIGGER_SCAN, 0, params);
+	let err = nl80211.error();
+	if (err) {
+		warn("Unable to trigger scan on " + dev + ": " + err + "\n");
+		return null;
 	}
 
-	res = nl80211.waitfor([
+	let res = nl80211.waitfor([
 		nl80211.const.NL80211_CMD_NEW_SCAN_RESULTS,
 		nl80211.const.NL80211_CMD_SCAN_ABORTED
 	], 5000);
 
 	if (!res) {
-		printf("Netlink error while awaiting scan results: " + nl80211.error() + "\n");
-		exit(1);
+		warn("Netlink error while awaiting scan results on " + dev + ": " + nl80211.error() + "\n");
+		return null;
 	} else if (res.cmd == nl80211.const.NL80211_CMD_SCAN_ABORTED) {
-		printf("Scan aborted by kernel\n");
-		exit(1);
+		warn("Scan aborted by kernel on " + dev + "\n");
+		return null;
 	}
 
 	let scan = nl80211.request(nl80211.const.NL80211_CMD_GET_SCAN, nl80211.const.NLM_F_DUMP, { dev });
@@ -604,7 +815,6 @@ export function scan(dev) {
 			band: format_band(bss.frequency),
 			channel: format_channel(bss.frequency),
 			dbm: bss.signal_mbm / 100,
-
 		};
 
 		if (bss.capability & (1 << 1))
@@ -637,14 +847,14 @@ export function scan(dev) {
 				let offset = 6;
 				let count = ord(ie.data, offset);
 				offset += 2;
-				
+
 				for (let i = 0; i < count; i++) {
 					let key = rsn_cipher[ord(ie.data, offset + 3)];
 					if (key)
 						push(cell.crypto.pair, key);
 					offset += 4;
 				}
-				
+
 				count = ord(ie.data, offset);
 				offset += 2;
 
@@ -676,8 +886,6 @@ export function scan(dev) {
 				scan_extension(ie.data, cell);
 				break;
 			};
-
-		
 
 		push(cells, cell);
 	}
