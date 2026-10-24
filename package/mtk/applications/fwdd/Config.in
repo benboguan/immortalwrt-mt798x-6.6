@@ -1,0 +1,7 @@
+menu "Configuration"
+
+config FWDD_DEFAULT_TARGET_BAND
+        string "Support WPACTRL in wapp"
+
+endmenu
+
